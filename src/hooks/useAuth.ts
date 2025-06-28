@@ -9,22 +9,43 @@ export const useAuth = () => {
   useEffect(() => {
     // Get initial user
     const getInitialUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-      setLoading(false);
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) {
+          console.error('Error getting user:', error);
+        }
+        setUser(user);
+      } catch (error) {
+        console.error('Error in getInitialUser:', error);
+      } finally {
+        setLoading(false);
+      }
     };
 
     getInitialUser();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
+        
         setUser(session?.user ?? null);
         setLoading(false);
+
+        // Handle different auth events
+        if (event === 'SIGNED_IN') {
+          console.log('User signed in:', session?.user?.email);
+        } else if (event === 'SIGNED_OUT') {
+          console.log('User signed out');
+        } else if (event === 'TOKEN_REFRESHED') {
+          console.log('Token refreshed');
+        }
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   return { user, loading };
