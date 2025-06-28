@@ -30,9 +30,29 @@ function App() {
   });
 
   // Handle OAuth callback
-  if (window.location.pathname === '/auth/callback') {
-    return <AuthCallback />;
-  }
+  useEffect(() => {
+    const handleOAuthCallback = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      
+      // Check for OAuth tokens in URL
+      const accessToken = urlParams.get('access_token') || hashParams.get('access_token');
+      const error = urlParams.get('error') || hashParams.get('error');
+      
+      if (accessToken) {
+        console.log('OAuth callback detected, cleaning URL...');
+        // Clean the URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      
+      if (error) {
+        console.error('OAuth error:', error);
+        // You could show an error message here
+      }
+    };
+
+    handleOAuthCallback();
+  }, []);
 
   // Filter data based on current filters
   const filteredCampaigns = mockCampaigns.filter(campaign => {

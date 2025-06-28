@@ -75,10 +75,16 @@ export const signInWithProvider = async (provider: 'google' | 'facebook' | 'appl
   try {
     console.log(`Attempting ${provider} OAuth login...`);
     
+    // Get the current URL to determine the correct redirect
+    const currentUrl = window.location.origin;
+    const redirectTo = `${currentUrl}/auth/callback`;
+    
+    console.log('Redirect URL:', redirectTo);
+    
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo,
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
