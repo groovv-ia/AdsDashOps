@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthForm } from './components/auth/AuthForm';
+import { AuthCallback } from './components/auth/AuthCallback';
 import { DashboardHeader } from './components/dashboard/DashboardHeader';
 import { Sidebar } from './components/dashboard/Sidebar';
 import { FilterBar } from './components/dashboard/FilterBar';
@@ -27,6 +28,11 @@ function App() {
       new Date()
     ] as [Date | null, Date | null]
   });
+
+  // Handle OAuth callback
+  if (window.location.pathname === '/auth/callback') {
+    return <AuthCallback />;
+  }
 
   // Filter data based on current filters
   const filteredCampaigns = mockCampaigns.filter(campaign => {
