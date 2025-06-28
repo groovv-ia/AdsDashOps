@@ -9,7 +9,7 @@ import { PerformanceChart } from './components/dashboard/PerformanceChart';
 import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
 import { useAuth } from './hooks/useAuth';
-import { mockCampaigns, mockMetrics } from './data/mockData';
+import { mockCampaigns, mockMetrics, mockAdSets, mockAds } from './data/mockData';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
 import { Card } from './components/ui/Card';
@@ -21,8 +21,9 @@ function App() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [filters, setFilters] = useState({
     platforms: [] as string[],
-    adSet: '',
-    campaign: '',
+    campaigns: [] as string[],
+    adSets: [] as string[],
+    ads: [] as string[],
     dateRange: [
       new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
       new Date()
@@ -57,7 +58,27 @@ function App() {
   // Filter data based on current filters
   const filteredCampaigns = mockCampaigns.filter(campaign => {
     if (filters.platforms.length > 0 && !filters.platforms.includes(campaign.platform.toLowerCase())) return false;
-    if (filters.campaign && campaign.id !== filters.campaign) return false;
+    if (filters.campaigns.length > 0 && !filters.campaigns.includes(campaign.id)) return false;
+    return true;
+  });
+
+  const filteredAdSets = mockAdSets.filter(adSet => {
+    const campaign = mockCampaigns.find(c => c.id === adSet.campaign_id);
+    if (!campaign) return false;
+    if (filters.platforms.length > 0 && !filters.platforms.includes(campaign.platform.toLowerCase())) return false;
+    if (filters.campaigns.length > 0 && !filters.campaigns.includes(campaign.id)) return false;
+    if (filters.adSets.length > 0 && !filters.adSets.includes(adSet.id)) return false;
+    return true;
+  });
+
+  const filteredAds = mockAds.filter(ad => {
+    const adSet = mockAdSets.find(as => as.id === ad.ad_set_id);
+    const campaign = mockCampaigns.find(c => c.id === ad.campaign_id);
+    if (!adSet || !campaign) return false;
+    if (filters.platforms.length > 0 && !filters.platforms.includes(campaign.platform.toLowerCase())) return false;
+    if (filters.campaigns.length > 0 && !filters.campaigns.includes(campaign.id)) return false;
+    if (filters.adSets.length > 0 && !filters.adSets.includes(adSet.id)) return false;
+    if (filters.ads.length > 0 && !filters.ads.includes(ad.id)) return false;
     return true;
   });
 
@@ -67,7 +88,7 @@ function App() {
     
     if (!campaign) return false;
     if (filters.platforms.length > 0 && !filters.platforms.includes(campaign.platform.toLowerCase())) return false;
-    if (filters.campaign && campaign.id !== filters.campaign) return false;
+    if (filters.campaigns.length > 0 && !filters.campaigns.includes(campaign.id)) return false;
     if (filters.dateRange[0] && metricDate < filters.dateRange[0]) return false;
     if (filters.dateRange[1] && metricDate > filters.dateRange[1]) return false;
     
@@ -201,6 +222,20 @@ function App() {
               campaigns={filteredCampaigns}
               metrics={filteredMetrics}
             />
+
+            {/* Debug Info */}
+            {(filters.platforms.length > 0 || filters.campaigns.length > 0 || filters.adSets.length > 0 || filters.ads.length > 0) && (
+              <Card className="bg-gray-50">
+                <h4 className="font-medium text-gray-900 mb-2">Filtros Aplicados:</h4>
+                <div className="text-sm text-gray-600 space-y-1">
+                  <div>Plataformas: {filters.platforms.length > 0 ? filters.platforms.join(', ') : 'Todas'}</div>
+                  <div>Campanhas: {filters.campaigns.length > 0 ? `${filters.campaigns.length} selecionadas` : 'Todas'}</div>
+                  <div>Conjuntos: {filters.adSets.length > 0 ? `${filters.adSets.length} selecionados` : 'Todos'}</div>
+                  <div>Anúncios: {filters.ads.length > 0 ? `${filters.ads.length} selecionados` : 'Todos'}</div>
+                  <div>Resultados: {filteredCampaigns.length} campanhas, {filteredMetrics.length} métricas</div>
+                </div>
+              </Card>
+            )}
           </>
         );
     }

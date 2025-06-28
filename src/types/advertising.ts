@@ -37,6 +37,16 @@ export interface AdSet {
   targeting: string;
 }
 
+export interface Ad {
+  id: string;
+  name: string;
+  ad_set_id: string;
+  campaign_id: string;
+  status: 'Active' | 'Paused' | 'Ended';
+  ad_type: 'single_image' | 'carousel' | 'video' | 'text' | 'shopping' | 'display';
+  creative_url?: string;
+}
+
 export interface AdMetrics {
   id: string;
   campaign_id: string;
@@ -64,6 +74,7 @@ export interface FilterOptions {
   platforms: string[];
   campaigns: string[];
   adSets: string[];
+  ads: string[];
   dateRange: DateRange;
 }
 

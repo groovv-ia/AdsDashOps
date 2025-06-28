@@ -1,4 +1,4 @@
-import { Campaign, AdMetrics, AdAccount, AdSet } from '../types/advertising';
+import { Campaign, AdMetrics, AdAccount, AdSet, Ad } from '../types/advertising';
 
 export const mockAdAccounts: AdAccount[] = [
   {
@@ -164,6 +164,113 @@ export const mockAdSets: AdSet[] = [
     status: 'Paused',
     daily_budget: 250,
     targeting: 'Google Shopping, Produtos em promoção',
+  },
+];
+
+export const mockAds: Ad[] = [
+  // Meta Ads
+  {
+    id: 'ad_1',
+    name: 'Vestido Verão - Imagem Única',
+    ad_set_id: 'adset_1',
+    campaign_id: '1',
+    status: 'Active',
+    ad_type: 'single_image',
+    creative_url: 'https://images.pexels.com/photos/1536619/pexels-photo-1536619.jpeg',
+  },
+  {
+    id: 'ad_2',
+    name: 'Vestido Verão - Carrossel',
+    ad_set_id: 'adset_1',
+    campaign_id: '1',
+    status: 'Active',
+    ad_type: 'carousel',
+    creative_url: 'https://images.pexels.com/photos/1536619/pexels-photo-1536619.jpeg',
+  },
+  {
+    id: 'ad_3',
+    name: 'Sapatos Masculinos - Vídeo',
+    ad_set_id: 'adset_2',
+    campaign_id: '1',
+    status: 'Active',
+    ad_type: 'video',
+    creative_url: 'https://images.pexels.com/photos/1598505/pexels-photo-1598505.jpeg',
+  },
+  {
+    id: 'ad_4',
+    name: 'Retargeting - Oferta Especial',
+    ad_set_id: 'adset_3',
+    campaign_id: '4',
+    status: 'Active',
+    ad_type: 'single_image',
+    creative_url: 'https://images.pexels.com/photos/1536619/pexels-photo-1536619.jpeg',
+  },
+
+  // TikTok Ads
+  {
+    id: 'ad_5',
+    name: 'Trend Dance Challenge',
+    ad_set_id: 'adset_4',
+    campaign_id: '2',
+    status: 'Active',
+    ad_type: 'video',
+    creative_url: 'https://images.pexels.com/photos/1536619/pexels-photo-1536619.jpeg',
+  },
+  {
+    id: 'ad_6',
+    name: 'Sustainable Fashion Story',
+    ad_set_id: 'adset_5',
+    campaign_id: '2',
+    status: 'Active',
+    ad_type: 'video',
+    creative_url: 'https://images.pexels.com/photos/1536619/pexels-photo-1536619.jpeg',
+  },
+  {
+    id: 'ad_7',
+    name: 'Influencer Collaboration',
+    ad_set_id: 'adset_6',
+    campaign_id: '6',
+    status: 'Active',
+    ad_type: 'video',
+    creative_url: 'https://images.pexels.com/photos/1536619/pexels-photo-1536619.jpeg',
+  },
+
+  // Google Ads
+  {
+    id: 'ad_8',
+    name: 'Sapatos Femininos - Texto',
+    ad_set_id: 'adset_7',
+    campaign_id: '3',
+    status: 'Active',
+    ad_type: 'text',
+    creative_url: '',
+  },
+  {
+    id: 'ad_9',
+    name: 'Sapatos Femininos - Shopping',
+    ad_set_id: 'adset_7',
+    campaign_id: '3',
+    status: 'Active',
+    ad_type: 'shopping',
+    creative_url: 'https://images.pexels.com/photos/1598505/pexels-photo-1598505.jpeg',
+  },
+  {
+    id: 'ad_10',
+    name: 'Sapatos Masculinos - Texto',
+    ad_set_id: 'adset_8',
+    campaign_id: '3',
+    status: 'Active',
+    ad_type: 'text',
+    creative_url: '',
+  },
+  {
+    id: 'ad_11',
+    name: 'Black Friday - Banner',
+    ad_set_id: 'adset_9',
+    campaign_id: '5',
+    status: 'Paused',
+    ad_type: 'display',
+    creative_url: 'https://images.pexels.com/photos/1536619/pexels-photo-1536619.jpeg',
   },
 ];
 

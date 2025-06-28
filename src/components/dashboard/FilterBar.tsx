@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Calendar, Filter, Download, RefreshCw, ChevronDown, X, Check } from 'lucide-react';
+import { Calendar, Filter, Download, RefreshCw, ChevronDown, X, Check, ChevronRight } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
-import { mockCampaigns, mockAdSets } from '../../data/mockData';
+import { mockCampaigns, mockAdSets, mockAds } from '../../data/mockData';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 
@@ -46,30 +46,54 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onRefresh
 }) => {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
-  const [selectedAdSet, setSelectedAdSet] = useState<string>('');
-  const [selectedCampaign, setSelectedCampaign] = useState<string>('');
+  const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([]);
+  const [selectedAdSets, setSelectedAdSets] = useState<string[]>([]);
+  const [selectedAds, setSelectedAds] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
     new Date()
   ]);
-  const [showAdSetDropdown, setShowAdSetDropdown] = useState(false);
-  const [showCampaignDropdown, setShowCampaignDropdown] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<{[key: string]: boolean}>({
+    campaigns: false,
+    adSets: false,
+    ads: false
+  });
 
-  // Filter ad sets based on selected platforms
+  // Filter available options based on selections
+  const availableCampaigns = mockCampaigns.filter(campaign => 
+    selectedPlatforms.length === 0 || selectedPlatforms.includes(campaign.platform.toLowerCase())
+  );
+
   const availableAdSets = mockAdSets.filter(adSet => {
-    if (selectedPlatforms.length === 0) return false;
     const campaign = mockCampaigns.find(c => c.id === adSet.campaign_id);
-    return campaign && selectedPlatforms.includes(campaign.platform.toLowerCase());
+    if (!campaign) return false;
+    if (selectedPlatforms.length > 0 && !selectedPlatforms.includes(campaign.platform.toLowerCase())) return false;
+    if (selectedCampaigns.length > 0 && !selectedCampaigns.includes(campaign.id)) return false;
+    return true;
   });
 
-  // Filter campaigns based on selected platforms and ad sets
-  const availableCampaigns = mockCampaigns.filter(campaign => {
-    if (selectedPlatforms.length === 0) return false;
-    if (!selectedAdSet) return selectedPlatforms.includes(campaign.platform.toLowerCase());
-    return availableAdSets.some(adSet => adSet.campaign_id === campaign.id && adSet.id === selectedAdSet);
+  const availableAds = mockAds.filter(ad => {
+    const adSet = mockAdSets.find(as => as.id === ad.ad_set_id);
+    const campaign = mockCampaigns.find(c => c.id === ad.campaign_id);
+    if (!adSet || !campaign) return false;
+    if (selectedPlatforms.length > 0 && !selectedPlatforms.includes(campaign.platform.toLowerCase())) return false;
+    if (selectedCampaigns.length > 0 && !selectedCampaigns.includes(campaign.id)) return false;
+    if (selectedAdSets.length > 0 && !selectedAdSets.includes(adSet.id)) return false;
+    return true;
   });
+
+  const updateFilters = (updates: any) => {
+    onFilterChange({
+      platforms: selectedPlatforms,
+      campaigns: selectedCampaigns,
+      adSets: selectedAdSets,
+      ads: selectedAds,
+      dateRange,
+      ...updates,
+    });
+  };
 
   const handlePlatformToggle = (platformId: string) => {
     const newSelectedPlatforms = selectedPlatforms.includes(platformId)
@@ -77,328 +101,443 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       : [...selectedPlatforms, platformId];
     
     setSelectedPlatforms(newSelectedPlatforms);
-    setSelectedAdSet('');
-    setSelectedCampaign('');
+    setSelectedCampaigns([]);
+    setSelectedAdSets([]);
+    setSelectedAds([]);
     
-    onFilterChange({
+    updateFilters({
       platforms: newSelectedPlatforms,
-      adSet: '',
-      campaign: '',
-      dateRange,
+      campaigns: [],
+      adSets: [],
+      ads: [],
     });
   };
 
-  const handleSelectAllPlatforms = () => {
-    const allPlatformIds = platforms.map(p => p.id);
-    setSelectedPlatforms(allPlatformIds);
-    setSelectedAdSet('');
-    setSelectedCampaign('');
+  const handleCampaignToggle = (campaignId: string) => {
+    const newSelectedCampaigns = selectedCampaigns.includes(campaignId)
+      ? selectedCampaigns.filter(id => id !== campaignId)
+      : [...selectedCampaigns, campaignId];
     
-    onFilterChange({
-      platforms: allPlatformIds,
-      adSet: '',
-      campaign: '',
-      dateRange,
+    setSelectedCampaigns(newSelectedCampaigns);
+    setSelectedAdSets([]);
+    setSelectedAds([]);
+    
+    updateFilters({
+      campaigns: newSelectedCampaigns,
+      adSets: [],
+      ads: [],
     });
   };
 
-  const handleClearAllPlatforms = () => {
+  const handleAdSetToggle = (adSetId: string) => {
+    const newSelectedAdSets = selectedAdSets.includes(adSetId)
+      ? selectedAdSets.filter(id => id !== adSetId)
+      : [...selectedAdSets, adSetId];
+    
+    setSelectedAdSets(newSelectedAdSets);
+    setSelectedAds([]);
+    
+    updateFilters({
+      adSets: newSelectedAdSets,
+      ads: [],
+    });
+  };
+
+  const handleAdToggle = (adId: string) => {
+    const newSelectedAds = selectedAds.includes(adId)
+      ? selectedAds.filter(id => id !== adId)
+      : [...selectedAds, adId];
+    
+    setSelectedAds(newSelectedAds);
+    
+    updateFilters({
+      ads: newSelectedAds,
+    });
+  };
+
+  const handleSelectAll = (type: 'platforms' | 'campaigns' | 'adSets' | 'ads') => {
+    switch (type) {
+      case 'platforms':
+        const allPlatformIds = platforms.map(p => p.id);
+        setSelectedPlatforms(allPlatformIds);
+        setSelectedCampaigns([]);
+        setSelectedAdSets([]);
+        setSelectedAds([]);
+        updateFilters({ platforms: allPlatformIds, campaigns: [], adSets: [], ads: [] });
+        break;
+      case 'campaigns':
+        const allCampaignIds = availableCampaigns.map(c => c.id);
+        setSelectedCampaigns(allCampaignIds);
+        setSelectedAdSets([]);
+        setSelectedAds([]);
+        updateFilters({ campaigns: allCampaignIds, adSets: [], ads: [] });
+        break;
+      case 'adSets':
+        const allAdSetIds = availableAdSets.map(as => as.id);
+        setSelectedAdSets(allAdSetIds);
+        setSelectedAds([]);
+        updateFilters({ adSets: allAdSetIds, ads: [] });
+        break;
+      case 'ads':
+        const allAdIds = availableAds.map(a => a.id);
+        setSelectedAds(allAdIds);
+        updateFilters({ ads: allAdIds });
+        break;
+    }
+  };
+
+  const handleClearAll = () => {
     setSelectedPlatforms([]);
-    setSelectedAdSet('');
-    setSelectedCampaign('');
-    
-    onFilterChange({
-      platforms: [],
-      adSet: '',
-      campaign: '',
-      dateRange,
-    });
-  };
-
-  const handleAdSetSelect = (adSetId: string) => {
-    setSelectedAdSet(adSetId);
-    setSelectedCampaign('');
-    setShowAdSetDropdown(false);
-    
-    onFilterChange({
-      platforms: selectedPlatforms,
-      adSet: adSetId,
-      campaign: '',
-      dateRange,
-    });
-  };
-
-  const handleCampaignSelect = (campaignId: string) => {
-    setSelectedCampaign(campaignId);
-    setShowCampaignDropdown(false);
-    
-    onFilterChange({
-      platforms: selectedPlatforms,
-      adSet: selectedAdSet,
-      campaign: campaignId,
-      dateRange,
-    });
+    setSelectedCampaigns([]);
+    setSelectedAdSets([]);
+    setSelectedAds([]);
+    updateFilters({ platforms: [], campaigns: [], adSets: [], ads: [] });
   };
 
   const handleDateRangeChange = (update: [Date | null, Date | null]) => {
     setDateRange(update);
-    onFilterChange({
-      platforms: selectedPlatforms,
-      adSet: selectedAdSet,
-      campaign: selectedCampaign,
-      dateRange: update,
-    });
+    updateFilters({ dateRange: update });
   };
 
-  const selectedAdSetData = mockAdSets.find(a => a.id === selectedAdSet);
-  const selectedCampaignData = mockCampaigns.find(c => c.id === selectedCampaign);
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
-  const getActivePlatformsText = () => {
-    if (selectedPlatforms.length === 0) return 'Nenhuma plataforma selecionada';
-    if (selectedPlatforms.length === platforms.length) return 'Todas as plataformas';
-    if (selectedPlatforms.length === 1) {
-      const platform = platforms.find(p => p.id === selectedPlatforms[0]);
-      return platform?.name || 'Plataforma selecionada';
+  const getSelectionSummary = () => {
+    const parts = [];
+    if (selectedPlatforms.length > 0) {
+      parts.push(`${selectedPlatforms.length} plataforma${selectedPlatforms.length > 1 ? 's' : ''}`);
     }
-    return `${selectedPlatforms.length} plataformas selecionadas`;
+    if (selectedCampaigns.length > 0) {
+      parts.push(`${selectedCampaigns.length} campanha${selectedCampaigns.length > 1 ? 's' : ''}`);
+    }
+    if (selectedAdSets.length > 0) {
+      parts.push(`${selectedAdSets.length} conjunto${selectedAdSets.length > 1 ? 's' : ''}`);
+    }
+    if (selectedAds.length > 0) {
+      parts.push(`${selectedAds.length} anúncio${selectedAds.length > 1 ? 's' : ''}`);
+    }
+    return parts.length > 0 ? parts.join(', ') : 'Nenhum filtro aplicado';
+  };
+
+  const getAdTypeIcon = (adType: string) => {
+    switch (adType) {
+      case 'video': return '🎥';
+      case 'single_image': return '🖼️';
+      case 'carousel': return '🎠';
+      case 'text': return '📝';
+      case 'shopping': return '🛍️';
+      case 'display': return '🖥️';
+      default: return '📄';
+    }
   };
 
   return (
     <Card className="mb-6">
       <div className="space-y-6">
-        {/* Quick Platform Selection */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Filtros de Análise</h3>
-              <p className="text-sm text-gray-600">Selecione as plataformas e configure os filtros</p>
-            </div>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Filtros de Análise</h3>
+            <p className="text-sm text-gray-600">{getSelectionSummary()}</p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClearAll}
+              disabled={selectedPlatforms.length === 0}
+            >
+              Limpar Tudo
+            </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setShowFilters(!showFilters)}
               icon={Filter}
             >
-              {showFilters ? 'Ocultar Filtros' : 'Mais Filtros'}
+              {showFilters ? 'Ocultar' : 'Expandir'}
             </Button>
-          </div>
-
-          {/* Platform Cards */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">
-                Plataformas de Publicidade
-              </label>
-              <div className="flex space-x-2">
-                <button
-                  onClick={handleSelectAllPlatforms}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  Selecionar Todas
-                </button>
-                <span className="text-xs text-gray-400">•</span>
-                <button
-                  onClick={handleClearAllPlatforms}
-                  className="text-xs text-gray-600 hover:text-gray-800 font-medium"
-                >
-                  Limpar
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {platforms.map((platform) => {
-                const isSelected = selectedPlatforms.includes(platform.id);
-                return (
-                  <button
-                    key={platform.id}
-                    onClick={() => handlePlatformToggle(platform.id)}
-                    className={`
-                      relative p-4 rounded-xl border-2 transition-all duration-200 text-left
-                      ${isSelected 
-                        ? 'border-blue-500 bg-blue-50 shadow-md' 
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                      }
-                    `}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="relative">
-                        <img 
-                          src={platform.logo} 
-                          alt={platform.name}
-                          className="w-8 h-8 object-contain"
-                        />
-                        {isSelected && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5 text-white" />
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900">{platform.name}</h4>
-                        <p className="text-xs text-gray-500">
-                          {mockCampaigns.filter(c => c.platform.toLowerCase() === platform.id).length} campanhas
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Selected Platforms Summary */}
-            {selectedPlatforms.length > 0 && (
-              <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex items-center space-x-2 flex-1">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <span className="text-sm font-medium text-blue-900">
-                    {getActivePlatformsText()}
-                  </span>
-                </div>
-                <button
-                  onClick={handleClearAllPlatforms}
-                  className="text-blue-600 hover:text-blue-800"
-                  title="Limpar seleção"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Advanced Filters - Collapsible */}
-        {showFilters && selectedPlatforms.length > 0 && (
-          <div className="space-y-4 pt-4 border-t border-gray-200">
-            {/* Ad Set Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                Grupo de Anúncios (Opcional)
-              </label>
-              <div className="relative">
-                <button
-                  onClick={() => setShowAdSetDropdown(!showAdSetDropdown)}
-                  className="w-full lg:w-80 flex items-center justify-between px-4 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                >
-                  {selectedAdSetData ? (
-                    <div>
-                      <div className="font-medium text-gray-900">{selectedAdSetData.name}</div>
-                      <div className="text-sm text-gray-500">{selectedAdSetData.targeting}</div>
-                    </div>
-                  ) : (
-                    <span className="text-gray-500">Todos os grupos de anúncios</span>
-                  )}
-                  <ChevronDown className="w-5 h-5 text-gray-400" />
-                </button>
+        {/* Platform Selection */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-sm font-medium text-gray-700">
+              1. Plataformas de Publicidade
+            </label>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => handleSelectAll('platforms')}
+                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Todas
+              </button>
+            </div>
+          </div>
 
-                {showAdSetDropdown && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-40" 
-                      onClick={() => setShowAdSetDropdown(false)}
-                    />
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-w-80 max-h-60 overflow-y-auto">
-                      <button
-                        onClick={() => {
-                          setSelectedAdSet('');
-                          setShowAdSetDropdown(false);
-                          onFilterChange({
-                            platforms: selectedPlatforms,
-                            adSet: '',
-                            campaign: selectedCampaign,
-                            dateRange,
-                          });
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 font-medium text-gray-600"
-                      >
-                        Todos os grupos de anúncios
-                      </button>
-                      {availableAdSets.length > 0 ? (
-                        availableAdSets.map((adSet) => (
-                          <button
-                            key={adSet.id}
-                            onClick={() => handleAdSetSelect(adSet.id)}
-                            className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
-                          >
-                            <div className="font-medium text-gray-900">{adSet.name}</div>
-                            <div className="text-sm text-gray-500">{adSet.targeting}</div>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-4 py-3 text-gray-500 text-center">
-                          Nenhum grupo de anúncios disponível
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {platforms.map((platform) => {
+              const isSelected = selectedPlatforms.includes(platform.id);
+              const campaignCount = mockCampaigns.filter(c => c.platform.toLowerCase() === platform.id).length;
+              
+              return (
+                <button
+                  key={platform.id}
+                  onClick={() => handlePlatformToggle(platform.id)}
+                  className={`
+                    relative p-4 rounded-xl border-2 transition-all duration-200 text-left
+                    ${isSelected 
+                      ? 'border-blue-500 bg-blue-50 shadow-md' 
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    }
+                  `}
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="relative">
+                      <img 
+                        src={platform.logo} 
+                        alt={platform.name}
+                        className="w-8 h-8 object-contain"
+                      />
+                      {isSelected && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                          <Check className="w-2.5 h-2.5 text-white" />
                         </div>
                       )}
                     </div>
-                  </>
-                )}
-              </div>
-            </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">{platform.name}</h4>
+                      <p className="text-xs text-gray-500">{campaignCount} campanhas</p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
+        {/* Hierarchical Filters */}
+        {selectedPlatforms.length > 0 && (showFilters || selectedCampaigns.length > 0 || selectedAdSets.length > 0 || selectedAds.length > 0) && (
+          <div className="space-y-4 pt-4 border-t border-gray-200">
+            
             {/* Campaign Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                Campanha Específica (Opcional)
-              </label>
-              <div className="relative">
+              <div className="flex items-center justify-between mb-3">
                 <button
-                  onClick={() => setShowCampaignDropdown(!showCampaignDropdown)}
-                  className="w-full lg:w-80 flex items-center justify-between px-4 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                  onClick={() => toggleSection('campaigns')}
+                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900"
                 >
-                  {selectedCampaignData ? (
-                    <div>
-                      <div className="font-medium text-gray-900">{selectedCampaignData.name}</div>
-                      <div className="text-sm text-gray-500">{selectedCampaignData.objective} • {selectedCampaignData.platform}</div>
-                    </div>
-                  ) : (
-                    <span className="text-gray-500">Todas as campanhas</span>
-                  )}
-                  <ChevronDown className="w-5 h-5 text-gray-400" />
+                  <ChevronRight className={`w-4 h-4 transition-transform ${expandedSections.campaigns ? 'rotate-90' : ''}`} />
+                  <span>2. Campanhas ({availableCampaigns.length} disponíveis)</span>
                 </button>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleSelectAll('campaigns')}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    disabled={availableCampaigns.length === 0}
+                  >
+                    Todas
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedCampaigns([]);
+                      setSelectedAdSets([]);
+                      setSelectedAds([]);
+                      updateFilters({ campaigns: [], adSets: [], ads: [] });
+                    }}
+                    className="text-xs text-gray-600 hover:text-gray-800 font-medium"
+                    disabled={selectedCampaigns.length === 0}
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
 
-                {showCampaignDropdown && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-40" 
-                      onClick={() => setShowCampaignDropdown(false)}
-                    />
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-w-80 max-h-60 overflow-y-auto">
+              {expandedSections.campaigns && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 ml-6">
+                  {availableCampaigns.map((campaign) => {
+                    const isSelected = selectedCampaigns.includes(campaign.id);
+                    const platform = platforms.find(p => p.id === campaign.platform.toLowerCase());
+                    
+                    return (
                       <button
-                        onClick={() => {
-                          setSelectedCampaign('');
-                          setShowCampaignDropdown(false);
-                          onFilterChange({
-                            platforms: selectedPlatforms,
-                            adSet: selectedAdSet,
-                            campaign: '',
-                            dateRange,
-                          });
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 font-medium text-gray-600"
+                        key={campaign.id}
+                        onClick={() => handleCampaignToggle(campaign.id)}
+                        className={`
+                          p-3 rounded-lg border text-left transition-all
+                          ${isSelected 
+                            ? 'border-blue-500 bg-blue-50' 
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }
+                        `}
                       >
-                        Todas as campanhas
-                      </button>
-                      {availableCampaigns.length > 0 ? (
-                        availableCampaigns.map((campaign) => (
-                          <button
-                            key={campaign.id}
-                            onClick={() => handleCampaignSelect(campaign.id)}
-                            className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
-                          >
-                            <div className="font-medium text-gray-900">{campaign.name}</div>
-                            <div className="text-sm text-gray-500">{campaign.objective} • {campaign.platform} • {campaign.status}</div>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-4 py-3 text-gray-500 text-center">
-                          Nenhuma campanha disponível
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="font-medium text-sm text-gray-900">{campaign.name}</div>
+                            <div className="text-xs text-gray-500 flex items-center space-x-2">
+                              <span>{campaign.objective}</span>
+                              <span>•</span>
+                              <span className="flex items-center space-x-1">
+                                <img src={platform?.logo} alt={campaign.platform} className="w-3 h-3" />
+                                <span>{campaign.platform}</span>
+                              </span>
+                            </div>
+                          </div>
+                          {isSelected && <Check className="w-4 h-4 text-blue-500" />}
                         </div>
-                      )}
-                    </div>
-                  </>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Ad Set Selection */}
+            {selectedCampaigns.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    onClick={() => toggleSection('adSets')}
+                    className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                  >
+                    <ChevronRight className={`w-4 h-4 transition-transform ${expandedSections.adSets ? 'rotate-90' : ''}`} />
+                    <span>3. Conjuntos de Anúncios ({availableAdSets.length} disponíveis)</span>
+                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleSelectAll('adSets')}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      disabled={availableAdSets.length === 0}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedAdSets([]);
+                        setSelectedAds([]);
+                        updateFilters({ adSets: [], ads: [] });
+                      }}
+                      className="text-xs text-gray-600 hover:text-gray-800 font-medium"
+                      disabled={selectedAdSets.length === 0}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+
+                {expandedSections.adSets && (
+                  <div className="grid grid-cols-1 gap-2 ml-6">
+                    {availableAdSets.map((adSet) => {
+                      const isSelected = selectedAdSets.includes(adSet.id);
+                      const campaign = mockCampaigns.find(c => c.id === adSet.campaign_id);
+                      
+                      return (
+                        <button
+                          key={adSet.id}
+                          onClick={() => handleAdSetToggle(adSet.id)}
+                          className={`
+                            p-3 rounded-lg border text-left transition-all
+                            ${isSelected 
+                              ? 'border-blue-500 bg-blue-50' 
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }
+                          `}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="font-medium text-sm text-gray-900">{adSet.name}</div>
+                              <div className="text-xs text-gray-500">
+                                <div>{adSet.targeting}</div>
+                                <div className="mt-1">
+                                  Campanha: {campaign?.name} • Orçamento: R${adSet.daily_budget}/dia
+                                </div>
+                              </div>
+                            </div>
+                            {isSelected && <Check className="w-4 h-4 text-blue-500" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-            </div>
+            )}
+
+            {/* Ad Selection */}
+            {selectedAdSets.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <button
+                    onClick={() => toggleSection('ads')}
+                    className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                  >
+                    <ChevronRight className={`w-4 h-4 transition-transform ${expandedSections.ads ? 'rotate-90' : ''}`} />
+                    <span>4. Anúncios ({availableAds.length} disponíveis)</span>
+                  </button>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleSelectAll('ads')}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      disabled={availableAds.length === 0}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedAds([]);
+                        updateFilters({ ads: [] });
+                      }}
+                      className="text-xs text-gray-600 hover:text-gray-800 font-medium"
+                      disabled={selectedAds.length === 0}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+
+                {expandedSections.ads && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 ml-6">
+                    {availableAds.map((ad) => {
+                      const isSelected = selectedAds.includes(ad.id);
+                      const adSet = mockAdSets.find(as => as.id === ad.ad_set_id);
+                      
+                      return (
+                        <button
+                          key={ad.id}
+                          onClick={() => handleAdToggle(ad.id)}
+                          className={`
+                            p-3 rounded-lg border text-left transition-all
+                            ${isSelected 
+                              ? 'border-blue-500 bg-blue-50' 
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }
+                          `}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="font-medium text-sm text-gray-900 flex items-center space-x-2">
+                                <span>{getAdTypeIcon(ad.ad_type)}</span>
+                                <span>{ad.name}</span>
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                <div>Tipo: {ad.ad_type} • Status: {ad.status}</div>
+                                <div>Conjunto: {adSet?.name}</div>
+                              </div>
+                            </div>
+                            {isSelected && <Check className="w-4 h-4 text-blue-500" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
