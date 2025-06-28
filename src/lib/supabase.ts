@@ -10,65 +10,147 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export const signIn = async (email: string, password: string) => {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-  return { data, error };
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    if (error) {
+      console.error('Sign in error:', error);
+    } else {
+      console.log('Sign in successful:', data.user?.email);
+    }
+    
+    return { data, error };
+  } catch (error) {
+    console.error('Sign in exception:', error);
+    return { data: null, error };
+  }
 };
 
 export const signUp = async (email: string, password: string, fullName?: string) => {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: fullName,
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        },
       },
-    },
-  });
-  return { data, error };
+    });
+    
+    if (error) {
+      console.error('Sign up error:', error);
+    } else {
+      console.log('Sign up successful:', data.user?.email);
+    }
+    
+    return { data, error };
+  } catch (error) {
+    console.error('Sign up exception:', error);
+    return { data: null, error };
+  }
 };
 
 export const signOut = async () => {
-  const { error } = await supabase.auth.signOut();
-  return { error };
+  try {
+    const { error } = await supabase.auth.signOut();
+    
+    if (error) {
+      console.error('Sign out error:', error);
+    } else {
+      console.log('Sign out successful');
+    }
+    
+    return { error };
+  } catch (error) {
+    console.error('Sign out exception:', error);
+    return { error };
+  }
 };
 
 export const signInWithProvider = async (provider: 'google' | 'facebook' | 'apple') => {
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo: `${window.location.origin}`,
-      queryParams: {
-        access_type: 'offline',
-        prompt: 'consent',
+  try {
+    console.log(`Attempting ${provider} OAuth login...`);
+    
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
-    },
-  });
-  return { data, error };
+    });
+    
+    if (error) {
+      console.error(`${provider} OAuth error:`, error);
+    } else {
+      console.log(`${provider} OAuth initiated successfully`);
+    }
+    
+    return { data, error };
+  } catch (error) {
+    console.error(`${provider} OAuth exception:`, error);
+    return { data: null, error };
+  }
 };
 
 export const resetPassword = async (email: string) => {
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/reset-password`,
-  });
-  return { error };
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    
+    if (error) {
+      console.error('Reset password error:', error);
+    } else {
+      console.log('Reset password email sent to:', email);
+    }
+    
+    return { error };
+  } catch (error) {
+    console.error('Reset password exception:', error);
+    return { error };
+  }
 };
 
 export const getCurrentUser = async () => {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  return { user, error };
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    
+    if (error) {
+      console.error('Get current user error:', error);
+    }
+    
+    return { user, error };
+  } catch (error) {
+    console.error('Get current user exception:', error);
+    return { user: null, error };
+  }
 };
 
 // Helper function to check if user is authenticated
 export const isAuthenticated = async () => {
-  const { data: { session } } = await supabase.auth.getSession();
-  return !!session;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return !!session;
+  } catch (error) {
+    console.error('Check authentication error:', error);
+    return false;
+  }
 };
 
 // Helper function to get user profile
 export const getUserProfile = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  return user;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    return user;
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    return null;
+  }
 };
