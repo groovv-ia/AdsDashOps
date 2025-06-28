@@ -45,7 +45,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onExport,
   onRefresh
 }) => {
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [selectedPlatform, setSelectedPlatform] = useState<string>(''); // Changed to single platform
   const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([]);
   const [selectedAdSets, setSelectedAdSets] = useState<string[]>([]);
   const [selectedAds, setSelectedAds] = useState<string[]>([]);
@@ -60,13 +60,13 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   // Filter available options based on selections
   const availableCampaigns = mockCampaigns.filter(campaign => 
-    selectedPlatforms.length === 0 || selectedPlatforms.includes(campaign.platform.toLowerCase())
+    !selectedPlatform || campaign.platform.toLowerCase() === selectedPlatform
   );
 
   const availableAdSets = mockAdSets.filter(adSet => {
     const campaign = mockCampaigns.find(c => c.id === adSet.campaign_id);
     if (!campaign) return false;
-    if (selectedPlatforms.length > 0 && !selectedPlatforms.includes(campaign.platform.toLowerCase())) return false;
+    if (selectedPlatform && campaign.platform.toLowerCase() !== selectedPlatform) return false;
     if (selectedCampaigns.length > 0 && !selectedCampaigns.includes(campaign.id)) return false;
     return true;
   });
@@ -75,7 +75,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     const adSet = mockAdSets.find(as => as.id === ad.ad_set_id);
     const campaign = mockCampaigns.find(c => c.id === ad.campaign_id);
     if (!adSet || !campaign) return false;
-    if (selectedPlatforms.length > 0 && !selectedPlatforms.includes(campaign.platform.toLowerCase())) return false;
+    if (selectedPlatform && campaign.platform.toLowerCase() !== selectedPlatform) return false;
     if (selectedCampaigns.length > 0 && !selectedCampaigns.includes(campaign.id)) return false;
     if (selectedAdSets.length > 0 && !selectedAdSets.includes(adSet.id)) return false;
     return true;
@@ -83,7 +83,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const updateFilters = (updates: any) => {
     onFilterChange({
-      platforms: selectedPlatforms,
+      platforms: selectedPlatform ? [selectedPlatform] : [], // Convert to array for compatibility
       campaigns: selectedCampaigns,
       adSets: selectedAdSets,
       ads: selectedAds,
@@ -92,18 +92,17 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     });
   };
 
-  const handlePlatformToggle = (platformId: string) => {
-    const newSelectedPlatforms = selectedPlatforms.includes(platformId)
-      ? selectedPlatforms.filter(id => id !== platformId)
-      : [...selectedPlatforms, platformId];
+  const handlePlatformSelect = (platformId: string) => {
+    // If clicking the same platform, deselect it
+    const newSelectedPlatform = selectedPlatform === platformId ? '' : platformId;
     
-    setSelectedPlatforms(newSelectedPlatforms);
+    setSelectedPlatform(newSelectedPlatform);
     setSelectedCampaigns([]);
     setSelectedAdSets([]);
     setSelectedAds([]);
     
     updateFilters({
-      platforms: newSelectedPlatforms,
+      platforms: newSelectedPlatform ? [newSelectedPlatform] : [],
       campaigns: [],
       adSets: [],
       ads: [],
@@ -152,17 +151,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     });
   };
 
-  const handleSelectAllPlatforms = () => {
-    const allPlatformIds = platforms.map(p => p.id);
-    setSelectedPlatforms(allPlatformIds);
-    setSelectedCampaigns([]);
-    setSelectedAdSets([]);
-    setSelectedAds([]);
-    updateFilters({ platforms: allPlatformIds, campaigns: [], adSets: [], ads: [] });
-  };
-
   const handleClearAll = () => {
-    setSelectedPlatforms([]);
+    setSelectedPlatform('');
     setSelectedCampaigns([]);
     setSelectedAdSets([]);
     setSelectedAds([]);
@@ -176,8 +166,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const getSelectionSummary = () => {
     const parts = [];
-    if (selectedPlatforms.length > 0) {
-      parts.push(`${selectedPlatforms.length} plataforma${selectedPlatforms.length > 1 ? 's' : ''}`);
+    if (selectedPlatform) {
+      const platform = platforms.find(p => p.id === selectedPlatform);
+      parts.push(`${platform?.name}`);
     }
     if (selectedCampaigns.length > 0) {
       parts.push(`${selectedCampaigns.length} campanha${selectedCampaigns.length > 1 ? 's' : ''}`);
@@ -217,40 +208,35 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               variant="ghost"
               size="sm"
               onClick={handleClearAll}
-              disabled={selectedPlatforms.length === 0}
+              disabled={!selectedPlatform}
             >
               Limpar Tudo
             </Button>
           </div>
         </div>
 
-        {/* Platform Selection */}
+        {/* Platform Selection - Single Selection */}
         <div>
           <div className="flex items-center justify-between mb-4">
             <label className="text-sm font-medium text-gray-700">
-              1. Plataformas de Publicidade
+              1. Plataforma de Publicidade
             </label>
-            <button
-              onClick={handleSelectAllPlatforms}
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-            >
-              Todas
-            </button>
+            <span className="text-xs text-gray-500">Selecione apenas uma plataforma</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {platforms.map((platform) => {
-              const isSelected = selectedPlatforms.includes(platform.id);
+              const isSelected = selectedPlatform === platform.id;
               const campaignCount = mockCampaigns.filter(c => c.platform.toLowerCase() === platform.id).length;
               
               return (
                 <button
                   key={platform.id}
-                  onClick={() => handlePlatformToggle(platform.id)}
+                  onClick={() => handlePlatformSelect(platform.id)}
                   className={`
                     relative p-4 rounded-xl border-2 transition-all duration-200 text-left
                     ${isSelected 
-                      ? 'border-blue-500 bg-blue-50 shadow-md' 
+                      ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200' 
                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }
                   `}
@@ -273,14 +259,20 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                       <p className="text-xs text-gray-500">{campaignCount} campanhas</p>
                     </div>
                   </div>
+                  
+                  {isSelected && (
+                    <div className="absolute top-2 right-2">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    </div>
+                  )}
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Campaign Selection - Only show when platforms are selected */}
-        {selectedPlatforms.length > 0 && (
+        {/* Campaign Selection - Only show when platform is selected */}
+        {selectedPlatform && (
           <div>
             <div className="flex items-center justify-between mb-4">
               <label className="text-sm font-medium text-gray-700">
