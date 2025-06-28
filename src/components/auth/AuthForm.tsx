@@ -105,11 +105,11 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
         <div className="mx-auto w-full max-w-sm lg:w-96">
           {/* Logo */}
           <div className="mb-8">
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center justify-center">
               <img 
-                src="/image.png" 
+                src="/logotipo-adsops.webp" 
                 alt="AdsOPS" 
-                className="h-12 w-auto object-contain"
+                className="h-16 w-auto object-contain"
               />
             </div>
           </div>
