@@ -106,12 +106,11 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
           {/* Logo */}
           <div className="mb-8">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                </svg>
-              </div>
-              <span className="text-2xl font-bold text-gray-900">AdAnalytics</span>
+              <img 
+                src="/image.png" 
+                alt="AdsOPS" 
+                className="h-12 w-auto object-contain"
+              />
             </div>
           </div>
 
@@ -122,7 +121,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
             </h1>
             <p className="text-gray-600">
               {isLogin 
-                ? 'Faça login para acessar sua conta do AdAnalytics' 
+                ? 'Faça login para acessar sua conta do AdsOPS' 
                 : 'Crie sua conta para começar'
               }
             </p>

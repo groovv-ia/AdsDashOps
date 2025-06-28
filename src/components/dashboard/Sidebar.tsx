@@ -56,13 +56,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex flex-col h-full">
           <div className="p-6 border-b border-gray-200/50 flex-shrink-0">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-                <BarChart3 className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="font-semibold text-gray-900">AdAnalytics</h2>
-                <p className="text-xs text-gray-500">Painel Pro</p>
-              </div>
+              <img 
+                src="/image.png" 
+                alt="AdsOPS" 
+                className="h-10 w-auto object-contain"
+              />
             </div>
           </div>
 

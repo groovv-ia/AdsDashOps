@@ -46,7 +46,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           
           <div className="block sm:hidden">
             <h1 className="text-lg font-semibold text-gray-900">
-              Analytics
+              AdsOPS
             </h1>
           </div>
         </div>
