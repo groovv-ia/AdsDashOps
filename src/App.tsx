@@ -20,7 +20,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [filters, setFilters] = useState({
-    platform: '',
+    platforms: [] as string[],
     adSet: '',
     campaign: '',
     dateRange: [
@@ -56,7 +56,7 @@ function App() {
 
   // Filter data based on current filters
   const filteredCampaigns = mockCampaigns.filter(campaign => {
-    if (filters.platform && campaign.platform.toLowerCase() !== filters.platform) return false;
+    if (filters.platforms.length > 0 && !filters.platforms.includes(campaign.platform.toLowerCase())) return false;
     if (filters.campaign && campaign.id !== filters.campaign) return false;
     return true;
   });
@@ -66,7 +66,7 @@ function App() {
     const metricDate = new Date(metric.date);
     
     if (!campaign) return false;
-    if (filters.platform && campaign.platform.toLowerCase() !== filters.platform) return false;
+    if (filters.platforms.length > 0 && !filters.platforms.includes(campaign.platform.toLowerCase())) return false;
     if (filters.campaign && campaign.id !== filters.campaign) return false;
     if (filters.dateRange[0] && metricDate < filters.dateRange[0]) return false;
     if (filters.dateRange[1] && metricDate > filters.dateRange[1]) return false;
