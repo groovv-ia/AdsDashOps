@@ -59,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <img 
                 src="/logotipo-adsops.webp" 
                 alt="AdsOPS" 
-                className="h-12 w-auto object-contain"
+                className="h-16 w-auto object-contain"
               />
             </div>
           </div>
