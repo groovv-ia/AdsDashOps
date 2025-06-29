@@ -23,19 +23,19 @@ const platforms: Platform[] = [
   {
     id: 'meta',
     name: 'Meta',
-    logo: '/meta-logo.png',
+    logo: '/meta-icon.svg',
     color: 'bg-blue-500'
   },
   {
     id: 'google',
     name: 'Google Ads',
-    logo: '/google-ads-logo.png',
+    logo: '/google-ads-icon.svg',
     color: 'bg-green-500'
   },
   {
     id: 'tiktok',
     name: 'TikTok Ads',
-    logo: '/tiktok-logo.png',
+    logo: '/tiktok-icon.svg',
     color: 'bg-pink-500'
   }
 ];
@@ -246,7 +246,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                       <img 
                         src={platform.logo} 
                         alt={platform.name}
-                        className="w-12 h-12 object-contain rounded-lg"
+                        className="w-12 h-12 object-contain"
                       />
                       {isSelected && (
                         <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
@@ -334,7 +334,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                                 <span>{campaign.objective}</span>
                                 <span>•</span>
                                 <span className="flex items-center space-x-1">
-                                  <img src={platform?.logo} alt={campaign.platform} className="w-3 h-3 rounded" />
+                                  <img src={platform?.logo} alt={campaign.platform} className="w-3 h-3" />
                                   <span>{campaign.platform}</span>
                                 </span>
                               </div>

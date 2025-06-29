@@ -37,7 +37,7 @@ const availableConnectors = [
     name: 'Meta Ads',
     platform: 'Meta',
     type: 'advertising' as const,
-    logo: '/meta-logo.png',
+    logo: '/meta-icon.svg',
     description: 'Conecte suas campanhas do Facebook e Instagram Ads',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'ROAS']
   },
@@ -46,7 +46,7 @@ const availableConnectors = [
     name: 'Google Ads',
     platform: 'Google',
     type: 'advertising' as const,
-    logo: '/google-ads-logo.png',
+    logo: '/google-ads-icon.svg',
     description: 'Importe dados de campanhas do Google Ads',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'Quality Score']
   },
@@ -55,7 +55,7 @@ const availableConnectors = [
     name: 'TikTok Ads',
     platform: 'TikTok',
     type: 'advertising' as const,
-    logo: '/tiktok-logo.png',
+    logo: '/tiktok-icon.svg',
     description: 'Conecte suas campanhas do TikTok for Business',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'Video Views']
   },
@@ -64,7 +64,7 @@ const availableConnectors = [
     name: 'Google Analytics',
     platform: 'Google',
     type: 'analytics' as const,
-    logo: '/google-ads-logo.png',
+    logo: '/google-ads-icon.svg',
     description: 'Dados de tráfego e comportamento do usuário',
     metrics: ['Sessões', 'Usuários', 'Taxa de Rejeição', 'Duração da Sessão']
   },
@@ -73,7 +73,7 @@ const availableConnectors = [
     name: 'Facebook Insights',
     platform: 'Meta',
     type: 'analytics' as const,
-    logo: '/meta-logo.png',
+    logo: '/meta-icon.svg',
     description: 'Métricas de páginas e posts do Facebook',
     metrics: ['Alcance', 'Engajamento', 'Curtidas', 'Compartilhamentos']
   },
@@ -115,7 +115,7 @@ const mockDataSources: DataSource[] = [
     status: 'connected',
     lastSync: '2024-01-15T10:30:00Z',
     accountId: 'act_123456789',
-    logo: '/meta-logo.png',
+    logo: '/meta-icon.svg',
     description: 'Campanhas do Facebook e Instagram',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'ROAS']
   },
@@ -127,7 +127,7 @@ const mockDataSources: DataSource[] = [
     status: 'syncing',
     lastSync: '2024-01-15T09:15:00Z',
     accountId: '123-456-7890',
-    logo: '/google-ads-logo.png',
+    logo: '/google-ads-icon.svg',
     description: 'Campanhas de busca e display',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC']
   },
@@ -139,7 +139,7 @@ const mockDataSources: DataSource[] = [
     status: 'error',
     lastSync: '2024-01-14T16:45:00Z',
     accountId: 'tiktok_987654321',
-    logo: '/tiktok-logo.png',
+    logo: '/tiktok-icon.svg',
     description: 'Campanhas de vídeo e awareness',
     metrics: ['Impressões', 'Cliques', 'Video Views']
   }
@@ -291,7 +291,7 @@ export const DataSources: React.FC = () => {
                     <img 
                       src={source.logo} 
                       alt={source.name}
-                      className="w-10 h-10 object-contain rounded-lg"
+                      className="w-10 h-10 object-contain"
                     />
                   </div>
                   <div>
@@ -382,7 +382,7 @@ export const DataSources: React.FC = () => {
                           <img 
                             src={connector.logo} 
                             alt={connector.name}
-                            className="w-8 h-8 object-contain rounded"
+                            className="w-8 h-8 object-contain"
                           />
                         </div>
                         <div>
@@ -431,7 +431,7 @@ export const DataSources: React.FC = () => {
                   <img 
                     src={selectedConnector.logo} 
                     alt={selectedConnector.name}
-                    className="w-8 h-8 object-contain rounded"
+                    className="w-8 h-8 object-contain"
                   />
                 </div>
                 <div>
