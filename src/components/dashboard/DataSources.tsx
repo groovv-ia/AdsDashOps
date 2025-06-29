@@ -479,9 +479,14 @@ export const DataSources: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Fontes de Dados</h1>
-          <p className="text-gray-600">Conecte e gerencie suas fontes de dados de publicidade</p>
+        <div className="flex items-center space-x-3">
+          <div className="p-3 bg-gradient-to-r from-green-600 to-blue-600 rounded-lg">
+            <Database className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Fontes de Dados</h1>
+            <p className="text-gray-600">Conecte e gerencie suas fontes de dados de publicidade</p>
+          </div>
         </div>
         <Button
           onClick={() => setShowAddModal(true)}
