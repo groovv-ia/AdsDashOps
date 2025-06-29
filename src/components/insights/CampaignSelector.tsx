@@ -323,10 +323,14 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                 {showCampaignDropdown && (
                   <>
                     <div 
-                      className="fixed inset-0 z-[9999]" 
+                      className="fixed inset-0"
+                      style={{ zIndex: 99999 }}
                       onClick={() => setShowCampaignDropdown(false)}
                     />
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[10000] max-h-60 overflow-y-auto">
+                    <div 
+                      className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
+                      style={{ zIndex: 100000 }}
+                    >
                       {availableCampaigns.map((campaign) => {
                         const isSelected = selectedCampaigns.includes(campaign.id);
                         const platform = platforms.find(p => p.id === campaign.platform.toLowerCase());
@@ -387,10 +391,14 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                 {showAdSetDropdown && (
                   <>
                     <div 
-                      className="fixed inset-0 z-[9999]" 
+                      className="fixed inset-0"
+                      style={{ zIndex: 99999 }}
                       onClick={() => setShowAdSetDropdown(false)}
                     />
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[10000] max-h-60 overflow-y-auto">
+                    <div 
+                      className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
+                      style={{ zIndex: 100000 }}
+                    >
                       {availableAdSets.map((adSet) => {
                         const isSelected = selectedAdSets.includes(adSet.id);
                         const campaign = mockCampaigns.find(c => c.id === adSet.campaign_id);
@@ -449,10 +457,14 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                 {showAdDropdown && (
                   <>
                     <div 
-                      className="fixed inset-0 z-[9999]" 
+                      className="fixed inset-0"
+                      style={{ zIndex: 99999 }}
                       onClick={() => setShowAdDropdown(false)}
                     />
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[10000] max-h-60 overflow-y-auto">
+                    <div 
+                      className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
+                      style={{ zIndex: 100000 }}
+                    >
                       {availableAds.map((ad) => {
                         const isSelected = selectedAds.includes(ad.id);
                         const adSet = mockAdSets.find(as => as.id === ad.ad_set_id);
@@ -489,7 +501,7 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
       </Card>
 
       {/* Selection Summary Card */}
-      <Card className="bg-blue-50 border-blue-200 relative z-10">
+      <Card className="bg-blue-50 border-blue-200">
         <div className="space-y-4">
           <h4 className="font-semibold text-blue-900 text-lg">Seleção Atual</h4>
           
@@ -536,7 +548,7 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
       </Card>
 
       {/* Generate Analysis Button */}
-      <div className="flex justify-center relative z-10">
+      <div className="flex justify-center">
         <Button
           onClick={onGenerateAnalysis}
           loading={loading}
