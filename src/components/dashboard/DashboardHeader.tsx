@@ -11,12 +11,14 @@ interface DashboardHeaderProps {
   user: UserType;
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
+  onPageChange?: (page: string) => void;
 }
 
 export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   user,
   onToggleSidebar,
   sidebarOpen,
+  onPageChange,
 }) => {
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
@@ -25,6 +27,13 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   const handleSignOut = async () => {
     await signOut();
     window.location.reload();
+  };
+
+  const handleSettingsClick = () => {
+    if (onPageChange) {
+      onPageChange('settings');
+    }
+    setProfileDropdownOpen(false);
   };
 
   return (
@@ -96,7 +105,10 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                       <Bell className="w-4 h-4 mr-2" />
                       Notificações
                     </button>
-                    <button className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+                    <button 
+                      onClick={handleSettingsClick}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                    >
                       <Settings className="w-4 h-4 mr-2" />
                       Configurações
                     </button>
