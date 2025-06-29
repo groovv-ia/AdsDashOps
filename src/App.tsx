@@ -8,6 +8,7 @@ import { MetricsOverview } from './components/dashboard/MetricsOverview';
 import { PerformanceChart } from './components/dashboard/PerformanceChart';
 import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
+import { SettingsPage } from './components/settings/SettingsPage';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { mockCampaigns, mockMetrics, mockAdSets, mockAds } from './data/mockData';
@@ -178,6 +179,8 @@ function App() {
     switch (currentPage) {
       case 'data-sources':
         return <DataSources />;
+      case 'settings':
+        return <SettingsPage />;
       case 'overview':
       default:
         return (
