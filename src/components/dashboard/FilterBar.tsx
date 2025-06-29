@@ -15,27 +15,49 @@ interface FilterBarProps {
 interface Platform {
   id: string;
   name: string;
-  logo: string;
+  logo: React.ReactNode;
   color: string;
 }
+
+const MetaIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#1877F2"/>
+    <path d="M15.5 8.5c-1.5 0-2.5 1-2.5 2.5v1h-1v2h1v5h2v-5h1.5l.5-2h-2v-1c0-.5.5-1 1-1h1V8.5h-1.5z" fill="white"/>
+  </svg>
+);
+
+const GoogleIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+  </svg>
+);
+
+const TikTokIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43V7.56a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.01z" fill="#000"/>
+  </svg>
+);
 
 const platforms: Platform[] = [
   {
     id: 'meta',
     name: 'Meta',
-    logo: '/icons/meta-logo.png',
+    logo: <MetaIcon />,
     color: 'bg-blue-500'
   },
   {
     id: 'google',
     name: 'Google Ads',
-    logo: '/icons/google-ads-logo.png',
+    logo: <GoogleIcon />,
     color: 'bg-green-500'
   },
   {
     id: 'tiktok',
     name: 'TikTok Ads',
-    logo: '/icons/tiktok-logo.png',
+    logo: <TikTokIcon />,
     color: 'bg-pink-500'
   }
 ];
@@ -243,11 +265,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 >
                   <div className="flex items-center space-x-3">
                     <div className="relative">
-                      <img 
-                        src={platform.logo} 
-                        alt={platform.name}
-                        className="w-8 h-8 object-contain"
-                      />
+                      {platform.logo}
                       {isSelected && (
                         <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
                           <Check className="w-2.5 h-2.5 text-white" />
@@ -334,7 +352,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                                 <span>{campaign.objective}</span>
                                 <span>•</span>
                                 <span className="flex items-center space-x-1">
-                                  <img src={platform?.logo} alt={campaign.platform} className="w-3 h-3" />
+                                  <div className="w-3 h-3">{platform?.logo}</div>
                                   <span>{campaign.platform}</span>
                                 </span>
                               </div>
