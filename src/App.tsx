@@ -16,6 +16,7 @@ import { mockCampaigns, mockMetrics, mockAdSets, mockAds } from './data/mockData
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
 import { Card } from './components/ui/Card';
+import { BarChart3 } from 'lucide-react';
 
 function App() {
   const { user, loading } = useAuth();
@@ -193,6 +194,17 @@ function App() {
       default:
         return (
           <>
+            {/* Header with Icon */}
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg">
+                <BarChart3 className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
+                <p className="text-gray-600">Visão geral das suas campanhas de publicidade</p>
+              </div>
+            </div>
+            
             <FilterBar
               onFilterChange={handleFilterChange}
               onExport={handleExport}
