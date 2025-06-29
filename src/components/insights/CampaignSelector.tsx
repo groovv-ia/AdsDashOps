@@ -299,7 +299,7 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
 
           {/* Campaign Selection */}
           {selectedPlatform && (
-            <div className="relative z-50">
+            <div className="relative">
               <div className="flex items-center justify-between mb-4">
                 <label className="text-sm font-medium text-gray-700">
                   2. Campanhas
@@ -323,10 +323,10 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                 {showCampaignDropdown && (
                   <>
                     <div 
-                      className="fixed inset-0 z-[100]" 
+                      className="fixed inset-0 z-[9999]" 
                       onClick={() => setShowCampaignDropdown(false)}
                     />
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[110] max-h-60 overflow-y-auto">
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[10000] max-h-60 overflow-y-auto">
                       {availableCampaigns.map((campaign) => {
                         const isSelected = selectedCampaigns.includes(campaign.id);
                         const platform = platforms.find(p => p.id === campaign.platform.toLowerCase());
@@ -363,7 +363,7 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
 
           {/* Ad Set Selection */}
           {selectedCampaigns.length > 0 && (
-            <div className="relative z-40">
+            <div className="relative">
               <div className="flex items-center justify-between mb-4">
                 <label className="text-sm font-medium text-gray-700">
                   3. Conjuntos de Anúncios
@@ -387,10 +387,10 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                 {showAdSetDropdown && (
                   <>
                     <div 
-                      className="fixed inset-0 z-[90]" 
+                      className="fixed inset-0 z-[9999]" 
                       onClick={() => setShowAdSetDropdown(false)}
                     />
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[100] max-h-60 overflow-y-auto">
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[10000] max-h-60 overflow-y-auto">
                       {availableAdSets.map((adSet) => {
                         const isSelected = selectedAdSets.includes(adSet.id);
                         const campaign = mockCampaigns.find(c => c.id === adSet.campaign_id);
@@ -425,7 +425,7 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
 
           {/* Ad Selection */}
           {selectedAdSets.length > 0 && (
-            <div className="relative z-30">
+            <div className="relative">
               <div className="flex items-center justify-between mb-4">
                 <label className="text-sm font-medium text-gray-700">
                   4. Anúncios
@@ -449,10 +449,10 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                 {showAdDropdown && (
                   <>
                     <div 
-                      className="fixed inset-0 z-[80]" 
+                      className="fixed inset-0 z-[9999]" 
                       onClick={() => setShowAdDropdown(false)}
                     />
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[90] max-h-60 overflow-y-auto">
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[10000] max-h-60 overflow-y-auto">
                       {availableAds.map((ad) => {
                         const isSelected = selectedAds.includes(ad.id);
                         const adSet = mockAdSets.find(as => as.id === ad.ad_set_id);
@@ -489,7 +489,7 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
       </Card>
 
       {/* Selection Summary Card */}
-      <Card className="bg-blue-50 border-blue-200">
+      <Card className="bg-blue-50 border-blue-200 relative z-10">
         <div className="space-y-4">
           <h4 className="font-semibold text-blue-900 text-lg">Seleção Atual</h4>
           
@@ -536,7 +536,7 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
       </Card>
 
       {/* Generate Analysis Button */}
-      <div className="flex justify-center">
+      <div className="flex justify-center relative z-10">
         <Button
           onClick={onGenerateAnalysis}
           loading={loading}
