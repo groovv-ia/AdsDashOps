@@ -46,6 +46,18 @@ export class AIInsightsService {
     return AIInsightsService.instance;
   }
 
+  // Helper function to extract JSON from markdown code blocks
+  private extractJsonFromMarkdown(text: string): string {
+    // Remove markdown code block markers
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      return jsonMatch[1].trim();
+    }
+    
+    // If no code block found, return the original text (might already be clean JSON)
+    return text.trim();
+  }
+
   // Analyze campaign performance using AI
   async analyzeCampaignPerformance(
     campaign: Campaign,
@@ -343,7 +355,8 @@ Responda em formato JSON com array de insights de mercado.
 
   private parseAIResponse(campaign: Campaign, metrics: AdMetrics[], aiResponse: string): CampaignAnalysis {
     try {
-      const parsed = JSON.parse(aiResponse);
+      const cleanJson = this.extractJsonFromMarkdown(aiResponse);
+      const parsed = JSON.parse(cleanJson);
       
       return {
         campaign_id: campaign.id,
@@ -374,7 +387,8 @@ Responda em formato JSON com array de insights de mercado.
 
   private parseOptimizationRecommendations(aiResponse: string): AIInsight[] {
     try {
-      const parsed = JSON.parse(aiResponse);
+      const cleanJson = this.extractJsonFromMarkdown(aiResponse);
+      const parsed = JSON.parse(cleanJson);
       return parsed.map((insight: any, index: number) => ({
         id: `optimization-${index}`,
         type: 'optimization',
@@ -395,7 +409,8 @@ Responda em formato JSON com array de insights de mercado.
 
   private parseAnomalyDetection(aiResponse: string): AIInsight[] {
     try {
-      const parsed = JSON.parse(aiResponse);
+      const cleanJson = this.extractJsonFromMarkdown(aiResponse);
+      const parsed = JSON.parse(cleanJson);
       return parsed.map((anomaly: any, index: number) => ({
         id: `anomaly-${index}`,
         type: 'alert',
@@ -416,7 +431,8 @@ Responda em formato JSON com array de insights de mercado.
 
   private parseMarketInsights(aiResponse: string): AIInsight[] {
     try {
-      const parsed = JSON.parse(aiResponse);
+      const cleanJson = this.extractJsonFromMarkdown(aiResponse);
+      const parsed = JSON.parse(cleanJson);
       return parsed.map((insight: any, index: number) => ({
         id: `market-${index}`,
         type: 'trend',
