@@ -9,6 +9,7 @@ import { PerformanceChart } from './components/dashboard/PerformanceChart';
 import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
 import { SettingsPage } from './components/settings/SettingsPage';
+import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { mockCampaigns, mockMetrics, mockAdSets, mockAds } from './data/mockData';
@@ -181,6 +182,13 @@ function App() {
         return <DataSources />;
       case 'settings':
         return <SettingsPage />;
+      case 'ai-insights':
+        return (
+          <AIInsightsPanel
+            campaigns={filteredCampaigns}
+            metrics={filteredMetrics}
+          />
+        );
       case 'overview':
       default:
         return (

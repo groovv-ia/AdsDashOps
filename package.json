@@ -19,7 +19,8 @@
     "react-datepicker": "^4.25.0",
     "jspdf": "^2.5.1",
     "papaparse": "^5.4.1",
-    "@types/papaparse": "^5.3.14"
+    "@types/papaparse": "^5.3.14",
+    "openai": "^4.24.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
