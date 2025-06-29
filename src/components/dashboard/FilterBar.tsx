@@ -118,6 +118,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     setSelectedAdSets([]);
     setSelectedAds([]);
     
+    // Close dropdown after selection
+    setShowCampaignDropdown(false);
+    
     updateFilters({
       campaigns: newSelectedCampaigns,
       adSets: [],
@@ -133,6 +136,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     setSelectedAdSets(newSelectedAdSets);
     setSelectedAds([]);
     
+    // Close dropdown after selection
+    setShowAdSetDropdown(false);
+    
     updateFilters({
       adSets: newSelectedAdSets,
       ads: [],
@@ -146,8 +152,50 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     
     setSelectedAds(newSelectedAds);
     
+    // Close dropdown after selection
+    setShowAdDropdown(false);
+    
     updateFilters({
       ads: newSelectedAds,
+    });
+  };
+
+  const handleSelectAllCampaigns = () => {
+    setSelectedCampaigns(availableCampaigns.map(c => c.id));
+    setSelectedAdSets([]);
+    setSelectedAds([]);
+    
+    // Close dropdown after selection
+    setShowCampaignDropdown(false);
+    
+    updateFilters({ 
+      campaigns: availableCampaigns.map(c => c.id), 
+      adSets: [], 
+      ads: [] 
+    });
+  };
+
+  const handleSelectAllAdSets = () => {
+    setSelectedAdSets(availableAdSets.map(as => as.id));
+    setSelectedAds([]);
+    
+    // Close dropdown after selection
+    setShowAdSetDropdown(false);
+    
+    updateFilters({ 
+      adSets: availableAdSets.map(as => as.id), 
+      ads: [] 
+    });
+  };
+
+  const handleSelectAllAds = () => {
+    setSelectedAds(availableAds.map(a => a.id));
+    
+    // Close dropdown after selection
+    setShowAdDropdown(false);
+    
+    updateFilters({ 
+      ads: availableAds.map(a => a.id) 
     });
   };
 
@@ -331,12 +379,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[110] max-h-60 overflow-y-auto">
                     <div className="p-2 border-b border-gray-200">
                       <button
-                        onClick={() => {
-                          setSelectedCampaigns(availableCampaigns.map(c => c.id));
-                          setSelectedAdSets([]);
-                          setSelectedAds([]);
-                          updateFilters({ campaigns: availableCampaigns.map(c => c.id), adSets: [], ads: [] });
-                        }}
+                        onClick={handleSelectAllCampaigns}
                         className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
                       >
                         Selecionar todas
@@ -408,11 +451,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[100] max-h-60 overflow-y-auto">
                     <div className="p-2 border-b border-gray-200">
                       <button
-                        onClick={() => {
-                          setSelectedAdSets(availableAdSets.map(as => as.id));
-                          setSelectedAds([]);
-                          updateFilters({ adSets: availableAdSets.map(as => as.id), ads: [] });
-                        }}
+                        onClick={handleSelectAllAdSets}
                         className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
                       >
                         Selecionar todos
@@ -482,10 +521,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[90] max-h-60 overflow-y-auto">
                     <div className="p-2 border-b border-gray-200">
                       <button
-                        onClick={() => {
-                          setSelectedAds(availableAds.map(a => a.id));
-                          updateFilters({ ads: availableAds.map(a => a.id) });
-                        }}
+                        onClick={handleSelectAllAds}
                         className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
                       >
                         Selecionar todos
