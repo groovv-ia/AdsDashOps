@@ -185,11 +185,12 @@ export class NotificationService {
       const { data, error } = await supabase
         .from('notification_settings')
         .select('*')
-        .eq('user_id', user.id)
-        .single();
+        .eq('user_id', user.id);
 
-      if (error && error.code !== 'PGRST116') throw error;
-      return data;
+      if (error) throw error;
+      
+      // Return the first settings record if it exists, otherwise null
+      return data && data.length > 0 ? data[0] : null;
     } catch (error) {
       console.error('Erro ao buscar configurações:', error);
       return null;
