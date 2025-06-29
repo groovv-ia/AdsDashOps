@@ -324,12 +324,12 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                   <>
                     <div 
                       className="fixed inset-0"
-                      style={{ zIndex: 99999 }}
+                      style={{ zIndex: 9998 }}
                       onClick={() => setShowCampaignDropdown(false)}
                     />
                     <div 
                       className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
-                      style={{ zIndex: 100000 }}
+                      style={{ zIndex: 9999 }}
                     >
                       {availableCampaigns.map((campaign) => {
                         const isSelected = selectedCampaigns.includes(campaign.id);
@@ -392,12 +392,12 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                   <>
                     <div 
                       className="fixed inset-0"
-                      style={{ zIndex: 99999 }}
+                      style={{ zIndex: 9998 }}
                       onClick={() => setShowAdSetDropdown(false)}
                     />
                     <div 
                       className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
-                      style={{ zIndex: 100000 }}
+                      style={{ zIndex: 9999 }}
                     >
                       {availableAdSets.map((adSet) => {
                         const isSelected = selectedAdSets.includes(adSet.id);
@@ -458,12 +458,12 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                   <>
                     <div 
                       className="fixed inset-0"
-                      style={{ zIndex: 99999 }}
+                      style={{ zIndex: 9998 }}
                       onClick={() => setShowAdDropdown(false)}
                     />
                     <div 
                       className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
-                      style={{ zIndex: 100000 }}
+                      style={{ zIndex: 9999 }}
                     >
                       {availableAds.map((ad) => {
                         const isSelected = selectedAds.includes(ad.id);
@@ -500,8 +500,8 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
         </div>
       </Card>
 
-      {/* Selection Summary Card */}
-      <Card className="bg-blue-50 border-blue-200">
+      {/* Selection Summary Card - Com z-index baixo para ficar atrás dos dropdowns */}
+      <Card className="bg-blue-50 border-blue-200 relative" style={{ zIndex: 1 }}>
         <div className="space-y-4">
           <h4 className="font-semibold text-blue-900 text-lg">Seleção Atual</h4>
           
