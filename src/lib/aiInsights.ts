@@ -389,7 +389,11 @@ Responda em formato JSON com array de insights de mercado.
     try {
       const cleanJson = this.extractJsonFromMarkdown(aiResponse);
       const parsed = JSON.parse(cleanJson);
-      return parsed.map((insight: any, index: number) => ({
+      
+      // Ensure parsed is an array - if it's a single object, wrap it in an array
+      const dataArray = Array.isArray(parsed) ? parsed : [parsed];
+      
+      return dataArray.map((insight: any, index: number) => ({
         id: `optimization-${index}`,
         type: 'optimization',
         title: insight.title || 'Recomendação de Otimização',
@@ -411,7 +415,11 @@ Responda em formato JSON com array de insights de mercado.
     try {
       const cleanJson = this.extractJsonFromMarkdown(aiResponse);
       const parsed = JSON.parse(cleanJson);
-      return parsed.map((anomaly: any, index: number) => ({
+      
+      // Ensure parsed is an array - if it's a single object, wrap it in an array
+      const dataArray = Array.isArray(parsed) ? parsed : [parsed];
+      
+      return dataArray.map((anomaly: any, index: number) => ({
         id: `anomaly-${index}`,
         type: 'alert',
         title: anomaly.title || 'Anomalia Detectada',
@@ -433,7 +441,11 @@ Responda em formato JSON com array de insights de mercado.
     try {
       const cleanJson = this.extractJsonFromMarkdown(aiResponse);
       const parsed = JSON.parse(cleanJson);
-      return parsed.map((insight: any, index: number) => ({
+      
+      // Ensure parsed is an array - if it's a single object, wrap it in an array
+      const dataArray = Array.isArray(parsed) ? parsed : [parsed];
+      
+      return dataArray.map((insight: any, index: number) => ({
         id: `market-${index}`,
         type: 'trend',
         title: insight.title || 'Insight de Mercado',
