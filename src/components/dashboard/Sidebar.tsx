@@ -9,7 +9,7 @@ interface SidebarProps {
 }
 
 const menuItems = [
-  { icon: BarChart3, label: 'Visão Geral', page: 'overview' },
+  { icon: BarChart3, label: 'Dashboard', page: 'overview' },
   { icon: Sparkles, label: 'Análise com IA', page: 'ai-insights' },
   { icon: Database, label: 'Fontes de Dados', page: 'data-sources' },
   { icon: Settings, label: 'Configurações', page: 'settings' },
