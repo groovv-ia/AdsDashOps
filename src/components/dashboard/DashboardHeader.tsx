@@ -103,7 +103,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             
             <div className="hidden sm:block">
               <h1 className="text-xl font-semibold text-gray-900">
-                Análise de Publicidade
+                Seu Controle Total de Anúncios Começa Aqui
               </h1>
               <p className="text-sm text-gray-600">
                 Bem-vindo de volta, {user.user_metadata?.full_name || user.email?.split('@')[0]}
