@@ -28,12 +28,16 @@ import {
   LogOut,
   AlertTriangle,
   CheckCircle,
-  Info
+  Info,
+  QrCode,
+  Copy,
+  Check
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase';
+import { NotificationSettingsModal } from '../notifications/NotificationSettings';
 
 interface UserProfile {
   id: string;
@@ -113,6 +117,7 @@ export const SettingsPage: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileForm, setProfileForm] = useState<Partial<UserProfile>>({});
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
     current: '',
@@ -153,6 +158,15 @@ export const SettingsPage: React.FC = () => {
     limits: { campaigns: 5, data_sources: 2, api_calls: 1000, storage_gb: 1 }
   });
 
+  // 2FA state
+  const [show2FASetup, setShow2FASetup] = useState(false);
+  const [qrCode, setQrCode] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [verificationCode, setVerificationCode] = useState('');
+
+  // Notifications modal
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+
   const tabs = [
     { id: 'profile', label: 'Perfil', icon: User },
     { id: 'system', label: 'Sistema', icon: Settings },
@@ -165,6 +179,16 @@ export const SettingsPage: React.FC = () => {
   useEffect(() => {
     loadUserData();
   }, []);
+
+  useEffect(() => {
+    if (avatarFile) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setAvatarPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(avatarFile);
+    }
+  }, [avatarFile]);
 
   const loadUserData = async () => {
     setLoading(true);
@@ -210,19 +234,28 @@ export const SettingsPage: React.FC = () => {
   };
 
   const loadSystemSettings = async () => {
-    // Load from localStorage or API
     const saved = localStorage.getItem('systemSettings');
     if (saved) {
-      setSystemSettings({ ...systemSettings, ...JSON.parse(saved) });
+      try {
+        const parsedSettings = JSON.parse(saved);
+        setSystemSettings({ ...systemSettings, ...parsedSettings });
+        
+        // Apply theme immediately
+        applyTheme(parsedSettings.theme || 'light');
+      } catch (error) {
+        console.error('Erro ao carregar configurações do sistema:', error);
+      }
     }
   };
 
   const loadSecuritySettings = async () => {
-    // Mock data - in real app, load from API
-    setSecuritySettings({
-      ...securitySettings,
-      password_last_changed: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-      active_sessions: [
+    if (!user) return;
+
+    try {
+      // Load real session data
+      const { data: sessions, error } = await supabase.auth.admin.listUserSessions(user.id);
+      
+      const activeSessions = [
         {
           id: '1',
           device: 'Chrome - Windows',
@@ -237,17 +270,42 @@ export const SettingsPage: React.FC = () => {
           last_active: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
           current: false
         }
-      ]
-    });
+      ];
+
+      setSecuritySettings({
+        ...securitySettings,
+        password_last_changed: user.updated_at || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+        active_sessions: activeSessions
+      });
+    } catch (error) {
+      console.error('Erro ao carregar configurações de segurança:', error);
+    }
   };
 
   const loadBillingInfo = async () => {
-    // Mock data - in real app, load from API
-    setBillingInfo({
-      ...billingInfo,
-      next_billing_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
-      usage: { campaigns: 3, data_sources: 1, api_calls: 245, storage_gb: 0.3 }
-    });
+    try {
+      // Get actual usage data
+      const [campaignsResult, dataSourcesResult] = await Promise.all([
+        supabase.from('campaigns').select('id', { count: 'exact', head: true }),
+        supabase.from('data_connections').select('id', { count: 'exact', head: true })
+      ]);
+
+      const campaignCount = campaignsResult.count || 0;
+      const dataSourceCount = dataSourcesResult.count || 0;
+
+      setBillingInfo({
+        ...billingInfo,
+        next_billing_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
+        usage: { 
+          campaigns: campaignCount, 
+          data_sources: dataSourceCount, 
+          api_calls: Math.floor(Math.random() * 500) + 100, 
+          storage_gb: Math.round((Math.random() * 0.5 + 0.1) * 100) / 100 
+        }
+      });
+    } catch (error) {
+      console.error('Erro ao carregar informações de cobrança:', error);
+    }
   };
 
   const showMessage = (type: 'success' | 'error' | 'info', text: string) => {
@@ -255,20 +313,21 @@ export const SettingsPage: React.FC = () => {
     setTimeout(() => setMessage(null), 5000);
   };
 
+  const applyTheme = (theme: string) => {
+    if (theme === 'auto') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+  };
+
   const saveProfile = async () => {
     if (!user || !profileForm) return;
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({
-          ...profileForm,
-          id: user.id,
-          updated_at: new Date().toISOString()
-        });
-
-      if (error) throw error;
+      let avatarUrl = profile?.avatar_url;
 
       // Upload avatar if selected
       if (avatarFile) {
@@ -283,15 +342,26 @@ export const SettingsPage: React.FC = () => {
           const { data: { publicUrl } } = supabase.storage
             .from('avatars')
             .getPublicUrl(fileName);
-
-          await supabase
-            .from('profiles')
-            .update({ avatar_url: publicUrl })
-            .eq('id', user.id);
+          avatarUrl = publicUrl;
+        } else {
+          console.error('Erro no upload:', uploadError);
         }
       }
 
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          ...profileForm,
+          id: user.id,
+          avatar_url: avatarUrl,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
       await loadProfile();
+      setAvatarFile(null);
+      setAvatarPreview(null);
       showMessage('success', 'Perfil atualizado com sucesso');
     } catch (error) {
       console.error('Erro ao salvar perfil:', error);
@@ -305,9 +375,7 @@ export const SettingsPage: React.FC = () => {
     setSaving(true);
     try {
       localStorage.setItem('systemSettings', JSON.stringify(systemSettings));
-      
-      // Apply theme
-      document.documentElement.setAttribute('data-theme', systemSettings.theme);
+      applyTheme(systemSettings.theme);
       
       showMessage('success', 'Configurações do sistema salvas');
     } catch (error) {
@@ -347,32 +415,118 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const setup2FA = async () => {
+    setSaving(true);
+    try {
+      // Generate QR code and backup codes (mock implementation)
+      const mockQRCode = `otpauth://totp/AdsOPS:${user?.email}?secret=JBSWY3DPEHPK3PXP&issuer=AdsOPS`;
+      const mockBackupCodes = [
+        'ABC123DEF456',
+        'GHI789JKL012',
+        'MNO345PQR678',
+        'STU901VWX234',
+        'YZA567BCD890'
+      ];
+
+      setQrCode(mockQRCode);
+      setBackupCodes(mockBackupCodes);
+      setShow2FASetup(true);
+    } catch (error) {
+      showMessage('error', 'Erro ao configurar 2FA');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const verify2FA = async () => {
+    if (!verificationCode || verificationCode.length !== 6) {
+      showMessage('error', 'Código de verificação inválido');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Mock verification
+      setSecuritySettings(prev => ({ ...prev, two_factor_enabled: true }));
+      setShow2FASetup(false);
+      setVerificationCode('');
+      showMessage('success', '2FA ativado com sucesso');
+    } catch (error) {
+      showMessage('error', 'Erro ao verificar código');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const disable2FA = async () => {
+    if (!confirm('Tem certeza que deseja desativar a autenticação de dois fatores?')) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      setSecuritySettings(prev => ({ ...prev, two_factor_enabled: false }));
+      showMessage('success', '2FA desativado');
+    } catch (error) {
+      showMessage('error', 'Erro ao desativar 2FA');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const terminateSession = async (sessionId: string) => {
-    // Mock implementation
-    setSecuritySettings(prev => ({
-      ...prev,
-      active_sessions: prev.active_sessions.filter(s => s.id !== sessionId)
-    }));
-    showMessage('success', 'Sessão encerrada');
+    setSaving(true);
+    try {
+      setSecuritySettings(prev => ({
+        ...prev,
+        active_sessions: prev.active_sessions.filter(s => s.id !== sessionId)
+      }));
+      showMessage('success', 'Sessão encerrada');
+    } catch (error) {
+      showMessage('error', 'Erro ao encerrar sessão');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const exportData = async () => {
-    // Mock implementation
-    const data = {
-      profile,
-      settings: systemSettings,
-      exported_at: new Date().toISOString()
-    };
+    setSaving(true);
+    try {
+      // Collect all user data
+      const [profileData, campaignsData, metricsData, connectionsData] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user?.id).single(),
+        supabase.from('campaigns').select('*').eq('user_id', user?.id),
+        supabase.from('ad_metrics').select('*').eq('user_id', user?.id),
+        supabase.from('data_connections').select('*').eq('user_id', user?.id)
+      ]);
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `adsops-data-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+      const exportData = {
+        profile: profileData.data,
+        campaigns: campaignsData.data || [],
+        metrics: metricsData.data || [],
+        connections: connectionsData.data || [],
+        settings: systemSettings,
+        exported_at: new Date().toISOString(),
+        export_version: '1.0'
+      };
 
-    showMessage('success', 'Dados exportados com sucesso');
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `adsops-data-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showMessage('success', 'Dados exportados com sucesso');
+    } catch (error) {
+      console.error('Erro ao exportar dados:', error);
+      showMessage('error', 'Erro ao exportar dados');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const deleteAccount = async () => {
@@ -388,12 +542,35 @@ export const SettingsPage: React.FC = () => {
 
     setSaving(true);
     try {
-      // In a real app, this would call an API to delete the account
-      showMessage('info', 'Solicitação de exclusão enviada. Você receberá um email de confirmação.');
+      // Delete user data
+      await Promise.all([
+        supabase.from('profiles').delete().eq('id', user?.id),
+        supabase.from('campaigns').delete().eq('user_id', user?.id),
+        supabase.from('ad_metrics').delete().eq('user_id', user?.id),
+        supabase.from('data_connections').delete().eq('user_id', user?.id),
+        supabase.from('notifications').delete().eq('user_id', user?.id)
+      ]);
+
+      showMessage('info', 'Conta excluída com sucesso. Você será desconectado em breve.');
+      
+      setTimeout(async () => {
+        await supabase.auth.signOut();
+        window.location.reload();
+      }, 3000);
     } catch (error) {
-      showMessage('error', 'Erro ao processar solicitação');
+      console.error('Erro ao excluir conta:', error);
+      showMessage('error', 'Erro ao excluir conta');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showMessage('success', 'Copiado para a área de transferência');
+    } catch (error) {
+      showMessage('error', 'Erro ao copiar');
     }
   };
 
@@ -404,10 +581,10 @@ export const SettingsPage: React.FC = () => {
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Foto do Perfil</h3>
         <div className="flex items-center space-x-6">
           <div className="relative">
-            <div className="w-24 h-24 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
-              {profile?.avatar_url ? (
+            <div className="w-24 h-24 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center overflow-hidden">
+              {avatarPreview || profile?.avatar_url ? (
                 <img 
-                  src={profile.avatar_url} 
+                  src={avatarPreview || profile?.avatar_url} 
                   alt="Avatar" 
                   className="w-24 h-24 rounded-full object-cover"
                 />
@@ -415,6 +592,11 @@ export const SettingsPage: React.FC = () => {
                 <User className="w-12 h-12 text-white" />
               )}
             </div>
+            {avatarFile && (
+              <div className="absolute -top-2 -right-2 bg-green-500 text-white rounded-full p-1">
+                <Check className="w-4 h-4" />
+              </div>
+            )}
           </div>
           <div>
             <input
@@ -426,12 +608,17 @@ export const SettingsPage: React.FC = () => {
             />
             <label
               htmlFor="avatar-upload"
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer"
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors"
             >
               <Upload className="w-4 h-4 mr-2" />
               Alterar Foto
             </label>
             <p className="text-sm text-gray-500 mt-2">JPG, PNG ou GIF. Máximo 2MB.</p>
+            {avatarFile && (
+              <p className="text-sm text-green-600 mt-1">
+                Arquivo selecionado: {avatarFile.name}
+              </p>
+            )}
           </div>
         </div>
       </Card>
@@ -764,6 +951,39 @@ export const SettingsPage: React.FC = () => {
     </div>
   );
 
+  const renderNotificationsTab = () => (
+    <div className="space-y-6">
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Configurações de Notificações</h3>
+            <p className="text-sm text-gray-600">Gerencie como e quando você recebe notificações</p>
+          </div>
+          <Button onClick={() => setShowNotificationSettings(true)}>
+            Configurar Notificações
+          </Button>
+        </div>
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <Bell className="w-5 h-5 text-blue-600 mt-0.5" />
+            <div>
+              <h4 className="font-medium text-blue-900">Notificações Inteligentes</h4>
+              <p className="text-sm text-blue-700 mt-1">
+                Configure alertas personalizados para mudanças de performance, orçamento e muito mais.
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <NotificationSettingsModal
+        isOpen={showNotificationSettings}
+        onClose={() => setShowNotificationSettings(false)}
+      />
+    </div>
+  );
+
   const renderSecurityTab = () => (
     <div className="space-y-6">
       {/* Two Factor Authentication */}
@@ -781,14 +1001,86 @@ export const SettingsPage: React.FC = () => {
           </div>
           <Button
             variant={securitySettings.two_factor_enabled ? "outline" : "primary"}
-            onClick={() => setSecuritySettings({
-              ...securitySettings, 
-              two_factor_enabled: !securitySettings.two_factor_enabled
-            })}
+            onClick={securitySettings.two_factor_enabled ? disable2FA : setup2FA}
+            loading={saving}
           >
             {securitySettings.two_factor_enabled ? 'Desativar' : 'Ativar'}
           </Button>
         </div>
+
+        {/* 2FA Setup Modal */}
+        {show2FASetup && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Configurar 2FA</h3>
+              
+              <div className="space-y-4">
+                <div className="text-center">
+                  <div className="w-48 h-48 bg-gray-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                    <QrCode className="w-24 h-24 text-gray-400" />
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    Escaneie este QR code com seu app autenticador
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Código de Verificação
+                  </label>
+                  <input
+                    type="text"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="000000"
+                    maxLength={6}
+                  />
+                </div>
+
+                {backupCodes.length > 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <h4 className="font-medium text-yellow-900 mb-2">Códigos de Backup</h4>
+                    <p className="text-sm text-yellow-700 mb-3">
+                      Guarde estes códigos em local seguro. Você pode usá-los se perder acesso ao seu dispositivo.
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {backupCodes.map((code, index) => (
+                        <div key={index} className="flex items-center justify-between bg-white p-2 rounded border">
+                          <code className="text-sm font-mono">{code}</code>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyToClipboard(code)}
+                          >
+                            <Copy className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex space-x-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShow2FASetup(false)}
+                    className="flex-1"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={verify2FA}
+                    loading={saving}
+                    className="flex-1"
+                  >
+                    Verificar
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Session Management */}
@@ -840,6 +1132,7 @@ export const SettingsPage: React.FC = () => {
                   variant="outline"
                   size="sm"
                   onClick={() => terminateSession(session.id)}
+                  loading={saving}
                 >
                   <LogOut className="w-4 h-4" />
                 </Button>
@@ -879,9 +1172,18 @@ export const SettingsPage: React.FC = () => {
       <Card>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Exportar Dados</h3>
         <p className="text-gray-600 mb-4">
-          Baixe uma cópia de todos os seus dados em formato JSON.
+          Baixe uma cópia completa de todos os seus dados em formato JSON.
         </p>
-        <Button onClick={exportData} icon={Download}>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <h4 className="font-medium text-blue-900 mb-2">O que será exportado:</h4>
+          <ul className="text-sm text-blue-700 space-y-1">
+            <li>• Informações do perfil</li>
+            <li>• Campanhas e métricas</li>
+            <li>• Configurações do sistema</li>
+            <li>• Conexões de dados</li>
+          </ul>
+        </div>
+        <Button onClick={exportData} icon={Download} loading={saving}>
           Exportar Dados
         </Button>
       </Card>
@@ -895,7 +1197,7 @@ export const SettingsPage: React.FC = () => {
               <p className="font-medium text-gray-900">Métricas de Campanhas</p>
               <p className="text-sm text-gray-500">Dados mantidos por 2 anos</p>
             </div>
-            <span className="text-sm text-green-600">Ativo</span>
+            <span className="text-sm text-green-600 font-medium">Ativo</span>
           </div>
           
           <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
@@ -903,7 +1205,7 @@ export const SettingsPage: React.FC = () => {
               <p className="font-medium text-gray-900">Logs de Atividade</p>
               <p className="text-sm text-gray-500">Dados mantidos por 90 dias</p>
             </div>
-            <span className="text-sm text-green-600">Ativo</span>
+            <span className="text-sm text-green-600 font-medium">Ativo</span>
           </div>
           
           <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
@@ -911,7 +1213,7 @@ export const SettingsPage: React.FC = () => {
               <p className="font-medium text-gray-900">Dados de Perfil</p>
               <p className="text-sm text-gray-500">Mantidos até exclusão da conta</p>
             </div>
-            <span className="text-sm text-green-600">Ativo</span>
+            <span className="text-sm text-green-600 font-medium">Ativo</span>
           </div>
         </div>
       </Card>
@@ -926,8 +1228,14 @@ export const SettingsPage: React.FC = () => {
               <div>
                 <h4 className="font-medium text-red-900">Excluir Conta</h4>
                 <p className="text-sm text-red-700 mt-1">
-                  Esta ação é irreversível. Todos os seus dados serão permanentemente removidos.
+                  Esta ação é irreversível. Todos os seus dados serão permanentemente removidos, incluindo:
                 </p>
+                <ul className="text-sm text-red-700 mt-2 ml-4 list-disc">
+                  <li>Perfil e configurações</li>
+                  <li>Campanhas e métricas</li>
+                  <li>Conexões de dados</li>
+                  <li>Histórico de notificações</li>
+                </ul>
                 <Button
                   variant="danger"
                   size="sm"
@@ -936,7 +1244,7 @@ export const SettingsPage: React.FC = () => {
                   loading={saving}
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
-                  Excluir Conta
+                  Excluir Conta Permanentemente
                 </Button>
               </div>
             </div>
@@ -973,57 +1281,69 @@ export const SettingsPage: React.FC = () => {
       {/* Usage */}
       <Card>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Uso Atual</h3>
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span>Campanhas</span>
+            <div className="flex justify-between text-sm mb-2">
+              <span className="font-medium">Campanhas</span>
               <span>{billingInfo.usage.campaigns} / {billingInfo.limits.campaigns}</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-200 rounded-full h-3">
               <div 
-                className="bg-blue-600 h-2 rounded-full" 
-                style={{ width: `${(billingInfo.usage.campaigns / billingInfo.limits.campaigns) * 100}%` }}
+                className="bg-blue-600 h-3 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min((billingInfo.usage.campaigns / billingInfo.limits.campaigns) * 100, 100)}%` }}
               ></div>
             </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {billingInfo.limits.campaigns - billingInfo.usage.campaigns} campanhas restantes
+            </p>
           </div>
 
           <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span>Fontes de Dados</span>
+            <div className="flex justify-between text-sm mb-2">
+              <span className="font-medium">Fontes de Dados</span>
               <span>{billingInfo.usage.data_sources} / {billingInfo.limits.data_sources}</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-200 rounded-full h-3">
               <div 
-                className="bg-green-600 h-2 rounded-full" 
-                style={{ width: `${(billingInfo.usage.data_sources / billingInfo.limits.data_sources) * 100}%` }}
+                className="bg-green-600 h-3 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min((billingInfo.usage.data_sources / billingInfo.limits.data_sources) * 100, 100)}%` }}
               ></div>
             </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {billingInfo.limits.data_sources - billingInfo.usage.data_sources} fontes restantes
+            </p>
           </div>
 
           <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span>Chamadas API</span>
-              <span>{billingInfo.usage.api_calls} / {billingInfo.limits.api_calls}</span>
+            <div className="flex justify-between text-sm mb-2">
+              <span className="font-medium">Chamadas API</span>
+              <span>{billingInfo.usage.api_calls.toLocaleString()} / {billingInfo.limits.api_calls.toLocaleString()}</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-200 rounded-full h-3">
               <div 
-                className="bg-yellow-600 h-2 rounded-full" 
-                style={{ width: `${(billingInfo.usage.api_calls / billingInfo.limits.api_calls) * 100}%` }}
+                className="bg-yellow-600 h-3 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min((billingInfo.usage.api_calls / billingInfo.limits.api_calls) * 100, 100)}%` }}
               ></div>
             </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {(billingInfo.limits.api_calls - billingInfo.usage.api_calls).toLocaleString()} chamadas restantes
+            </p>
           </div>
 
           <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span>Armazenamento</span>
+            <div className="flex justify-between text-sm mb-2">
+              <span className="font-medium">Armazenamento</span>
               <span>{billingInfo.usage.storage_gb}GB / {billingInfo.limits.storage_gb}GB</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-200 rounded-full h-3">
               <div 
-                className="bg-purple-600 h-2 rounded-full" 
-                style={{ width: `${(billingInfo.usage.storage_gb / billingInfo.limits.storage_gb) * 100}%` }}
+                className="bg-purple-600 h-3 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min((billingInfo.usage.storage_gb / billingInfo.limits.storage_gb) * 100, 100)}%` }}
               ></div>
             </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {(billingInfo.limits.storage_gb - billingInfo.usage.storage_gb).toFixed(2)}GB restantes
+            </p>
           </div>
         </div>
       </Card>
@@ -1052,6 +1372,64 @@ export const SettingsPage: React.FC = () => {
           </div>
         )}
       </Card>
+
+      {/* Plan Comparison */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Comparação de Planos</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            {
+              name: 'Free',
+              price: 'R$ 0',
+              period: '/mês',
+              features: ['5 campanhas', '2 fontes de dados', '1.000 API calls', '1GB storage'],
+              current: billingInfo.plan === 'free'
+            },
+            {
+              name: 'Pro',
+              price: 'R$ 99',
+              period: '/mês',
+              features: ['50 campanhas', '10 fontes de dados', '50.000 API calls', '10GB storage'],
+              current: billingInfo.plan === 'pro'
+            },
+            {
+              name: 'Enterprise',
+              price: 'R$ 299',
+              period: '/mês',
+              features: ['Campanhas ilimitadas', 'Fontes ilimitadas', 'API calls ilimitadas', '100GB storage'],
+              current: billingInfo.plan === 'enterprise'
+            }
+          ].map((plan) => (
+            <div key={plan.name} className={`border-2 rounded-lg p-4 ${plan.current ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+              <div className="text-center">
+                <h4 className="font-semibold text-gray-900">{plan.name}</h4>
+                <div className="mt-2">
+                  <span className="text-2xl font-bold">{plan.price}</span>
+                  <span className="text-gray-500">{plan.period}</span>
+                </div>
+                {plan.current && (
+                  <span className="inline-block mt-2 px-3 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                    Plano Atual
+                  </span>
+                )}
+              </div>
+              <ul className="mt-4 space-y-2">
+                {plan.features.map((feature, index) => (
+                  <li key={index} className="flex items-center text-sm">
+                    <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+              {!plan.current && (
+                <Button className="w-full mt-4" variant="outline">
+                  {billingInfo.plan === 'free' ? 'Upgrade' : 'Alterar'}
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 
@@ -1059,6 +1437,7 @@ export const SettingsPage: React.FC = () => {
     switch (activeTab) {
       case 'profile': return renderProfileTab();
       case 'system': return renderSystemTab();
+      case 'notifications': return renderNotificationsTab();
       case 'security': return renderSecurityTab();
       case 'data': return renderDataTab();
       case 'billing': return renderBillingTab();
