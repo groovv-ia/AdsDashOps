@@ -257,11 +257,6 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleThemeChange = (newTheme: 'light' | 'dark' | 'auto') => {
-    setTheme(newTheme);
-    updateSystemSettings({ theme: newTheme });
-  };
-
   const handleSystemSettingChange = (key: keyof typeof systemSettings, value: any) => {
     updateSystemSettings({ [key]: value });
   };
@@ -635,12 +630,12 @@ export const SettingsPage: React.FC = () => {
 
       {activeTab === 'appearance' && (
         <div className="space-y-6">
-          {/* Theme Selection */}
+          {/* Header with Reset Button */}
           <Card>
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Tema</h3>
-                <p className="text-sm text-gray-600">Escolha a aparência da interface</p>
+                <h3 className="text-lg font-semibold text-gray-900">Configurações de Interface</h3>
+                <p className="text-sm text-gray-600">Personalize a aparência e comportamento da interface</p>
               </div>
               <Tooltip content="Restaurar configurações padrão">
                 <Button
@@ -653,45 +648,6 @@ export const SettingsPage: React.FC = () => {
                 </Button>
               </Tooltip>
             </div>
-            
-            <div className="grid grid-cols-3 gap-6 mb-6">
-              {[
-                { value: 'light', label: 'Claro', icon: Sun, description: 'Interface clara e limpa' },
-                { value: 'dark', label: 'Escuro', icon: Moon, description: 'Interface escura para reduzir cansaço visual' },
-                { value: 'auto', label: 'Automático', icon: Monitor, description: 'Segue as configurações do sistema' }
-              ].map((themeOption) => (
-                <Tooltip key={themeOption.value} content={themeOption.description}>
-                  <button
-                    onClick={() => handleThemeChange(themeOption.value as any)}
-                    className={`relative p-6 border-2 rounded-xl flex flex-col items-center space-y-4 transition-all duration-200 ${
-                      theme === themeOption.value
-                        ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className={`p-4 rounded-xl ${
-                      theme === themeOption.value ? 'bg-blue-100' : 'bg-gray-100'
-                    }`}>
-                      <themeOption.icon className={`w-8 h-8 ${
-                        theme === themeOption.value ? 'text-blue-600' : 'text-gray-600'
-                      }`} />
-                    </div>
-                    <div className="text-center">
-                      <h4 className="font-semibold text-gray-900 text-lg">{themeOption.label}</h4>
-                      <p className="text-sm text-gray-500 mt-1">{themeOption.description}</p>
-                    </div>
-                    {theme === themeOption.value && (
-                      <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-                    )}
-                  </button>
-                </Tooltip>
-              ))}
-            </div>
-          </Card>
-
-          {/* Interface Options */}
-          <Card>
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">Opções de Interface</h3>
             
             <div className="space-y-6">
               <div className="flex items-center justify-between">
