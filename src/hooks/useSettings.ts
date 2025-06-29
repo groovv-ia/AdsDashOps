@@ -136,6 +136,17 @@ export const useSettings = () => {
       }
 
       setProfile(data);
+
+      // Update user metadata in auth if avatar_url is being updated
+      if (updates.avatar_url) {
+        await supabase.auth.updateUser({
+          data: { 
+            avatar_url: updates.avatar_url,
+            full_name: data.full_name
+          }
+        });
+      }
+
       return { success: true, data };
     } catch (error) {
       console.error('Erro ao atualizar perfil:', error);

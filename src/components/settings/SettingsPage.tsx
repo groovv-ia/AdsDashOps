@@ -246,6 +246,7 @@ export const SettingsPage: React.FC = () => {
       
       if (result.success) {
         setSaveMessage({ type: 'success', text: 'Avatar atualizado com sucesso!' });
+        // The header will automatically update via real-time subscription
       } else {
         setSaveMessage({ type: 'error', text: 'Erro ao fazer upload do avatar.' });
       }
