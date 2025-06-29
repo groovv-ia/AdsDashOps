@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 
 interface SystemSettings {
-  theme: 'light' | 'dark' | 'auto';
+  theme: 'light';
   language: string;
   timezone: string;
   currency: string;
@@ -99,8 +99,10 @@ export const useSettings = () => {
       const savedSettings = localStorage.getItem('systemSettings');
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings);
+        // Force theme to always be light
+        parsed.theme = 'light';
         setSystemSettings(prev => ({ ...prev, ...parsed }));
-        applyTheme(parsed.theme || 'light');
+        applyTheme('light');
       }
     } catch (error) {
       console.error('Erro ao carregar configurações:', error);
@@ -155,22 +157,22 @@ export const useSettings = () => {
   };
 
   const updateSystemSettings = (updates: Partial<SystemSettings>) => {
+    // Force theme to always be light
+    if (updates.theme) {
+      updates.theme = 'light';
+    }
+    
     const newSettings = { ...systemSettings, ...updates };
     setSystemSettings(newSettings);
     localStorage.setItem('systemSettings', JSON.stringify(newSettings));
     
-    if (updates.theme) {
-      applyTheme(updates.theme);
-    }
+    applyTheme('light');
   };
 
   const applyTheme = (theme: string) => {
-    if (theme === 'auto') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
-    } else {
-      document.documentElement.setAttribute('data-theme', theme);
-    }
+    // Always apply light theme
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.documentElement.classList.remove('dark');
   };
 
   const uploadAvatar = async (file: File) => {

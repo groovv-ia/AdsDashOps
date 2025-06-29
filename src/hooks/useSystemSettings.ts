@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 interface SystemSettings {
-  theme: 'light' | 'dark' | 'auto';
+  theme: 'light';
   language: string;
   timezone: string;
   currency: string;
@@ -59,6 +59,8 @@ export const useSystemSettings = () => {
       const savedSettings = localStorage.getItem('systemSettings');
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings);
+        // Force theme to always be light
+        parsed.theme = 'light';
         setSettings(prev => ({ ...prev, ...parsed }));
       }
     } catch (error) {
@@ -67,6 +69,11 @@ export const useSystemSettings = () => {
   };
 
   const updateSettings = (updates: Partial<SystemSettings>) => {
+    // Force theme to always be light
+    if (updates.theme) {
+      updates.theme = 'light';
+    }
+    
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);
     localStorage.setItem('systemSettings', JSON.stringify(newSettings));
@@ -74,6 +81,10 @@ export const useSystemSettings = () => {
 
   const applySettings = (currentSettings: SystemSettings) => {
     const root = document.documentElement;
+    
+    // Always apply light theme
+    root.setAttribute('data-theme', 'light');
+    root.classList.remove('dark');
     
     // Apply compact mode
     root.classList.toggle('compact-mode', currentSettings.compact_mode);

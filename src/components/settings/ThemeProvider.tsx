@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-type Theme = 'light' | 'dark' | 'auto';
+type Theme = 'light';
 
 interface ThemeContextType {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   isDark: boolean;
-  effectiveTheme: 'light' | 'dark';
+  effectiveTheme: 'light';
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -24,64 +24,28 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  const [theme, setTheme] = useState<Theme>('light');
-  const [isDark, setIsDark] = useState(false);
-  const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light');
+  const [theme] = useState<Theme>('light');
+  const [isDark] = useState(false);
+  const [effectiveTheme] = useState<'light'>('light');
 
   useEffect(() => {
-    // Load theme from localStorage
-    const savedTheme = localStorage.getItem('theme') as Theme;
-    if (savedTheme) {
-      setTheme(savedTheme);
-    } else {
-      // Check system preference on first load
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(prefersDark ? 'dark' : 'light');
+    // Always apply light theme
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.documentElement.classList.remove('dark');
+    
+    // Update body background for full coverage
+    document.body.style.backgroundColor = '#ffffff';
+    document.body.style.color = '#111827';
+    
+    // Update meta theme-color
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', '#3B82F6');
     }
   }, []);
 
-  useEffect(() => {
-    const applyTheme = () => {
-      let actualTheme: 'light' | 'dark' = 'light';
-      
-      if (theme === 'auto') {
-        actualTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      } else {
-        actualTheme = theme as 'light' | 'dark';
-      }
-      
-      setIsDark(actualTheme === 'dark');
-      setEffectiveTheme(actualTheme);
-      
-      // Apply theme to document
-      document.documentElement.setAttribute('data-theme', actualTheme);
-      document.documentElement.classList.toggle('dark', actualTheme === 'dark');
-      
-      // Update body background for full coverage
-      document.body.style.backgroundColor = actualTheme === 'dark' ? '#111827' : '#ffffff';
-      document.body.style.color = actualTheme === 'dark' ? '#f9fafb' : '#111827';
-      
-      // Update meta theme-color
-      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-      if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', actualTheme === 'dark' ? '#111827' : '#3B82F6');
-      }
-    };
-
-    applyTheme();
-
-    // Listen for system theme changes when in auto mode
-    if (theme === 'auto') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handleChange = () => applyTheme();
-      mediaQuery.addEventListener('change', handleChange);
-      return () => mediaQuery.removeEventListener('change', handleChange);
-    }
-  }, [theme]);
-
-  const handleSetTheme = (newTheme: Theme) => {
-    setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
+  const handleSetTheme = () => {
+    // Do nothing - theme is always light
   };
 
   return (

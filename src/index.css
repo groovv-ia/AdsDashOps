@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Theme Variables */
+/* Theme Variables - Light Theme Only */
 :root {
   --spacing-unit: 1rem;
   --card-padding: 1.5rem;
@@ -23,144 +23,11 @@
   --shadow-color: rgba(0, 0, 0, 0.1);
 }
 
-/* Dark Theme */
-[data-theme="dark"] {
-  --bg-primary: #111827;
-  --bg-secondary: #1f2937;
-  --bg-tertiary: #374151;
-  --text-primary: #f9fafb;
-  --text-secondary: #d1d5db;
-  --text-tertiary: #9ca3af;
-  --border-color: #374151;
-  --border-color-light: #4b5563;
-  --shadow-color: rgba(0, 0, 0, 0.3);
-}
-
-/* Light Theme */
-[data-theme="light"] {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f9fafb;
-  --bg-tertiary: #f3f4f6;
-  --text-primary: #111827;
-  --text-secondary: #6b7280;
-  --text-tertiary: #9ca3af;
-  --border-color: #e5e7eb;
-  --border-color-light: #f3f4f6;
-  --shadow-color: rgba(0, 0, 0, 0.1);
-}
-
-/* Apply dark mode styles */
-.dark {
+/* Ensure light theme is always applied */
+html,
+body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-}
-
-/* Background colors */
-.dark .bg-white {
-  background-color: var(--bg-primary) !important;
-}
-
-.dark .bg-gray-50 {
-  background-color: var(--bg-secondary) !important;
-}
-
-.dark .bg-gray-100 {
-  background-color: var(--bg-tertiary) !important;
-}
-
-.dark .bg-gray-200 {
-  background-color: var(--border-color) !important;
-}
-
-/* Text colors */
-.dark .text-gray-900 {
-  color: var(--text-primary) !important;
-}
-
-.dark .text-gray-800 {
-  color: var(--text-primary) !important;
-}
-
-.dark .text-gray-700 {
-  color: var(--text-secondary) !important;
-}
-
-.dark .text-gray-600 {
-  color: var(--text-secondary) !important;
-}
-
-.dark .text-gray-500 {
-  color: var(--text-tertiary) !important;
-}
-
-.dark .text-gray-400 {
-  color: var(--text-tertiary) !important;
-}
-
-/* Border colors */
-.dark .border-gray-200 {
-  border-color: var(--border-color) !important;
-}
-
-.dark .border-gray-300 {
-  border-color: var(--border-color-light) !important;
-}
-
-.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
-  border-color: var(--border-color) !important;
-}
-
-/* Input and form elements */
-.dark input,
-.dark select,
-.dark textarea {
-  background-color: var(--bg-secondary) !important;
-  border-color: var(--border-color) !important;
-  color: var(--text-primary) !important;
-}
-
-.dark input:focus,
-.dark select:focus,
-.dark textarea:focus {
-  background-color: var(--bg-secondary) !important;
-  border-color: #3b82f6 !important;
-}
-
-.dark input::placeholder,
-.dark select::placeholder,
-.dark textarea::placeholder {
-  color: var(--text-tertiary) !important;
-}
-
-/* Buttons */
-.dark .hover\:bg-gray-50:hover {
-  background-color: var(--bg-tertiary) !important;
-}
-
-.dark .hover\:bg-gray-100:hover {
-  background-color: var(--border-color) !important;
-}
-
-/* Cards and containers */
-.dark .shadow-lg {
-  box-shadow: 0 10px 15px -3px var(--shadow-color), 0 4px 6px -2px var(--shadow-color) !important;
-}
-
-.dark .shadow-md {
-  box-shadow: 0 4px 6px -1px var(--shadow-color), 0 2px 4px -1px var(--shadow-color) !important;
-}
-
-.dark .shadow-sm {
-  box-shadow: 0 1px 2px 0 var(--shadow-color) !important;
-}
-
-/* Dropdown and modal backgrounds */
-.dark .bg-white\/95 {
-  background-color: rgba(17, 24, 39, 0.95) !important;
-}
-
-.dark .bg-white\/80 {
-  background-color: rgba(17, 24, 39, 0.8) !important;
 }
 
 /* Compact Mode */
@@ -259,21 +126,21 @@
   transition-duration: var(--transition-duration);
 }
 
-/* Custom scrollbar for dark mode */
-.dark ::-webkit-scrollbar {
+/* Custom scrollbar */
+::-webkit-scrollbar {
   width: 8px;
 }
 
-.dark ::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: var(--bg-secondary);
 }
 
-.dark ::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   background: var(--border-color-light);
   border-radius: 4px;
 }
 
-.dark ::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
 }
 
@@ -342,11 +209,6 @@
   background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
-}
-
-.dark .loading-shimmer {
-  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color-light) 50%, var(--bg-tertiary) 75%);
-  background-size: 200% 100%;
 }
 
 @keyframes shimmer {
@@ -422,31 +284,12 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-.dark .glass {
-  background: rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
 /* Theme transition */
 * {
   transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
-/* Ensure proper contrast in dark mode for interactive elements */
-.dark .hover\:text-gray-900:hover {
-  color: var(--text-primary) !important;
-}
-
-.dark .hover\:text-gray-700:hover {
-  color: var(--text-secondary) !important;
-}
-
-/* Fix for toggle switches in dark mode */
-.dark .peer-checked\:bg-blue-600:checked {
-  background-color: #3b82f6 !important;
-}
-
 /* Ensure proper visibility for form elements */
-.dark .peer-focus\:ring-blue-300:focus {
+.peer-focus\:ring-blue-300:focus {
   box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3) !important;
 }
