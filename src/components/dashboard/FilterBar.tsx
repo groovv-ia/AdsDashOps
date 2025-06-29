@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Download, RefreshCw, ChevronDown, X, Check, ChevronRight } from 'lucide-react';
+import { Calendar, Download, BarChart3, ChevronDown, X, Check, ChevronRight } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { mockCampaigns, mockAdSets, mockAds } from '../../data/mockData';
@@ -580,14 +580,14 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-3">
             <Button
-              variant="ghost"
-              size="sm"
-              icon={RefreshCw}
               onClick={onRefresh}
+              icon={BarChart3}
+              size="lg"
+              className="px-6 py-3 text-base font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl"
             >
-              <span className="hidden sm:inline">Atualizar</span>
+              Gerar Análise de Métricas
             </Button>
 
             <div className="relative">
