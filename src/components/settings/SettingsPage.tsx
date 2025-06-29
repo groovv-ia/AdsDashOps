@@ -19,7 +19,9 @@ import {
   Bell,
   Settings as SettingsIcon,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Search,
+  Loader
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -40,6 +42,7 @@ export const SettingsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('profile');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [cepLoading, setCepLoading] = useState(false);
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
@@ -49,6 +52,8 @@ export const SettingsPage: React.FC = () => {
     address: '',
     city: '',
     country: '',
+    state: '',
+    cep: '',
     timezone: 'America/Sao_Paulo',
     language: 'pt-BR'
   });
@@ -64,6 +69,8 @@ export const SettingsPage: React.FC = () => {
         address: profile.address || '',
         city: profile.city || '',
         country: profile.country || '',
+        state: profile.state || '',
+        cep: profile.cep || '',
         timezone: profile.timezone || 'America/Sao_Paulo',
         language: profile.language || 'pt-BR'
       });
@@ -75,6 +82,68 @@ export const SettingsPage: React.FC = () => {
       ...prev,
       [field]: value
     }));
+  };
+
+  const searchAddressByCep = async (cep: string) => {
+    // Remove non-numeric characters
+    const cleanCep = cep.replace(/\D/g, '');
+    
+    if (cleanCep.length !== 8) {
+      setSaveMessage({ type: 'error', text: 'CEP deve ter 8 dígitos' });
+      setTimeout(() => setSaveMessage(null), 3000);
+      return;
+    }
+
+    setCepLoading(true);
+    setSaveMessage(null);
+
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+      const data = await response.json();
+
+      if (data.erro) {
+        setSaveMessage({ type: 'error', text: 'CEP não encontrado' });
+        setTimeout(() => setSaveMessage(null), 3000);
+        return;
+      }
+
+      // Update form data with address information
+      setFormData(prev => ({
+        ...prev,
+        address: data.logradouro || prev.address,
+        city: data.localidade || prev.city,
+        state: data.uf || prev.state,
+        country: 'Brasil',
+        cep: cleanCep
+      }));
+
+      setSaveMessage({ type: 'success', text: 'Endereço encontrado e preenchido!' });
+      setTimeout(() => setSaveMessage(null), 3000);
+
+    } catch (error) {
+      console.error('Erro ao buscar CEP:', error);
+      setSaveMessage({ type: 'error', text: 'Erro ao buscar CEP. Tente novamente.' });
+      setTimeout(() => setSaveMessage(null), 3000);
+    } finally {
+      setCepLoading(false);
+    }
+  };
+
+  const handleCepChange = (value: string) => {
+    // Format CEP as user types (XXXXX-XXX)
+    const cleanValue = value.replace(/\D/g, '');
+    let formattedValue = cleanValue;
+    
+    if (cleanValue.length > 5) {
+      formattedValue = `${cleanValue.slice(0, 5)}-${cleanValue.slice(5, 8)}`;
+    }
+    
+    handleInputChange('cep', formattedValue);
+    
+    // Auto-search when CEP is complete
+    if (cleanValue.length === 8) {
+      searchAddressByCep(cleanValue);
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -308,15 +377,28 @@ export const SettingsPage: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Cidade
+                  CEP
                 </label>
-                <input
-                  type="text"
-                  value={formData.city}
-                  onChange={(e) => handleInputChange('city', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Sua cidade"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={formData.cep}
+                    onChange={(e) => handleCepChange(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="00000-000"
+                    maxLength={9}
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                    {cepLoading ? (
+                      <Loader className="w-4 h-4 text-gray-400 animate-spin" />
+                    ) : (
+                      <Search className="w-4 h-4 text-gray-400" />
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Digite o CEP para buscar o endereço automaticamente
+                </p>
               </div>
 
               <div className="md:col-span-2">
@@ -328,7 +410,46 @@ export const SettingsPage: React.FC = () => {
                   value={formData.address}
                   onChange={(e) => handleInputChange('address', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Endereço completo"
+                  placeholder="Rua, Avenida, número"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Cidade
+                </label>
+                <input
+                  type="text"
+                  value={formData.city}
+                  onChange={(e) => handleInputChange('city', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Sua cidade"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Estado
+                </label>
+                <input
+                  type="text"
+                  value={formData.state}
+                  onChange={(e) => handleInputChange('state', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Estado/UF"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  País
+                </label>
+                <input
+                  type="text"
+                  value={formData.country}
+                  onChange={(e) => handleInputChange('country', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="País"
                 />
               </div>
 
