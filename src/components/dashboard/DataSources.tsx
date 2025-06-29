@@ -37,7 +37,7 @@ const availableConnectors = [
     name: 'Meta Ads',
     platform: 'Meta',
     type: 'advertising' as const,
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/7/7b/Meta_Platforms_Inc._logo.svg',
+    logo: '/icons/meta-logo.png',
     description: 'Conecte suas campanhas do Facebook e Instagram Ads',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'ROAS']
   },
@@ -46,7 +46,7 @@ const availableConnectors = [
     name: 'Google Ads',
     platform: 'Google',
     type: 'advertising' as const,
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Google_Ads_logo.svg',
+    logo: '/icons/google-ads-logo.png',
     description: 'Importe dados de campanhas do Google Ads',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'Quality Score']
   },
@@ -55,7 +55,7 @@ const availableConnectors = [
     name: 'TikTok Ads',
     platform: 'TikTok',
     type: 'advertising' as const,
-    logo: 'https://upload.wikimedia.org/wikipedia/en/a/a9/TikTok_logo.svg',
+    logo: '/icons/tiktok-logo.png',
     description: 'Conecte suas campanhas do TikTok for Business',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'Video Views']
   },
@@ -64,7 +64,7 @@ const availableConnectors = [
     name: 'Google Analytics',
     platform: 'Google',
     type: 'analytics' as const,
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/7/77/GAnalytics.svg',
+    logo: '/icons/google-ads-logo.png',
     description: 'Dados de tráfego e comportamento do usuário',
     metrics: ['Sessões', 'Usuários', 'Taxa de Rejeição', 'Duração da Sessão']
   },
@@ -73,7 +73,7 @@ const availableConnectors = [
     name: 'Facebook Insights',
     platform: 'Meta',
     type: 'analytics' as const,
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/5/51/Facebook_f_logo_%282019%29.svg',
+    logo: '/icons/meta-logo.png',
     description: 'Métricas de páginas e posts do Facebook',
     metrics: ['Alcance', 'Engajamento', 'Curtidas', 'Compartilhamentos']
   },
@@ -115,7 +115,7 @@ const mockDataSources: DataSource[] = [
     status: 'connected',
     lastSync: '2024-01-15T10:30:00Z',
     accountId: 'act_123456789',
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/7/7b/Meta_Platforms_Inc._logo.svg',
+    logo: '/icons/meta-logo.png',
     description: 'Campanhas do Facebook e Instagram',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'ROAS']
   },
@@ -127,7 +127,7 @@ const mockDataSources: DataSource[] = [
     status: 'syncing',
     lastSync: '2024-01-15T09:15:00Z',
     accountId: '123-456-7890',
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Google_Ads_logo.svg',
+    logo: '/icons/google-ads-logo.png',
     description: 'Campanhas de busca e display',
     metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC']
   },
@@ -139,7 +139,7 @@ const mockDataSources: DataSource[] = [
     status: 'error',
     lastSync: '2024-01-14T16:45:00Z',
     accountId: 'tiktok_987654321',
-    logo: 'https://upload.wikimedia.org/wikipedia/en/a/a9/TikTok_logo.svg',
+    logo: '/icons/tiktok-logo.png',
     description: 'Campanhas de vídeo e awareness',
     metrics: ['Impressões', 'Cliques', 'Video Views']
   }

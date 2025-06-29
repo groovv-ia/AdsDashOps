@@ -23,19 +23,19 @@ const platforms: Platform[] = [
   {
     id: 'meta',
     name: 'Meta',
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/7/7b/Meta_Platforms_Inc._logo.svg',
+    logo: '/icons/meta-logo.png',
     color: 'bg-blue-500'
   },
   {
     id: 'google',
     name: 'Google Ads',
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Google_Ads_logo.svg',
+    logo: '/icons/google-ads-logo.png',
     color: 'bg-green-500'
   },
   {
     id: 'tiktok',
     name: 'TikTok Ads',
-    logo: 'https://upload.wikimedia.org/wikipedia/en/a/a9/TikTok_logo.svg',
+    logo: '/icons/tiktok-logo.png',
     color: 'bg-pink-500'
   }
 ];
