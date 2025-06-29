@@ -313,81 +313,44 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
       </div>
 
       {/* Right Side - Illustration */}
-      <div className="hidden lg:block relative w-0 flex-1 bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
-        <div className="absolute inset-0 flex items-center justify-center p-12">
-          <div className="relative">
-            {/* Phone Mockup */}
-            <div className="relative w-80 h-96 bg-white rounded-3xl shadow-2xl border-8 border-gray-200 overflow-hidden">
-              {/* Phone Screen */}
-              <div className="absolute inset-2 bg-gradient-to-br from-blue-100 to-purple-100 rounded-2xl flex flex-col items-center justify-center p-8">
-                {/* Security Shield */}
-                <div className="relative mb-8">
-                  <div className="w-24 h-24 bg-green-500 rounded-2xl flex items-center justify-center shadow-lg">
-                    <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                  </div>
-                  {/* Floating elements */}
-                  <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-500 rounded-full"></div>
-                  <div className="absolute -bottom-1 -left-3 w-4 h-4 bg-purple-500 rounded-full"></div>
+      <div className="hidden lg:block relative w-0 flex-1">
+        <div className="absolute inset-0">
+          <img 
+            src="/onboarding-1.jpg" 
+            alt="Analytics Dashboard" 
+            className="w-full h-full object-cover"
+          />
+          {/* Overlay for better contrast */}
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-purple-600/10 to-transparent"></div>
+          
+          {/* Content overlay */}
+          <div className="absolute inset-0 flex items-center justify-center p-12">
+            <div className="text-center text-white max-w-md">
+              <h2 className="text-3xl font-bold mb-4 drop-shadow-lg">
+                Análise Inteligente de Publicidade
+              </h2>
+              <p className="text-lg opacity-90 drop-shadow-md">
+                Conecte suas campanhas do Meta, Google e TikTok em um só lugar. 
+                Obtenha insights poderosos com IA para otimizar seus resultados.
+              </p>
+              
+              {/* Feature highlights */}
+              <div className="mt-8 space-y-3">
+                <div className="flex items-center justify-center space-x-2 text-sm">
+                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                  <span>Dashboard unificado</span>
                 </div>
-
-                {/* Lock Icon */}
-                <div className="w-16 h-16 bg-green-400 rounded-xl flex items-center justify-center mb-6 shadow-lg">
-                  <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
-                  </svg>
+                <div className="flex items-center justify-center space-x-2 text-sm">
+                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                  <span>Insights com IA</span>
                 </div>
-
-                {/* Password Field Mockup */}
-                <div className="w-full bg-white rounded-lg p-3 shadow-sm">
-                  <div className="flex items-center space-x-2">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-center space-x-2 text-sm">
+                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                  <span>Relatórios automáticos</span>
                 </div>
               </div>
-
-              {/* Phone Home Indicator */}
-              <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-32 h-1 bg-gray-300 rounded-full"></div>
-            </div>
-
-            {/* Hand holding phone */}
-            <div className="absolute -bottom-20 -left-8 w-32 h-40 bg-gradient-to-br from-blue-200 to-blue-300 rounded-t-full transform rotate-12 shadow-lg">
-              {/* Sleeve */}
-              <div className="absolute bottom-0 left-4 right-4 h-16 bg-blue-400 rounded-b-lg"></div>
-              {/* Cuff */}
-              <div className="absolute bottom-0 left-2 right-2 h-4 bg-blue-500 rounded-b-lg"></div>
-            </div>
-
-            {/* Floating Security Elements */}
-            <div className="absolute -top-8 -left-8 w-12 h-12 bg-green-100 rounded-full flex items-center justify-center shadow-lg">
-              <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-            </div>
-
-            <div className="absolute -top-4 -right-12 w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center shadow-lg">
-              <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-            </div>
-
-            <div className="absolute top-20 -right-16 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center shadow-lg">
-              <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
-              </svg>
             </div>
           </div>
-        </div>
-
-        {/* Bottom indicator dots */}
-        <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 flex space-x-2">
-          <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-          <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
-          <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
         </div>
       </div>
     </div>
