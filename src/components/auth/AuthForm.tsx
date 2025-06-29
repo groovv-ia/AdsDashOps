@@ -110,7 +110,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
                 src="/logotipo-adsops.fw.png" 
                 alt="AdsOPS" 
                 className="w-auto object-contain"
-                style={{ height: '170px' }}
+                style={{ height: '80px' }}
               />
             </div>
           </div>

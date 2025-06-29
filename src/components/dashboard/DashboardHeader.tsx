@@ -55,7 +55,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
                 <img 
                   src="/logotipo-adsops.fw.png" 
                   alt="AdsOPS" 
-                  className="h-8 w-auto object-contain"
+                  className="h-6 w-auto object-contain"
                 />
               </div>
             </div>
