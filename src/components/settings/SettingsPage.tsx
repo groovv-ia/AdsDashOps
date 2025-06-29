@@ -654,7 +654,7 @@ export const SettingsPage: React.FC = () => {
               </Tooltip>
             </div>
             
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
               {[
                 { value: 'light', label: 'Claro', icon: Sun, description: 'Interface clara e limpa' },
                 { value: 'dark', label: 'Escuro', icon: Moon, description: 'Interface escura para reduzir cansaço visual' },
@@ -663,25 +663,25 @@ export const SettingsPage: React.FC = () => {
                 <Tooltip key={themeOption.value} content={themeOption.description}>
                   <button
                     onClick={() => handleThemeChange(themeOption.value as any)}
-                    className={`p-6 border-2 rounded-xl flex flex-col items-center space-y-3 transition-all duration-200 ${
+                    className={`p-6 border-2 rounded-xl flex flex-col items-center space-y-4 transition-all duration-200 ${
                       theme === themeOption.value
                         ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200'
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                   >
-                    <div className={`p-3 rounded-lg ${
+                    <div className={`p-4 rounded-xl ${
                       theme === themeOption.value ? 'bg-blue-100' : 'bg-gray-100'
                     }`}>
-                      <themeOption.icon className={`w-6 h-6 ${
+                      <themeOption.icon className={`w-8 h-8 ${
                         theme === themeOption.value ? 'text-blue-600' : 'text-gray-600'
                       }`} />
                     </div>
                     <div className="text-center">
-                      <h4 className="font-medium text-gray-900">{themeOption.label}</h4>
-                      <p className="text-xs text-gray-500 mt-1">{themeOption.description}</p>
+                      <h4 className="font-semibold text-gray-900 text-lg">{themeOption.label}</h4>
+                      <p className="text-sm text-gray-500 mt-1">{themeOption.description}</p>
                     </div>
                     {theme === themeOption.value && (
-                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
                     )}
                   </button>
                 </Tooltip>
@@ -842,7 +842,7 @@ export const SettingsPage: React.FC = () => {
               {systemSettings.auto_refresh && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Intervalo de Atualização
+                    Intervalo de Atualização (segundos)
                   </label>
                   <select
                     value={systemSettings.refresh_interval}

@@ -33,6 +33,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     const savedTheme = localStorage.getItem('theme') as Theme;
     if (savedTheme) {
       setTheme(savedTheme);
+    } else {
+      // Check system preference on first load
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setTheme(prefersDark ? 'dark' : 'light');
     }
   }, []);
 
@@ -53,10 +57,14 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       document.documentElement.setAttribute('data-theme', actualTheme);
       document.documentElement.classList.toggle('dark', actualTheme === 'dark');
       
+      // Update body background for full coverage
+      document.body.style.backgroundColor = actualTheme === 'dark' ? '#111827' : '#ffffff';
+      document.body.style.color = actualTheme === 'dark' ? '#f9fafb' : '#111827';
+      
       // Update meta theme-color
       const metaThemeColor = document.querySelector('meta[name="theme-color"]');
       if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', actualTheme === 'dark' ? '#1f2937' : '#3B82F6');
+        metaThemeColor.setAttribute('content', actualTheme === 'dark' ? '#111827' : '#3B82F6');
       }
     };
 
@@ -65,8 +73,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     // Listen for system theme changes when in auto mode
     if (theme === 'auto') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      mediaQuery.addEventListener('change', applyTheme);
-      return () => mediaQuery.removeEventListener('change', applyTheme);
+      const handleChange = () => applyTheme();
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
     }
   }, [theme]);
 
