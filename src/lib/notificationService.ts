@@ -222,8 +222,8 @@ export class NotificationService {
     if ('Notification' in window && Notification.permission === 'granted') {
       const desktopNotification = new Notification(notification.title, {
         body: notification.message,
-        icon: '/logotipo-adsops.fw.png',
-        badge: '/logotipo-adsops.fw.png',
+        icon: '/fav-icon.fw.png',
+        badge: '/fav-icon.fw.png',
         tag: notification.id,
         requireInteraction: notification.priority === 'urgent',
         silent: notification.priority === 'low'
