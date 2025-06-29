@@ -93,6 +93,7 @@ export const useSettings = () => {
         .upsert({
           ...updates,
           id: user.id,
+          email: user.email || '', // Ensure email is always included
           updated_at: new Date().toISOString()
         });
 
