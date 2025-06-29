@@ -12,7 +12,12 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  ArrowRight
+  ArrowRight,
+  Settings,
+  Key,
+  ExternalLink,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -22,13 +27,11 @@ import { Campaign, AdMetrics } from '../../types/advertising';
 interface AIInsightsPanelProps {
   campaigns: Campaign[];
   metrics: AdMetrics[];
-  selectedCampaignId?: string;
 }
 
 export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
   campaigns,
-  metrics,
-  selectedCampaignId
+  metrics
 }) => {
   const [loading, setLoading] = useState(false);
   const [campaignAnalyses, setCampaignAnalyses] = useState<CampaignAnalysis[]>([]);
@@ -37,21 +40,68 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
   const [marketInsights, setMarketInsights] = useState<AIInsight[]>([]);
   const [activeTab, setActiveTab] = useState<'overview' | 'campaigns' | 'optimization' | 'anomalies' | 'market'>('overview');
   const [lastAnalysis, setLastAnalysis] = useState<string | null>(null);
+  
+  // Campaign selector state
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [showCampaignDropdown, setShowCampaignDropdown] = useState(false);
+  
+  // OpenAI API configuration
+  const [showApiConfig, setShowApiConfig] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [isApiConfigured, setIsApiConfigured] = useState(false);
 
   const aiService = AIInsightsService.getInstance();
 
   useEffect(() => {
-    if (campaigns.length > 0 && metrics.length > 0) {
-      generateInsights();
+    // Check if OpenAI API key is configured
+    const configuredKey = import.meta.env.VITE_OPENAI_API_KEY || localStorage.getItem('openai_api_key');
+    setIsApiConfigured(!!configuredKey);
+    if (configuredKey) {
+      setApiKey(configuredKey);
     }
-  }, [campaigns, metrics]);
+  }, []);
+
+  const handleCampaignSelect = (campaignId: string) => {
+    setSelectedCampaignId(campaignId);
+    setShowCampaignDropdown(false);
+  };
+
+  const handleApiKeySubmit = () => {
+    if (apiKey.trim()) {
+      localStorage.setItem('openai_api_key', apiKey.trim());
+      setIsApiConfigured(true);
+      setShowApiConfig(false);
+      
+      // Update the environment variable for the current session
+      (window as any).__OPENAI_API_KEY__ = apiKey.trim();
+    }
+  };
 
   const generateInsights = async () => {
+    if (!isApiConfigured) {
+      setShowApiConfig(true);
+      return;
+    }
+
     setLoading(true);
     try {
+      let targetCampaigns = campaigns;
+      let targetMetrics = metrics;
+
+      // Filter by selected campaign if one is chosen
+      if (selectedCampaignId) {
+        targetCampaigns = campaigns.filter(c => c.id === selectedCampaignId);
+        targetMetrics = metrics.filter(m => m.campaign_id === selectedCampaignId);
+      }
+
+      if (targetCampaigns.length === 0 || targetMetrics.length === 0) {
+        alert('Nenhuma campanha ou métrica encontrada para análise.');
+        return;
+      }
+
       // Analyze individual campaigns
-      const campaignPromises = campaigns.slice(0, 3).map(async (campaign) => {
-        const campaignMetrics = metrics.filter(m => m.campaign_id === campaign.id);
+      const campaignPromises = targetCampaigns.slice(0, 3).map(async (campaign) => {
+        const campaignMetrics = targetMetrics.filter(m => m.campaign_id === campaign.id);
         if (campaignMetrics.length > 0) {
           return await aiService.analyzeCampaignPerformance(campaign, campaignMetrics);
         }
@@ -62,20 +112,21 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
       setCampaignAnalyses(analyses.filter(Boolean) as CampaignAnalysis[]);
 
       // Generate optimization recommendations
-      const optimizations = await aiService.generateOptimizationRecommendations(campaigns, metrics);
+      const optimizations = await aiService.generateOptimizationRecommendations(targetCampaigns, targetMetrics);
       setOptimizationInsights(optimizations);
 
       // Detect anomalies
-      const detectedAnomalies = await aiService.detectAnomalies(metrics);
+      const detectedAnomalies = await aiService.detectAnomalies(targetMetrics);
       setAnomalies(detectedAnomalies);
 
       // Generate market insights
-      const marketTrends = await aiService.generateMarketInsights(campaigns, metrics, 'month');
+      const marketTrends = await aiService.generateMarketInsights(targetCampaigns, targetMetrics, 'month');
       setMarketInsights(marketTrends);
 
       setLastAnalysis(new Date().toISOString());
     } catch (error) {
       console.error('Erro ao gerar insights:', error);
+      alert('Erro ao gerar insights. Verifique sua chave da API OpenAI e tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -281,6 +332,12 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
     );
   };
 
+  const getSelectedCampaignName = () => {
+    if (!selectedCampaignId) return 'Selecionar campanha';
+    const campaign = campaigns.find(c => c.id === selectedCampaignId);
+    return campaign?.name || 'Campanha não encontrada';
+  };
+
   const tabs = [
     { id: 'overview', label: 'Visão Geral', icon: BarChart3 },
     { id: 'campaigns', label: 'Campanhas', icon: Target },
@@ -292,7 +349,7 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
         <div className="flex items-center space-x-3">
           <div className="p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg">
             <Sparkles className="w-6 h-6 text-white" />
@@ -303,34 +360,223 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
           </div>
         </div>
         
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-3 sm:space-y-0 sm:space-x-3">
           {lastAnalysis && (
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-500 text-center sm:text-right">
               Última análise: {new Date(lastAnalysis).toLocaleString('pt-BR')}
             </div>
           )}
-          <Button
-            onClick={generateInsights}
-            loading={loading}
-            icon={RefreshCw}
-            disabled={campaigns.length === 0 || metrics.length === 0}
-          >
-            {loading ? 'Analisando...' : 'Atualizar Insights'}
-          </Button>
+          
+          <div className="flex space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowApiConfig(true)}
+              icon={isApiConfigured ? Settings : Key}
+            >
+              {isApiConfigured ? 'Configurar' : 'Conectar API'}
+            </Button>
+            
+            <Button
+              onClick={generateInsights}
+              loading={loading}
+              icon={RefreshCw}
+              disabled={campaigns.length === 0 || metrics.length === 0}
+            >
+              {loading ? 'Analisando...' : 'Gerar Análise'}
+            </Button>
+          </div>
         </div>
       </div>
 
+      {/* Campaign Selector */}
+      <Card>
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Seleção de Campanha</h3>
+          <p className="text-sm text-gray-600">Escolha uma campanha específica para análise detalhada ou deixe em branco para analisar todas</p>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="relative">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Campanha para Análise
+            </label>
+            <button
+              onClick={() => setShowCampaignDropdown(!showCampaignDropdown)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+            >
+              <span className="text-gray-700 truncate">
+                {getSelectedCampaignName()}
+              </span>
+              <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform flex-shrink-0 ml-2 ${showCampaignDropdown ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showCampaignDropdown && (
+              <>
+                <div 
+                  className="fixed inset-0 z-[100]" 
+                  onClick={() => setShowCampaignDropdown(false)}
+                />
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[110] max-h-60 overflow-y-auto">
+                  <div className="p-2 border-b border-gray-200">
+                    <button
+                      onClick={() => handleCampaignSelect('')}
+                      className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
+                    >
+                      Analisar todas as campanhas
+                    </button>
+                  </div>
+                  {campaigns.map((campaign) => {
+                    const isSelected = selectedCampaignId === campaign.id;
+                    
+                    return (
+                      <button
+                        key={campaign.id}
+                        onClick={() => handleCampaignSelect(campaign.id)}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="font-medium text-sm text-gray-900">{campaign.name}</div>
+                            <div className="text-xs text-gray-500 flex items-center space-x-2">
+                              <span>{campaign.objective}</span>
+                              <span>•</span>
+                              <span>{campaign.platform}</span>
+                              <span>•</span>
+                              <span>{campaign.status}</span>
+                            </div>
+                          </div>
+                          {isSelected && <Check className="w-4 h-4 text-blue-500" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Status da API
+            </label>
+            <div className={`flex items-center space-x-2 px-4 py-3 rounded-lg border-2 ${
+              isApiConfigured 
+                ? 'border-green-200 bg-green-50' 
+                : 'border-yellow-200 bg-yellow-50'
+            }`}>
+              {isApiConfigured ? (
+                <>
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <span className="text-green-700 font-medium">API OpenAI Conectada</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                  <span className="text-yellow-700 font-medium">API OpenAI Não Configurada</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* API Configuration Modal */}
+      {showApiConfig && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center space-x-3">
+                <Key className="w-6 h-6 text-blue-600" />
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Configuração da API OpenAI</h2>
+                  <p className="text-gray-600">Configure sua chave da API para habilitar análises avançadas</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-2">
+                  <Sparkles className="w-5 h-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-blue-900">Como obter sua chave da API</h4>
+                    <ol className="text-sm text-blue-700 mt-2 space-y-1 list-decimal list-inside">
+                      <li>Acesse <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="underline">platform.openai.com/api-keys</a></li>
+                      <li>Faça login em sua conta OpenAI</li>
+                      <li>Clique em "Create new secret key"</li>
+                      <li>Copie a chave gerada e cole abaixo</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Chave da API OpenAI
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="sk-..."
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Sua chave será armazenada localmente no navegador e não será enviada para nossos servidores
+                </p>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-start space-x-2">
+                  <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-yellow-900">Importante</h4>
+                    <p className="text-sm text-yellow-700 mt-1">
+                      O uso da API OpenAI pode gerar custos. Consulte os preços em{' '}
+                      <a href="https://openai.com/pricing" target="_blank" rel="noopener noreferrer" className="underline">
+                        openai.com/pricing
+                      </a>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowApiConfig(false)}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                onClick={handleApiKeySubmit}
+                disabled={!apiKey.trim()}
+                icon={Key}
+              >
+                Salvar Configuração
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* API Key Warning */}
-      {!import.meta.env.VITE_OPENAI_API_KEY && (
+      {!isApiConfigured && (
         <Card className="bg-yellow-50 border-yellow-200">
           <div className="flex items-start space-x-3">
             <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
             <div>
               <h4 className="font-medium text-yellow-900">Configuração Necessária</h4>
               <p className="text-sm text-yellow-700 mt-1">
-                Configure a chave da API OpenAI no arquivo .env para habilitar insights avançados com IA.
-                <br />
-                Adicione: <code className="bg-yellow-100 px-1 rounded">VITE_OPENAI_API_KEY=sua_chave_aqui</code>
+                Configure sua chave da API OpenAI para habilitar análises avançadas com IA.
+                <button 
+                  onClick={() => setShowApiConfig(true)}
+                  className="ml-2 text-yellow-800 underline hover:text-yellow-900"
+                >
+                  Configurar agora
+                </button>
               </p>
             </div>
           </div>
@@ -363,6 +609,9 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
             <p className="text-gray-600">Gerando insights com IA...</p>
+            <p className="text-sm text-gray-500 mt-2">
+              {selectedCampaignId ? 'Analisando campanha selecionada' : 'Analisando todas as campanhas'}
+            </p>
           </div>
         </div>
       ) : (
