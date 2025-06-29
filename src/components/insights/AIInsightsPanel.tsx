@@ -15,12 +15,11 @@ import {
   ArrowRight,
   Settings,
   Key,
-  ExternalLink,
-  ChevronDown,
-  Check
+  ExternalLink
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { CampaignSelector } from './CampaignSelector';
 import { AIInsightsService, AIInsight, CampaignAnalysis } from '../../lib/aiInsights';
 import { Campaign, AdMetrics } from '../../types/advertising';
 
@@ -41,9 +40,13 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'campaigns' | 'optimization' | 'anomalies' | 'market'>('overview');
   const [lastAnalysis, setLastAnalysis] = useState<string | null>(null);
   
-  // Campaign selector state
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
-  const [showCampaignDropdown, setShowCampaignDropdown] = useState(false);
+  // Selection state
+  const [selection, setSelection] = useState({
+    platform: '',
+    campaigns: [] as string[],
+    adSets: [] as string[],
+    ads: [] as string[]
+  });
   
   // OpenAI API configuration
   const [showApiConfig, setShowApiConfig] = useState(false);
@@ -61,9 +64,8 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
     }
   }, []);
 
-  const handleCampaignSelect = (campaignId: string) => {
-    setSelectedCampaignId(campaignId);
-    setShowCampaignDropdown(false);
+  const handleSelectionChange = (newSelection: typeof selection) => {
+    setSelection(newSelection);
   };
 
   const handleApiKeySubmit = () => {
@@ -88,14 +90,34 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
       let targetCampaigns = campaigns;
       let targetMetrics = metrics;
 
-      // Filter by selected campaign if one is chosen
-      if (selectedCampaignId) {
-        targetCampaigns = campaigns.filter(c => c.id === selectedCampaignId);
-        targetMetrics = metrics.filter(m => m.campaign_id === selectedCampaignId);
+      // Filter by selection
+      if (selection.platform) {
+        targetCampaigns = targetCampaigns.filter(c => c.platform.toLowerCase() === selection.platform);
+        targetMetrics = targetMetrics.filter(m => {
+          const campaign = campaigns.find(c => c.id === m.campaign_id);
+          return campaign && campaign.platform.toLowerCase() === selection.platform;
+        });
+      }
+
+      if (selection.campaigns.length > 0) {
+        targetCampaigns = targetCampaigns.filter(c => selection.campaigns.includes(c.id));
+        targetMetrics = targetMetrics.filter(m => selection.campaigns.includes(m.campaign_id));
+      }
+
+      if (selection.adSets.length > 0) {
+        targetMetrics = targetMetrics.filter(m => 
+          m.ad_set_id && selection.adSets.includes(m.ad_set_id)
+        );
+      }
+
+      if (selection.ads.length > 0) {
+        targetMetrics = targetMetrics.filter(m => 
+          m.ad_id && selection.ads.includes(m.ad_id)
+        );
       }
 
       if (targetCampaigns.length === 0 || targetMetrics.length === 0) {
-        alert('Nenhuma campanha ou métrica encontrada para análise.');
+        alert('Nenhuma campanha ou métrica encontrada para análise com a seleção atual.');
         return;
       }
 
@@ -332,12 +354,6 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
     );
   };
 
-  const getSelectedCampaignName = () => {
-    if (!selectedCampaignId) return 'Selecionar campanha';
-    const campaign = campaigns.find(c => c.id === selectedCampaignId);
-    return campaign?.name || 'Campanha não encontrada';
-  };
-
   const tabs = [
     { id: 'overview', label: 'Visão Geral', icon: BarChart3 },
     { id: 'campaigns', label: 'Campanhas', icon: Target },
@@ -390,96 +406,7 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
       </div>
 
       {/* Campaign Selector */}
-      <Card>
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Seleção de Campanha</h3>
-          <p className="text-sm text-gray-600">Escolha uma campanha específica para análise detalhada ou deixe em branco para analisar todas</p>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="relative">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Campanha para Análise
-            </label>
-            <button
-              onClick={() => setShowCampaignDropdown(!showCampaignDropdown)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-            >
-              <span className="text-gray-700 truncate">
-                {getSelectedCampaignName()}
-              </span>
-              <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform flex-shrink-0 ml-2 ${showCampaignDropdown ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showCampaignDropdown && (
-              <>
-                <div 
-                  className="fixed inset-0 z-[100]" 
-                  onClick={() => setShowCampaignDropdown(false)}
-                />
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-[110] max-h-60 overflow-y-auto">
-                  <div className="p-2 border-b border-gray-200">
-                    <button
-                      onClick={() => handleCampaignSelect('')}
-                      className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
-                    >
-                      Analisar todas as campanhas
-                    </button>
-                  </div>
-                  {campaigns.map((campaign) => {
-                    const isSelected = selectedCampaignId === campaign.id;
-                    
-                    return (
-                      <button
-                        key={campaign.id}
-                        onClick={() => handleCampaignSelect(campaign.id)}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="font-medium text-sm text-gray-900">{campaign.name}</div>
-                            <div className="text-xs text-gray-500 flex items-center space-x-2">
-                              <span>{campaign.objective}</span>
-                              <span>•</span>
-                              <span>{campaign.platform}</span>
-                              <span>•</span>
-                              <span>{campaign.status}</span>
-                            </div>
-                          </div>
-                          {isSelected && <Check className="w-4 h-4 text-blue-500" />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Status da API
-            </label>
-            <div className={`flex items-center space-x-2 px-4 py-3 rounded-lg border-2 ${
-              isApiConfigured 
-                ? 'border-green-200 bg-green-50' 
-                : 'border-yellow-200 bg-yellow-50'
-            }`}>
-              {isApiConfigured ? (
-                <>
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                  <span className="text-green-700 font-medium">API OpenAI Conectada</span>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="w-5 h-5 text-yellow-600" />
-                  <span className="text-yellow-700 font-medium">API OpenAI Não Configurada</span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </Card>
+      <CampaignSelector onSelectionChange={handleSelectionChange} />
 
       {/* API Configuration Modal */}
       {showApiConfig && (
@@ -610,7 +537,7 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
             <p className="text-gray-600">Gerando insights com IA...</p>
             <p className="text-sm text-gray-500 mt-2">
-              {selectedCampaignId ? 'Analisando campanha selecionada' : 'Analisando todas as campanhas'}
+              Analisando elementos selecionados...
             </p>
           </div>
         </div>
