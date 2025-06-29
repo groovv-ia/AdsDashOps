@@ -84,12 +84,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
 
           <div className="p-4 flex-shrink-0">
-            <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200/50">
-              <h3 className="font-medium text-gray-900 text-sm mb-1">Upgrade para Pro</h3>
-              <p className="text-xs text-gray-600 mb-3">Obtenha análises avançadas e campanhas ilimitadas</p>
-              <button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs py-2 rounded-md hover:shadow-lg transition-shadow">
-                Fazer Upgrade
-              </button>
+            <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200/50 relative overflow-hidden">
+              {/* Background Image */}
+              <div className="absolute inset-0 flex items-center justify-center opacity-20">
+                <img 
+                  src="/a-confident-smiling-woma33.jpg" 
+                  alt="Upgrade" 
+                  className="w-full h-full object-cover rounded-lg"
+                />
+              </div>
+              
+              {/* Content */}
+              <div className="relative z-10">
+                {/* Profile Image */}
+                <div className="flex justify-center mb-3">
+                  <img 
+                    src="/a-confident-smiling-woma33.jpg" 
+                    alt="Upgrade to Pro" 
+                    className="w-16 h-16 rounded-full object-cover border-2 border-white shadow-lg"
+                  />
+                </div>
+                
+                <h3 className="font-medium text-gray-900 text-sm mb-1 text-center">Upgrade para Pro</h3>
+                <p className="text-xs text-gray-600 mb-3 text-center">Obtenha análises avançadas e campanhas ilimitadas</p>
+                <button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs py-2 rounded-md hover:shadow-lg transition-shadow">
+                  Fazer Upgrade
+                </button>
+              </div>
             </div>
           </div>
         </div>
