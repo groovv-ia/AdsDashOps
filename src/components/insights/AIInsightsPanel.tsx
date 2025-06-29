@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Brain, 
+  Sparkles, 
   TrendingUp, 
   TrendingDown, 
   AlertTriangle, 
@@ -9,7 +9,6 @@ import {
   Zap,
   BarChart3,
   RefreshCw,
-  Sparkles,
   CheckCircle,
   XCircle,
   Clock,
@@ -190,7 +189,7 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="text-center">
             <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg mx-auto mb-3">
-              <Brain className="w-6 h-6 text-blue-600" />
+              <Sparkles className="w-6 h-6 text-blue-600" />
             </div>
             <h3 className="text-2xl font-bold text-gray-900">{totalInsights}</h3>
             <p className="text-sm text-gray-600">Insights Gerados</p>
@@ -296,10 +295,10 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <div className="p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg">
-            <Brain className="w-6 h-6 text-white" />
+            <Sparkles className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Insights com IA</h2>
+            <h2 className="text-2xl font-bold text-gray-900">Análise com IA</h2>
             <p className="text-gray-600">Análises inteligentes e recomendações estratégicas</p>
           </div>
         </div>

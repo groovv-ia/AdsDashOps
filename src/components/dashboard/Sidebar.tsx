@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Target, Settings, Database, TrendingUp, Users, Calendar, Brain } from 'lucide-react';
+import { BarChart3, Target, Settings, Database, TrendingUp, Users, Calendar, Sparkles } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -12,7 +12,7 @@ const menuItems = [
   { icon: BarChart3, label: 'Visão Geral', page: 'overview' },
   { icon: Target, label: 'Campanhas', page: 'campaigns' },
   { icon: TrendingUp, label: 'Performance', page: 'performance' },
-  { icon: Brain, label: 'Insights IA', page: 'ai-insights' },
+  { icon: Sparkles, label: 'Análise com IA', page: 'ai-insights' },
   { icon: Users, label: 'Audiências', page: 'audiences' },
   { icon: Calendar, label: 'Agendamento', page: 'scheduling' },
   { icon: Database, label: 'Fontes de Dados', page: 'data-sources' },
