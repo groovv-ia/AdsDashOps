@@ -231,9 +231,16 @@ export const DataSources: React.FC = () => {
 
   const handleSetupComplete = async (connectionData: any) => {
     try {
+      // Get the current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) throw userError;
+      if (!user) throw new Error('Usuário não autenticado');
+
       const { data, error } = await supabase
         .from('data_connections')
         .insert({
+          user_id: user.id, // Add the user_id field
           name: connectionData.connectionName,
           platform: connectionData.connector.platform,
           type: connectionData.connector.type,
