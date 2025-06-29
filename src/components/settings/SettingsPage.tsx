@@ -48,11 +48,13 @@ export const SettingsPage: React.FC = () => {
     email: '',
     phone: '',
     company: '',
-    position: '',
     address: '',
+    number: '',
+    complement: '',
+    neighborhood: '',
     city: '',
-    country: '',
     state: '',
+    country: '',
     cep: '',
     timezone: 'America/Sao_Paulo',
     language: 'pt-BR'
@@ -60,16 +62,21 @@ export const SettingsPage: React.FC = () => {
 
   useEffect(() => {
     if (profile) {
+      // Parse address to extract components if it's a full address string
+      const addressParts = profile.address ? profile.address.split(',').map(part => part.trim()) : [];
+      
       setFormData({
         full_name: profile.full_name || '',
         email: profile.email || '',
         phone: profile.phone || '',
         company: profile.company || '',
-        position: profile.position || '',
-        address: profile.address || '',
+        address: addressParts[0] || '',
+        number: addressParts[1] || '',
+        complement: addressParts[2] || '',
+        neighborhood: addressParts[3] || '',
         city: profile.city || '',
-        country: profile.country || '',
         state: profile.state || '',
+        country: profile.country || '',
         cep: profile.cep || '',
         timezone: profile.timezone || 'America/Sao_Paulo',
         language: profile.language || 'pt-BR'
@@ -82,6 +89,36 @@ export const SettingsPage: React.FC = () => {
       ...prev,
       [field]: value
     }));
+  };
+
+  // Phone mask function
+  const formatPhone = (value: string) => {
+    // Remove all non-numeric characters
+    const numbers = value.replace(/\D/g, '');
+    
+    // Apply mask based on length
+    if (numbers.length <= 10) {
+      // Format as (XX) XXXX-XXXX
+      return numbers.replace(/(\d{2})(\d{4})(\d{0,4})/, (match, p1, p2, p3) => {
+        if (p3) return `(${p1}) ${p2}-${p3}`;
+        if (p2) return `(${p1}) ${p2}`;
+        if (p1) return `(${p1}`;
+        return numbers;
+      });
+    } else {
+      // Format as (XX) 9XXXX-XXXX
+      return numbers.replace(/(\d{2})(\d{5})(\d{0,4})/, (match, p1, p2, p3) => {
+        if (p3) return `(${p1}) ${p2}-${p3}`;
+        if (p2) return `(${p1}) ${p2}`;
+        if (p1) return `(${p1}`;
+        return numbers;
+      });
+    }
+  };
+
+  const handlePhoneChange = (value: string) => {
+    const formattedPhone = formatPhone(value);
+    handleInputChange('phone', formattedPhone);
   };
 
   const searchAddressByCep = async (cep: string) => {
@@ -111,6 +148,7 @@ export const SettingsPage: React.FC = () => {
       setFormData(prev => ({
         ...prev,
         address: data.logradouro || prev.address,
+        neighborhood: data.bairro || prev.neighborhood,
         city: data.localidade || prev.city,
         state: data.uf || prev.state,
         country: 'Brasil',
@@ -151,7 +189,22 @@ export const SettingsPage: React.FC = () => {
     setSaveMessage(null);
 
     try {
-      const result = await updateProfile(formData);
+      // Combine address components into a single address string
+      const addressComponents = [
+        formData.address,
+        formData.number,
+        formData.complement,
+        formData.neighborhood
+      ].filter(Boolean);
+      
+      const fullAddress = addressComponents.join(', ');
+
+      const profileData = {
+        ...formData,
+        address: fullAddress
+      };
+
+      const result = await updateProfile(profileData);
       
       if (result.success) {
         setSaveMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
@@ -343,10 +396,14 @@ export const SettingsPage: React.FC = () => {
                 <input
                   type="tel"
                   value={formData.phone}
-                  onChange={(e) => handleInputChange('phone', e.target.value)}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="(11) 99999-9999"
+                  maxLength={15}
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Formato: (11) 99999-9999
+                </p>
               </div>
 
               <div>
@@ -361,20 +418,14 @@ export const SettingsPage: React.FC = () => {
                   placeholder="Nome da empresa"
                 />
               </div>
+            </div>
+          </Card>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Cargo
-                </label>
-                <input
-                  type="text"
-                  value={formData.position}
-                  onChange={(e) => handleInputChange('position', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Seu cargo"
-                />
-              </div>
-
+          {/* Address Information */}
+          <Card>
+            <h3 className="text-lg font-semibold text-gray-900 mb-6">Endereço</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   CEP
@@ -401,16 +452,68 @@ export const SettingsPage: React.FC = () => {
                 </p>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Estado
+                </label>
+                <input
+                  type="text"
+                  value={formData.state}
+                  onChange={(e) => handleInputChange('state', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Estado/UF"
+                />
+              </div>
+
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Endereço
+                  Logradouro
                 </label>
                 <input
                   type="text"
                   value={formData.address}
                   onChange={(e) => handleInputChange('address', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Rua, Avenida, número"
+                  placeholder="Rua, Avenida, etc."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Número
+                </label>
+                <input
+                  type="text"
+                  value={formData.number}
+                  onChange={(e) => handleInputChange('number', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="123"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Complemento
+                </label>
+                <input
+                  type="text"
+                  value={formData.complement}
+                  onChange={(e) => handleInputChange('complement', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Apto, Sala, etc. (opcional)"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Bairro
+                </label>
+                <input
+                  type="text"
+                  value={formData.neighborhood}
+                  onChange={(e) => handleInputChange('neighborhood', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Nome do bairro"
                 />
               </div>
 
@@ -429,19 +532,6 @@ export const SettingsPage: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Estado
-                </label>
-                <input
-                  type="text"
-                  value={formData.state}
-                  onChange={(e) => handleInputChange('state', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Estado/UF"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
                   País
                 </label>
                 <input
@@ -452,7 +542,14 @@ export const SettingsPage: React.FC = () => {
                   placeholder="País"
                 />
               </div>
+            </div>
+          </Card>
 
+          {/* System Preferences */}
+          <Card>
+            <h3 className="text-lg font-semibold text-gray-900 mb-6">Preferências do Sistema</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Fuso Horário
@@ -466,6 +563,8 @@ export const SettingsPage: React.FC = () => {
                   <option value="America/New_York">Nova York (GMT-5)</option>
                   <option value="Europe/London">Londres (GMT+0)</option>
                   <option value="Asia/Tokyo">Tóquio (GMT+9)</option>
+                  <option value="America/Los_Angeles">Los Angeles (GMT-8)</option>
+                  <option value="Europe/Paris">Paris (GMT+1)</option>
                 </select>
               </div>
 
@@ -481,6 +580,7 @@ export const SettingsPage: React.FC = () => {
                   <option value="pt-BR">Português (Brasil)</option>
                   <option value="en-US">English (US)</option>
                   <option value="es-ES">Español</option>
+                  <option value="fr-FR">Français</option>
                 </select>
               </div>
             </div>
