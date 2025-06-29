@@ -193,48 +193,6 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
     }
   };
 
-  // Get selected item names for display
-  const getSelectedPlatformName = () => {
-    if (!selectedPlatform) return 'Todas as plataformas';
-    return platforms.find(p => p.id === selectedPlatform)?.name || selectedPlatform;
-  };
-
-  const getSelectedCampaignNames = () => {
-    if (selectedCampaigns.length === 0) return 'Todas as campanhas';
-    if (selectedCampaigns.length === 1) {
-      const campaign = mockCampaigns.find(c => c.id === selectedCampaigns[0]);
-      return campaign?.name || 'Campanha não encontrada';
-    }
-    return selectedCampaigns.map(id => {
-      const campaign = mockCampaigns.find(c => c.id === id);
-      return campaign?.name || id;
-    }).join(', ');
-  };
-
-  const getSelectedAdSetNames = () => {
-    if (selectedAdSets.length === 0) return 'Todos os conjuntos';
-    if (selectedAdSets.length === 1) {
-      const adSet = mockAdSets.find(as => as.id === selectedAdSets[0]);
-      return adSet?.name || 'Conjunto não encontrado';
-    }
-    return selectedAdSets.map(id => {
-      const adSet = mockAdSets.find(as => as.id === id);
-      return adSet?.name || id;
-    }).join(', ');
-  };
-
-  const getSelectedAdNames = () => {
-    if (selectedAds.length === 0) return 'Todos os anúncios';
-    if (selectedAds.length === 1) {
-      const ad = mockAds.find(a => a.id === selectedAds[0]);
-      return ad?.name || 'Anúncio não encontrado';
-    }
-    return selectedAds.map(id => {
-      const ad = mockAds.find(a => a.id === id);
-      return ad?.name || id;
-    }).join(', ');
-  };
-
   return (
     <div className="space-y-6">
       <Card>
@@ -323,14 +281,10 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                 {showCampaignDropdown && (
                   <>
                     <div 
-                      className="fixed inset-0"
-                      style={{ zIndex: 9998 }}
+                      className="fixed inset-0 z-40" 
                       onClick={() => setShowCampaignDropdown(false)}
                     />
-                    <div 
-                      className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
-                      style={{ zIndex: 9999 }}
-                    >
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-50 max-h-60 overflow-y-auto">
                       {availableCampaigns.map((campaign) => {
                         const isSelected = selectedCampaigns.includes(campaign.id);
                         const platform = platforms.find(p => p.id === campaign.platform.toLowerCase());
@@ -391,14 +345,10 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                 {showAdSetDropdown && (
                   <>
                     <div 
-                      className="fixed inset-0"
-                      style={{ zIndex: 9998 }}
+                      className="fixed inset-0 z-40" 
                       onClick={() => setShowAdSetDropdown(false)}
                     />
-                    <div 
-                      className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
-                      style={{ zIndex: 9999 }}
-                    >
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-50 max-h-60 overflow-y-auto">
                       {availableAdSets.map((adSet) => {
                         const isSelected = selectedAdSets.includes(adSet.id);
                         const campaign = mockCampaigns.find(c => c.id === adSet.campaign_id);
@@ -457,14 +407,10 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
                 {showAdDropdown && (
                   <>
                     <div 
-                      className="fixed inset-0"
-                      style={{ zIndex: 9998 }}
+                      className="fixed inset-0 z-40" 
                       onClick={() => setShowAdDropdown(false)}
                     />
-                    <div 
-                      className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto"
-                      style={{ zIndex: 9999 }}
-                    >
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-2xl z-50 max-h-60 overflow-y-auto">
                       {availableAds.map((ad) => {
                         const isSelected = selectedAds.includes(ad.id);
                         const adSet = mockAdSets.find(as => as.id === ad.ad_set_id);
@@ -497,68 +443,23 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
               </div>
             </div>
           )}
-        </div>
-      </Card>
 
-      {/* Selection Summary Card - Com z-index baixo para ficar atrás dos dropdowns */}
-      <Card className="bg-blue-50 border-blue-200 relative" style={{ zIndex: 1 }}>
-        <div className="space-y-4">
-          <h4 className="font-semibold text-blue-900 text-lg">Seleção Atual</h4>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="font-medium text-blue-800">Plataforma:</span>
-              <div className="text-blue-700 mt-1">{getSelectedPlatformName()}</div>
-            </div>
-            
-            <div>
-              <span className="font-medium text-blue-800">Campanhas:</span>
-              <div className="text-blue-700 mt-1 break-words">
-                {selectedCampaigns.length > 0 ? (
-                  selectedCampaigns.length === 1 ? 
-                    getSelectedCampaignNames() : 
-                    `${selectedCampaigns.length} selecionadas`
-                ) : 'Todas as campanhas'}
-              </div>
-            </div>
-            
-            <div>
-              <span className="font-medium text-blue-800">Conjuntos:</span>
-              <div className="text-blue-700 mt-1 break-words">
-                {selectedAdSets.length > 0 ? (
-                  selectedAdSets.length === 1 ? 
-                    getSelectedAdSetNames() : 
-                    `${selectedAdSets.length} selecionados`
-                ) : 'Todos os conjuntos'}
-              </div>
-            </div>
-            
-            <div>
-              <span className="font-medium text-blue-800">Anúncios:</span>
-              <div className="text-blue-700 mt-1 break-words">
-                {selectedAds.length > 0 ? (
-                  selectedAds.length === 1 ? 
-                    getSelectedAdNames() : 
-                    `${selectedAds.length} selecionados`
-                ) : 'Todos os anúncios'}
-              </div>
+          {/* Generate Analysis Button - Moved inside the card */}
+          <div className="pt-4 border-t border-gray-200">
+            <div className="flex justify-center">
+              <Button
+                onClick={onGenerateAnalysis}
+                loading={loading}
+                icon={Sparkles}
+                size="lg"
+                className="px-8 py-4 text-lg font-semibold"
+              >
+                {loading ? 'Gerando Análise...' : 'Gerar Análise com IA'}
+              </Button>
             </div>
           </div>
         </div>
       </Card>
-
-      {/* Generate Analysis Button */}
-      <div className="flex justify-center">
-        <Button
-          onClick={onGenerateAnalysis}
-          loading={loading}
-          icon={Sparkles}
-          size="lg"
-          className="px-8 py-4 text-lg font-semibold"
-        >
-          {loading ? 'Gerando Análise...' : 'Gerar Análise com IA'}
-        </Button>
-      </div>
     </div>
   );
 };
