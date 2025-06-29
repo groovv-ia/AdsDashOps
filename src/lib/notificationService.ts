@@ -1,10 +1,10 @@
 import { supabase } from './supabase';
-import { Notification, NotificationSettings, NotificationRule } from '../types/notifications';
+import { Notification as AppNotification, NotificationSettings, NotificationRule } from '../types/notifications';
 
 export class NotificationService {
   private static instance: NotificationService;
   private eventSource: EventSource | null = null;
-  private listeners: ((notification: Notification) => void)[] = [];
+  private listeners: ((notification: AppNotification) => void)[] = [];
 
   static getInstance(): NotificationService {
     if (!NotificationService.instance) {
@@ -31,7 +31,7 @@ export class NotificationService {
             filter: `user_id=eq.${user.id}`
           },
           (payload) => {
-            const notification = payload.new as Notification;
+            const notification = payload.new as AppNotification;
             this.handleNewNotification(notification);
           }
         )
@@ -49,7 +49,7 @@ export class NotificationService {
   }
 
   // Handle new notification
-  private async handleNewNotification(notification: Notification) {
+  private async handleNewNotification(notification: AppNotification) {
     // Notify all listeners
     this.listeners.forEach(listener => listener(notification));
 
@@ -64,7 +64,7 @@ export class NotificationService {
   }
 
   // Add notification listener
-  addListener(callback: (notification: Notification) => void) {
+  addListener(callback: (notification: AppNotification) => void) {
     this.listeners.push(callback);
     return () => {
       this.listeners = this.listeners.filter(listener => listener !== callback);
@@ -72,7 +72,7 @@ export class NotificationService {
   }
 
   // Get user notifications
-  async getNotifications(limit = 50, offset = 0): Promise<Notification[]> {
+  async getNotifications(limit = 50, offset = 0): Promise<AppNotification[]> {
     try {
       const { data, error } = await supabase
         .from('notifications')
@@ -157,7 +157,7 @@ export class NotificationService {
   }
 
   // Create notification
-  async createNotification(notification: Omit<Notification, 'id' | 'user_id' | 'created_at'>): Promise<void> {
+  async createNotification(notification: Omit<AppNotification, 'id' | 'user_id' | 'created_at'>): Promise<void> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -217,7 +217,7 @@ export class NotificationService {
   }
 
   // Show desktop notification
-  private showDesktopNotification(notification: Notification) {
+  private showDesktopNotification(notification: AppNotification) {
     if ('Notification' in window && Notification.permission === 'granted') {
       const desktopNotification = new Notification(notification.title, {
         body: notification.message,
@@ -267,7 +267,7 @@ export class NotificationService {
   }
 
   // Check if notification should be shown based on settings
-  private shouldShowNotification(notification: Notification, settings: NotificationSettings): boolean {
+  private shouldShowNotification(notification: AppNotification, settings: NotificationSettings): boolean {
     // Check if category is enabled
     if (!settings.categories[notification.category]) {
       return false;
