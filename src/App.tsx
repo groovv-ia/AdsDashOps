@@ -9,6 +9,7 @@ import { PerformanceChart } from './components/dashboard/PerformanceChart';
 import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
 import { useAuth } from './hooks/useAuth';
+import { useNotifications } from './hooks/useNotifications';
 import { mockCampaigns, mockMetrics, mockAdSets, mockAds } from './data/mockData';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
@@ -16,6 +17,7 @@ import { Card } from './components/ui/Card';
 
 function App() {
   const { user, loading } = useAuth();
+  const { notifications, unreadCount } = useNotifications();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
