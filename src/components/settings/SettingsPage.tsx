@@ -654,7 +654,7 @@ export const SettingsPage: React.FC = () => {
               </Tooltip>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
+            <div className="grid grid-cols-3 gap-6 mb-6">
               {[
                 { value: 'light', label: 'Claro', icon: Sun, description: 'Interface clara e limpa' },
                 { value: 'dark', label: 'Escuro', icon: Moon, description: 'Interface escura para reduzir cansaço visual' },
@@ -663,7 +663,7 @@ export const SettingsPage: React.FC = () => {
                 <Tooltip key={themeOption.value} content={themeOption.description}>
                   <button
                     onClick={() => handleThemeChange(themeOption.value as any)}
-                    className={`p-6 border-2 rounded-xl flex flex-col items-center space-y-4 transition-all duration-200 ${
+                    className={`relative p-6 border-2 rounded-xl flex flex-col items-center space-y-4 transition-all duration-200 ${
                       theme === themeOption.value
                         ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200'
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
