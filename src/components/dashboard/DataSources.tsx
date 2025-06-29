@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Database, 
   Plus, 
@@ -13,10 +13,25 @@ import {
   Zap,
   Cloud,
   FileText,
-  Globe
+  Globe,
+  Key,
+  Link,
+  Upload,
+  Download
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { supabase } from '../../lib/supabase';
+import { 
+  DataSyncService, 
+  MetaAdsConnector, 
+  GoogleAdsConnector, 
+  TikTokAdsConnector,
+  initiateOAuth,
+  exchangeCodeForToken,
+  type DataSourceConnection,
+  type ConnectionConfig
+} from '../../lib/dataConnectors';
 
 interface DataSource {
   id: string;
@@ -29,6 +44,7 @@ interface DataSource {
   logo: string;
   description: string;
   metrics?: string[];
+  error?: string;
 }
 
 const availableConnectors = [
@@ -39,7 +55,9 @@ const availableConnectors = [
     type: 'advertising' as const,
     logo: '/meta-icon.svg',
     description: 'Conecte suas campanhas do Facebook e Instagram Ads',
-    metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'ROAS']
+    metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'ROAS'],
+    requiresOAuth: true,
+    oauthUrl: 'https://developers.facebook.com/docs/marketing-api/overview'
   },
   {
     id: 'google-ads',
@@ -48,7 +66,9 @@ const availableConnectors = [
     type: 'advertising' as const,
     logo: '/google-ads-icon.svg',
     description: 'Importe dados de campanhas do Google Ads',
-    metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'Quality Score']
+    metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'Quality Score'],
+    requiresOAuth: true,
+    oauthUrl: 'https://developers.google.com/google-ads/api/docs/oauth/overview'
   },
   {
     id: 'tiktok-ads',
@@ -57,7 +77,9 @@ const availableConnectors = [
     type: 'advertising' as const,
     logo: '/tiktok-icon.svg',
     description: 'Conecte suas campanhas do TikTok for Business',
-    metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'Video Views']
+    metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'Video Views'],
+    requiresOAuth: true,
+    oauthUrl: 'https://ads.tiktok.com/marketing_api/docs?id=1738373164380162'
   },
   {
     id: 'google-analytics',
@@ -66,34 +88,9 @@ const availableConnectors = [
     type: 'analytics' as const,
     logo: '/google-ads-icon.svg',
     description: 'Dados de tráfego e comportamento do usuário',
-    metrics: ['Sessões', 'Usuários', 'Taxa de Rejeição', 'Duração da Sessão']
-  },
-  {
-    id: 'facebook-insights',
-    name: 'Facebook Insights',
-    platform: 'Meta',
-    type: 'analytics' as const,
-    logo: '/meta-icon.svg',
-    description: 'Métricas de páginas e posts do Facebook',
-    metrics: ['Alcance', 'Engajamento', 'Curtidas', 'Compartilhamentos']
-  },
-  {
-    id: 'shopify',
-    name: 'Shopify',
-    platform: 'Shopify',
-    type: 'crm' as const,
-    logo: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSI+CjxwYXRoIGQ9Ik0xNS44IDIuMWMtLjItLjEtLjUtLjEtLjcgMC0uMi4xLTQuNC42LTQuNC42cy0yLjktMi45LTMuMi0zLjJjLS4zLS4zLS45LS4yLTEuMS0uMSAwIDAtLjIuMS0uNS4yLS41LTEuNi0xLjMtMy4xLTIuOC0zLjFoLS4xYy0uOCAwLTEuNi4zLTIuMi45LS45LjktMS41IDIuMy0xLjYgMy44IDAgLjEgMCAuMy0uMS40TDIuNSA4LjhjLS44LjItMS40LjQtMS40IDEuMnYuMUwyLjIgMjJoMTguNWwxLjEtMTEuOWMuMS0uOC0uNS0xLjUtMS4zLTEuNmwtNC43LS40eiIgZmlsbD0iIzk1QkY0NyIvPgo8cGF0aCBkPSJNMTUuMSAyLjhjLS4xIDAtLjIgMC0uMy4xbC0zLjMuNHYzLjRsMy42LS40VjIuOHoiIGZpbGw9IiM1RThFM0UiLz4KPHA+YXRoIGQ9Ik0xMS41IDMuM2wtMi45LjN2My4xbDIuOS0uM1YzLjN6IiBmaWxsPSIjOTVCRjQ3Ii8+Cjwvc3ZnPg==',
-    description: 'Dados de vendas e produtos do Shopify',
-    metrics: ['Vendas', 'Pedidos', 'Produtos', 'Clientes']
-  },
-  {
-    id: 'hubspot',
-    name: 'HubSpot',
-    platform: 'HubSpot',
-    type: 'crm' as const,
-    logo: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSI+CjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjEwIiBmaWxsPSIjRkY3QTU5Ii8+CjxwYXRoIGQ9Ik04IDhoOHY4SDh6IiBmaWxsPSJ3aGl0ZSIvPgo8Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIyIiBmaWxsPSIjRkY3QTU5Ii8+Cjwvc3ZnPg==',
-    description: 'CRM e automação de marketing',
-    metrics: ['Leads', 'Deals', 'Contacts', 'Email Performance']
+    metrics: ['Sessões', 'Usuários', 'Taxa de Rejeição', 'Duração da Sessão'],
+    requiresOAuth: true,
+    oauthUrl: 'https://developers.google.com/analytics/devguides/reporting/core/v4'
   },
   {
     id: 'csv-upload',
@@ -102,55 +99,19 @@ const availableConnectors = [
     type: 'file' as const,
     logo: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSI+CjxwYXRoIGQ9Ik0xMyAySDE2YTIgMiAwIDAgMC0yIDJ2MTZhMiAyIDAgMCAwIDIgMmgxMmEyIDIgMCAwIDAgMi0yVjlsLTctN3oiIHN0cm9rZT0iIzRiNzY4OCIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGZpbGw9IiNmOGY5ZmEiLz4KPHA+YXRoIGQ9Ik0xMyAydjdoNyIgc3Ryb2tlPSIjNGI3Njg4IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8dGV4dCB4PSIxMiIgeT0iMTYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iNiIgZmlsbD0iIzRiNzY4OCIgZm9udC13ZWlnaHQ9ImJvbGQiPkNTVjwvdGV4dD4KPC9zdmc+',
     description: 'Faça upload de arquivos CSV com seus dados',
-    metrics: ['Dados Personalizados']
-  }
-];
-
-const mockDataSources: DataSource[] = [
-  {
-    id: '1',
-    name: 'Meta Ads - Conta Principal',
-    platform: 'Meta',
-    type: 'advertising',
-    status: 'connected',
-    lastSync: '2024-01-15T10:30:00Z',
-    accountId: 'act_123456789',
-    logo: '/meta-icon.svg',
-    description: 'Campanhas do Facebook e Instagram',
-    metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC', 'ROAS']
-  },
-  {
-    id: '2',
-    name: 'Google Ads - E-commerce',
-    platform: 'Google',
-    type: 'advertising',
-    status: 'syncing',
-    lastSync: '2024-01-15T09:15:00Z',
-    accountId: '123-456-7890',
-    logo: '/google-ads-icon.svg',
-    description: 'Campanhas de busca e display',
-    metrics: ['Impressões', 'Cliques', 'Conversões', 'CTR', 'CPC']
-  },
-  {
-    id: '3',
-    name: 'TikTok Ads - Marca',
-    platform: 'TikTok',
-    type: 'advertising',
-    status: 'error',
-    lastSync: '2024-01-14T16:45:00Z',
-    accountId: 'tiktok_987654321',
-    logo: '/tiktok-icon.svg',
-    description: 'Campanhas de vídeo e awareness',
-    metrics: ['Impressões', 'Cliques', 'Video Views']
+    metrics: ['Dados Personalizados'],
+    requiresOAuth: false
   }
 ];
 
 export const DataSources: React.FC = () => {
-  const [dataSources, setDataSources] = useState<DataSource[]>(mockDataSources);
+  const [dataSources, setDataSources] = useState<DataSource[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showOAuthModal, setShowOAuthModal] = useState(false);
   const [selectedConnector, setSelectedConnector] = useState<typeof availableConnectors[0] | null>(null);
-  const [configData, setConfigData] = useState({
+  const [configData, setConfigData] = useState<ConnectionConfig>({
     accountId: '',
     accessToken: '',
     clientId: '',
@@ -158,6 +119,41 @@ export const DataSources: React.FC = () => {
     refreshToken: ''
   });
   const [showTokens, setShowTokens] = useState(false);
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+
+  const syncService = new DataSyncService();
+
+  useEffect(() => {
+    loadDataSources();
+    
+    // Listen for OAuth callback messages
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'oauth-callback') {
+        handleOAuthCallback(event.data.code, event.data.platform);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const loadDataSources = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('data_connections')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setDataSources(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar fontes de dados:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -202,25 +198,119 @@ export const DataSources: React.FC = () => {
   const handleConnectSource = (connector: typeof availableConnectors[0]) => {
     setSelectedConnector(connector);
     setShowAddModal(false);
-    setShowConfigModal(true);
+    
+    if (connector.requiresOAuth) {
+      setShowOAuthModal(true);
+    } else {
+      setShowConfigModal(true);
+    }
   };
 
-  const handleSaveConnection = () => {
-    if (selectedConnector) {
-      const newSource: DataSource = {
-        id: Date.now().toString(),
-        name: `${selectedConnector.name} - Nova Conexão`,
+  const handleOAuthStart = () => {
+    if (!selectedConnector) return;
+
+    const redirectUri = `${window.location.origin}/oauth-callback`;
+    const clientId = configData.clientId;
+
+    if (!clientId) {
+      alert('Por favor, insira o Client ID primeiro');
+      return;
+    }
+
+    switch (selectedConnector.platform.toLowerCase()) {
+      case 'meta':
+        initiateOAuth.meta(clientId, redirectUri);
+        break;
+      case 'google':
+        initiateOAuth.google(clientId, redirectUri);
+        break;
+      case 'tiktok':
+        initiateOAuth.tiktok(clientId, redirectUri);
+        break;
+    }
+  };
+
+  const handleOAuthCallback = async (code: string, platform: string) => {
+    if (!selectedConnector) return;
+
+    try {
+      const redirectUri = `${window.location.origin}/oauth-callback`;
+      let tokenData;
+
+      switch (platform.toLowerCase()) {
+        case 'meta':
+          tokenData = await exchangeCodeForToken.meta(
+            code, 
+            configData.clientId, 
+            configData.clientSecret, 
+            redirectUri
+          );
+          break;
+        case 'google':
+          tokenData = await exchangeCodeForToken.google(
+            code, 
+            configData.clientId, 
+            configData.clientSecret, 
+            redirectUri
+          );
+          break;
+        case 'tiktok':
+          tokenData = await exchangeCodeForToken.tiktok(
+            code, 
+            configData.clientId, 
+            configData.clientSecret, 
+            redirectUri
+          );
+          break;
+      }
+
+      if (tokenData.access_token) {
+        setConfigData(prev => ({
+          ...prev,
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+          expiresAt: tokenData.expires_in ? 
+            new Date(Date.now() + tokenData.expires_in * 1000).toISOString() : 
+            undefined
+        }));
+        
+        setShowOAuthModal(false);
+        setShowConfigModal(true);
+      } else {
+        throw new Error('Falha na autenticação OAuth');
+      }
+    } catch (error) {
+      console.error('Erro no OAuth callback:', error);
+      alert('Erro na autenticação. Tente novamente.');
+    }
+  };
+
+  const handleSaveConnection = async () => {
+    if (!selectedConnector) return;
+
+    try {
+      const connectionData = {
+        name: `${selectedConnector.name} - ${configData.accountId}`,
         platform: selectedConnector.platform,
         type: selectedConnector.type,
-        status: 'connected',
-        lastSync: new Date().toISOString(),
-        accountId: configData.accountId,
+        status: 'disconnected',
+        config: configData,
         logo: selectedConnector.logo,
         description: selectedConnector.description,
         metrics: selectedConnector.metrics
       };
+
+      const { data, error } = await supabase
+        .from('data_connections')
+        .insert(connectionData)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Test connection and sync data
+      await handleSync(data.id);
       
-      setDataSources([...dataSources, newSource]);
       setShowConfigModal(false);
       setConfigData({
         accountId: '',
@@ -229,33 +319,114 @@ export const DataSources: React.FC = () => {
         clientSecret: '',
         refreshToken: ''
       });
+      
+      await loadDataSources();
+    } catch (error) {
+      console.error('Erro ao salvar conexão:', error);
+      alert('Erro ao salvar conexão. Verifique os dados e tente novamente.');
     }
   };
 
-  const handleSync = (sourceId: string) => {
-    setDataSources(sources => 
-      sources.map(source => 
-        source.id === sourceId 
-          ? { ...source, status: 'syncing' as const }
-          : source
-      )
-    );
+  const handleSync = async (sourceId: string) => {
+    setSyncingIds(prev => new Set(prev).add(sourceId));
     
-    // Simulate sync completion
-    setTimeout(() => {
-      setDataSources(sources => 
-        sources.map(source => 
-          source.id === sourceId 
-            ? { ...source, status: 'connected' as const, lastSync: new Date().toISOString() }
-            : source
-        )
-      );
-    }, 3000);
+    try {
+      const source = dataSources.find(s => s.id === sourceId);
+      if (!source) return;
+
+      const connection: DataSourceConnection = {
+        id: source.id,
+        name: source.name,
+        platform: source.platform,
+        type: source.type,
+        status: source.status,
+        config: source as any // This would come from the database
+      };
+
+      const result = await syncService.syncDataSource(connection);
+      
+      if (!result.success) {
+        console.error('Erro na sincronização:', result.error);
+      }
+      
+      await loadDataSources();
+    } catch (error) {
+      console.error('Erro ao sincronizar:', error);
+    } finally {
+      setSyncingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(sourceId);
+        return newSet;
+      });
+    }
   };
 
-  const handleDelete = (sourceId: string) => {
-    setDataSources(sources => sources.filter(source => source.id !== sourceId));
+  const handleDelete = async (sourceId: string) => {
+    if (!confirm('Tem certeza que deseja remover esta fonte de dados?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('data_connections')
+        .delete()
+        .eq('id', sourceId);
+
+      if (error) throw error;
+      
+      await loadDataSources();
+    } catch (error) {
+      console.error('Erro ao deletar fonte:', error);
+    }
   };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setCsvFile(file);
+    
+    // Process CSV file
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const csv = e.target?.result as string;
+      // Here you would parse the CSV and store it in your database
+      console.log('CSV content:', csv);
+      
+      // Create a file-based data source
+      const connectionData = {
+        name: `CSV Upload - ${file.name}`,
+        platform: 'File',
+        type: 'file',
+        status: 'connected',
+        config: { accountId: file.name, accessToken: 'file-upload' },
+        logo: availableConnectors.find(c => c.id === 'csv-upload')?.logo,
+        description: `Dados importados de ${file.name}`,
+        metrics: ['Dados Personalizados']
+      };
+
+      try {
+        const { error } = await supabase
+          .from('data_connections')
+          .insert(connectionData);
+
+        if (error) throw error;
+        
+        await loadDataSources();
+        setShowConfigModal(false);
+      } catch (error) {
+        console.error('Erro ao salvar arquivo CSV:', error);
+      }
+    };
+    
+    reader.readAsText(file);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -284,6 +455,8 @@ export const DataSources: React.FC = () => {
         <div className="space-y-4">
           {dataSources.map((source) => {
             const TypeIcon = getTypeIcon(source.type);
+            const isCurrentlySyncing = syncingIds.has(source.id);
+            
             return (
               <div key={source.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
                 <div className="flex items-center space-x-4">
@@ -301,8 +474,8 @@ export const DataSources: React.FC = () => {
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(source.status)}`}>
                         {source.status === 'connected' && <CheckCircle className="w-3 h-3 mr-1" />}
                         {source.status === 'error' && <AlertCircle className="w-3 h-3 mr-1" />}
-                        {source.status === 'syncing' && <RefreshCw className="w-3 h-3 mr-1 animate-spin" />}
-                        {getStatusText(source.status)}
+                        {(source.status === 'syncing' || isCurrentlySyncing) && <RefreshCw className="w-3 h-3 mr-1 animate-spin" />}
+                        {getStatusText(isCurrentlySyncing ? 'syncing' : source.status)}
                       </span>
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getTypeColor(source.type)}`}>
                         <TypeIcon className="w-3 h-3 mr-1" />
@@ -312,6 +485,11 @@ export const DataSources: React.FC = () => {
                         Última sync: {new Date(source.lastSync).toLocaleString('pt-BR')}
                       </span>
                     </div>
+                    {source.error && (
+                      <div className="mt-2 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                        {source.error}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -320,10 +498,10 @@ export const DataSources: React.FC = () => {
                     variant="ghost"
                     size="sm"
                     onClick={() => handleSync(source.id)}
-                    disabled={source.status === 'syncing'}
+                    disabled={isCurrentlySyncing}
                     title="Sincronizar"
                   >
-                    <RefreshCw className={`w-4 h-4 ${source.status === 'syncing' ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-4 h-4 ${isCurrentlySyncing ? 'animate-spin' : ''}`} />
                   </Button>
                   <Button
                     variant="ghost"
@@ -406,6 +584,12 @@ export const DataSources: React.FC = () => {
                           </span>
                         )}
                       </div>
+                      {connector.requiresOAuth && (
+                        <div className="mt-2 flex items-center text-xs text-blue-600">
+                          <Key className="w-3 h-3 mr-1" />
+                          Requer OAuth
+                        </div>
+                      )}
                     </button>
                   );
                 })}
@@ -416,6 +600,113 @@ export const DataSources: React.FC = () => {
               <Button variant="outline" onClick={() => setShowAddModal(false)}>
                 Cancelar
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OAuth Modal */}
+      {showOAuthModal && selectedConnector && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 flex items-center justify-center">
+                  <img 
+                    src={selectedConnector.logo} 
+                    alt={selectedConnector.name}
+                    className="w-8 h-8 object-contain"
+                  />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Autenticação OAuth - {selectedConnector.name}</h2>
+                  <p className="text-gray-600">Configure suas credenciais de API</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-2">
+                  <Key className="w-5 h-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-blue-900">Configuração OAuth</h4>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Primeiro, configure suas credenciais de API no painel de desenvolvedor do {selectedConnector.name}.
+                    </p>
+                    <a 
+                      href={selectedConnector.oauthUrl} 
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:text-blue-800 underline mt-2 inline-flex items-center"
+                    >
+                      Acessar documentação <ExternalLink className="w-3 h-3 ml-1" />
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Client ID *
+                  </label>
+                  <input
+                    type="text"
+                    value={configData.clientId}
+                    onChange={(e) => setConfigData({...configData, clientId: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Digite seu Client ID"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Client Secret *
+                  </label>
+                  <input
+                    type="password"
+                    value={configData.clientSecret}
+                    onChange={(e) => setConfigData({...configData, clientSecret: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Digite seu Client Secret"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  ID da Conta
+                </label>
+                <input
+                  type="text"
+                  value={configData.accountId}
+                  onChange={(e) => setConfigData({...configData, accountId: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Digite o ID da sua conta de anúncios"
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-between">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowOAuthModal(false)}
+              >
+                Cancelar
+              </Button>
+              <div className="space-x-3">
+                <Button 
+                  variant="outline"
+                  onClick={handleOAuthStart}
+                  disabled={!configData.clientId || !configData.clientSecret}
+                  icon={Link}
+                >
+                  Iniciar OAuth
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -436,92 +727,94 @@ export const DataSources: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900">Configurar {selectedConnector.name}</h2>
-                  <p className="text-gray-600">Insira suas credenciais de API</p>
+                  <p className="text-gray-600">
+                    {selectedConnector.type === 'file' ? 'Faça upload do seu arquivo' : 'Finalize a configuração'}
+                  </p>
                 </div>
               </div>
             </div>
 
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ID da Conta
-                </label>
-                <input
-                  type="text"
-                  value={configData.accountId}
-                  onChange={(e) => setConfigData({...configData, accountId: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Digite o ID da sua conta"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Access Token
-                </label>
-                <div className="relative">
-                  <input
-                    type={showTokens ? "text" : "password"}
-                    value={configData.accessToken}
-                    onChange={(e) => setConfigData({...configData, accessToken: e.target.value})}
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Digite seu access token"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowTokens(!showTokens)}
-                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
-                  >
-                    {showTokens ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              {selectedConnector.type === 'file' ? (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Client ID
+                    Arquivo CSV
                   </label>
-                  <input
-                    type="text"
-                    value={configData.clientId}
-                    onChange={(e) => setConfigData({...configData, clientId: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Client ID"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Client Secret
-                  </label>
-                  <input
-                    type={showTokens ? "text" : "password"}
-                    value={configData.clientSecret}
-                    onChange={(e) => setConfigData({...configData, clientSecret: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Client Secret"
-                  />
-                </div>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-start space-x-2">
-                  <ExternalLink className="w-5 h-5 text-blue-600 mt-0.5" />
-                  <div>
-                    <h4 className="font-medium text-blue-900">Como obter suas credenciais</h4>
-                    <p className="text-sm text-blue-700 mt-1">
-                      Acesse o painel de desenvolvedor do {selectedConnector.name} para gerar suas credenciais de API.
-                    </p>
-                    <a 
-                      href="#" 
-                      className="text-sm text-blue-600 hover:text-blue-800 underline mt-2 inline-block"
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-600 mb-2">Clique para selecionar ou arraste seu arquivo CSV</p>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      id="csv-upload"
+                    />
+                    <label
+                      htmlFor="csv-upload"
+                      className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer"
                     >
-                      Ver documentação →
-                    </a>
+                      Selecionar Arquivo
+                    </label>
+                    {csvFile && (
+                      <p className="text-sm text-green-600 mt-2">
+                        Arquivo selecionado: {csvFile.name}
+                      </p>
+                    )}
                   </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ID da Conta
+                    </label>
+                    <input
+                      type="text"
+                      value={configData.accountId}
+                      onChange={(e) => setConfigData({...configData, accountId: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Digite o ID da sua conta"
+                    />
+                  </div>
+
+                  {configData.accessToken && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Access Token
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showTokens ? "text" : "password"}
+                          value={configData.accessToken}
+                          readOnly
+                          className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg bg-gray-50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowTokens(!showTokens)}
+                          className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                        >
+                          {showTokens ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <p className="text-xs text-green-600 mt-1">✓ Token obtido via OAuth</p>
+                    </div>
+                  )}
+
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-start space-x-2">
+                      <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                      <div>
+                        <h4 className="font-medium text-green-900">Autenticação Concluída</h4>
+                        <p className="text-sm text-green-700 mt-1">
+                          Suas credenciais foram validadas com sucesso. Clique em "Conectar" para finalizar.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
@@ -533,9 +826,9 @@ export const DataSources: React.FC = () => {
               </Button>
               <Button 
                 onClick={handleSaveConnection}
-                disabled={!configData.accountId || !configData.accessToken}
+                disabled={!configData.accountId || (!configData.accessToken && selectedConnector.type !== 'file')}
               >
-                Conectar
+                {selectedConnector.type === 'file' ? 'Upload' : 'Conectar'}
               </Button>
             </div>
           </div>

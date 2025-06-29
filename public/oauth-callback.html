@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Callback - AdsOPS</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .success {
+            color: #10b981;
+        }
+        .error {
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <h2>Processando autenticação...</h2>
+        <p id="status">Aguarde enquanto processamos sua autenticação OAuth.</p>
+    </div>
+
+    <script>
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const error = urlParams.get('error');
+            const state = urlParams.get('state');
+            
+            const statusEl = document.getElementById('status');
+            
+            if (error) {
+                statusEl.textContent = `Erro na autenticação: ${error}`;
+                statusEl.className = 'error';
+                
+                // Send error to parent window
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'oauth-callback',
+                        error: error,
+                        platform: getPlatformFromUrl()
+                    }, window.location.origin);
+                }
+                
+                setTimeout(() => window.close(), 3000);
+                return;
+            }
+            
+            if (code) {
+                statusEl.textContent = 'Autenticação bem-sucedida! Fechando janela...';
+                statusEl.className = 'success';
+                
+                // Send success to parent window
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'oauth-callback',
+                        code: code,
+                        state: state,
+                        platform: getPlatformFromUrl()
+                    }, window.location.origin);
+                }
+                
+                setTimeout(() => window.close(), 2000);
+                return;
+            }
+            
+            // No code or error - something went wrong
+            statusEl.textContent = 'Resposta OAuth inválida. Tente novamente.';
+            statusEl.className = 'error';
+            setTimeout(() => window.close(), 3000);
+            
+            function getPlatformFromUrl() {
+                const referrer = document.referrer;
+                if (referrer.includes('facebook.com') || referrer.includes('meta.com')) {
+                    return 'meta';
+                } else if (referrer.includes('google.com') || referrer.includes('googleapis.com')) {
+                    return 'google';
+                } else if (referrer.includes('tiktok.com')) {
+                    return 'tiktok';
+                }
+                
+                // Fallback: try to determine from state parameter or URL
+                if (state) {
+                    try {
+                        const stateData = JSON.parse(atob(state));
+                        return stateData.platform;
+                    } catch (e) {
+                        // Ignore parsing errors
+                    }
+                }
+                
+                return 'unknown';
+            }
+        })();
+    </script>
+</body>
+</html>
