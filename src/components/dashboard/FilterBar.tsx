@@ -194,6 +194,34 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     }
   };
 
+  // Helper functions to get selected item names
+  const getSelectedCampaignName = () => {
+    if (selectedCampaigns.length === 0) return null;
+    if (selectedCampaigns.length === 1) {
+      const campaign = mockCampaigns.find(c => c.id === selectedCampaigns[0]);
+      return campaign?.name;
+    }
+    return `${selectedCampaigns.length} campanhas selecionadas`;
+  };
+
+  const getSelectedAdSetName = () => {
+    if (selectedAdSets.length === 0) return null;
+    if (selectedAdSets.length === 1) {
+      const adSet = mockAdSets.find(as => as.id === selectedAdSets[0]);
+      return adSet?.name;
+    }
+    return `${selectedAdSets.length} conjuntos selecionados`;
+  };
+
+  const getSelectedAdName = () => {
+    if (selectedAds.length === 0) return null;
+    if (selectedAds.length === 1) {
+      const ad = mockAds.find(a => a.id === selectedAds[0]);
+      return ad?.name;
+    }
+    return `${selectedAds.length} anúncios selecionados`;
+  };
+
   return (
     <Card className="mb-6 relative z-10">
       <div className="space-y-6">
@@ -208,7 +236,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               variant="ghost"
               size="sm"
               onClick={handleClearAll}
-              disabled={!selectedPlatform}
+              disabled={!selectedPlatform && selectedCampaigns.length === 0 && selectedAdSets.length === 0 && selectedAds.length === 0}
             >
               Limpar Tudo
             </Button>
@@ -288,13 +316,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 onClick={() => setShowCampaignDropdown(!showCampaignDropdown)}
                 className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
               >
-                <span className="text-gray-700">
-                  {selectedCampaigns.length > 0 
-                    ? `${selectedCampaigns.length} campanha${selectedCampaigns.length > 1 ? 's' : ''} selecionada${selectedCampaigns.length > 1 ? 's' : ''}`
-                    : 'Selecionar campanhas'
-                  }
+                <span className="text-gray-700 truncate">
+                  {getSelectedCampaignName() || 'Selecionar campanhas'}
                 </span>
-                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showCampaignDropdown ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform flex-shrink-0 ml-2 ${showCampaignDropdown ? 'rotate-180' : ''}`} />
               </button>
 
               {showCampaignDropdown && (
@@ -368,13 +393,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 onClick={() => setShowAdSetDropdown(!showAdSetDropdown)}
                 className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
               >
-                <span className="text-gray-700">
-                  {selectedAdSets.length > 0 
-                    ? `${selectedAdSets.length} conjunto${selectedAdSets.length > 1 ? 's' : ''} selecionado${selectedAdSets.length > 1 ? 's' : ''}`
-                    : 'Selecionar conjuntos de anúncios'
-                  }
+                <span className="text-gray-700 truncate">
+                  {getSelectedAdSetName() || 'Selecionar conjuntos de anúncios'}
                 </span>
-                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showAdSetDropdown ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform flex-shrink-0 ml-2 ${showAdSetDropdown ? 'rotate-180' : ''}`} />
               </button>
 
               {showAdSetDropdown && (
@@ -445,13 +467,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 onClick={() => setShowAdDropdown(!showAdDropdown)}
                 className="w-full flex items-center justify-between px-4 py-3 bg-white border-2 border-gray-300 rounded-lg hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
               >
-                <span className="text-gray-700">
-                  {selectedAds.length > 0 
-                    ? `${selectedAds.length} anúncio${selectedAds.length > 1 ? 's' : ''} selecionado${selectedAds.length > 1 ? 's' : ''}`
-                    : 'Selecionar anúncios'
-                  }
+                <span className="text-gray-700 truncate">
+                  {getSelectedAdName() || 'Selecionar anúncios'}
                 </span>
-                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showAdDropdown ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform flex-shrink-0 ml-2 ${showAdDropdown ? 'rotate-180' : ''}`} />
               </button>
 
               {showAdDropdown && (
