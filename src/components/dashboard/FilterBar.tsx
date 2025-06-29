@@ -593,12 +593,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <div className="relative">
               <Button 
                 variant="outline" 
-                size="sm" 
+                size="lg"
                 icon={Download}
                 onClick={() => setShowExportMenu(!showExportMenu)}
-              >
-                <span className="hidden sm:inline">Exportar</span>
-              </Button>
+                className="px-6 py-3"
+                title="Exportar dados"
+              />
               {showExportMenu && (
                 <>
                   <div 
