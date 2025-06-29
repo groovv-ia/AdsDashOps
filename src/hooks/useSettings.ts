@@ -177,33 +177,68 @@ export const useSettings = () => {
     if (!user) return { success: false, error: 'Usuário não autenticado' };
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}.${fileExt}`;
+      console.log('Iniciando upload do avatar...', { fileName: file.name, fileSize: file.size, fileType: file.type });
 
-      // Upload file to storage
-      const { error: uploadError } = await supabase.storage
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        return { success: false, error: 'Por favor, selecione um arquivo de imagem.' };
+      }
+
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        return { success: false, error: 'A imagem deve ter no máximo 5MB.' };
+      }
+
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      const fileName = `${user.id}.${fileExt}`;
+      const filePath = fileName;
+
+      console.log('Fazendo upload para:', filePath);
+
+      // First, try to remove existing file
+      try {
+        await supabase.storage
+          .from('avatars')
+          .remove([filePath]);
+        console.log('Arquivo anterior removido (se existia)');
+      } catch (removeError) {
+        console.log('Nenhum arquivo anterior para remover ou erro ao remover:', removeError);
+      }
+
+      // Upload new file
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(fileName, file, { 
+        .upload(filePath, file, { 
+          cacheControl: '3600',
           upsert: true,
           contentType: file.type
         });
 
       if (uploadError) {
         console.error('Erro no upload:', uploadError);
-        return { success: false, error: uploadError.message };
+        return { success: false, error: `Erro no upload: ${uploadError.message}` };
       }
+
+      console.log('Upload realizado com sucesso:', uploadData);
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
-        .getPublicUrl(fileName);
+        .getPublicUrl(filePath);
+
+      console.log('URL pública gerada:', publicUrl);
+
+      // Add timestamp to force cache refresh
+      const timestampedUrl = `${publicUrl}?t=${Date.now()}`;
 
       // Update profile with new avatar URL
-      const result = await updateProfile({ avatar_url: publicUrl });
+      const result = await updateProfile({ avatar_url: timestampedUrl });
 
       if (result.success) {
-        return { success: true, url: publicUrl };
+        console.log('Perfil atualizado com sucesso');
+        return { success: true, url: timestampedUrl };
       } else {
+        console.error('Erro ao atualizar perfil:', result.error);
         return { success: false, error: result.error };
       }
     } catch (error) {

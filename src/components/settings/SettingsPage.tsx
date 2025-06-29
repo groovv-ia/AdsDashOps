@@ -41,6 +41,7 @@ export const SettingsPage: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState('profile');
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [cepLoading, setCepLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -226,36 +227,46 @@ export const SettingsPage: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    console.log('Arquivo selecionado:', file);
+
     // Validate file type
     if (!file.type.startsWith('image/')) {
       setSaveMessage({ type: 'error', text: 'Por favor, selecione um arquivo de imagem.' });
+      setTimeout(() => setSaveMessage(null), 3000);
       return;
     }
 
-    // Validate file size (2MB max)
-    if (file.size > 2 * 1024 * 1024) {
-      setSaveMessage({ type: 'error', text: 'A imagem deve ter no máximo 2MB.' });
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      setSaveMessage({ type: 'error', text: 'A imagem deve ter no máximo 5MB.' });
+      setTimeout(() => setSaveMessage(null), 3000);
       return;
     }
 
-    setSaving(true);
+    setUploading(true);
     setSaveMessage(null);
 
     try {
+      console.log('Iniciando upload...');
       const result = await uploadAvatar(file);
       
       if (result.success) {
         setSaveMessage({ type: 'success', text: 'Avatar atualizado com sucesso!' });
+        console.log('Upload concluído com sucesso');
         // The header will automatically update via real-time subscription
       } else {
-        setSaveMessage({ type: 'error', text: 'Erro ao fazer upload do avatar.' });
+        console.error('Erro no upload:', result.error);
+        setSaveMessage({ type: 'error', text: result.error || 'Erro ao fazer upload do avatar.' });
       }
     } catch (error) {
       console.error('Erro no upload do avatar:', error);
       setSaveMessage({ type: 'error', text: 'Erro ao fazer upload do avatar.' });
     } finally {
-      setSaving(false);
-      setTimeout(() => setSaveMessage(null), 3000);
+      setUploading(false);
+      setTimeout(() => setSaveMessage(null), 5000);
+      
+      // Reset file input
+      event.target.value = '';
     }
   };
 
@@ -342,21 +353,31 @@ export const SettingsPage: React.FC = () => {
                   )}
                 </div>
                 <label className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full cursor-pointer hover:bg-blue-700 transition-colors">
-                  <Camera className="w-4 h-4" />
+                  {uploading ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  ) : (
+                    <Camera className="w-4 h-4" />
+                  )}
                   <input
                     type="file"
                     accept="image/*"
                     onChange={handleAvatarUpload}
                     className="hidden"
+                    disabled={uploading}
                   />
                 </label>
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Foto do Perfil</h3>
-                <p className="text-sm text-gray-600">JPG, PNG ou GIF. Máximo 2MB.</p>
+                <p className="text-sm text-gray-600">JPG, PNG ou GIF. Máximo 5MB.</p>
                 <p className="text-xs text-green-600 mt-1">
                   {profile?.avatar_url ? 'Avatar carregado' : 'Nenhum avatar'}
                 </p>
+                {uploading && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Fazendo upload...
+                  </p>
+                )}
               </div>
             </div>
           </Card>
