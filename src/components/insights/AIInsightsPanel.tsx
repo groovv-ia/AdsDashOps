@@ -383,30 +383,23 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
             </div>
           )}
           
-          <div className="flex space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowApiConfig(true)}
-              icon={isApiConfigured ? Settings : Key}
-            >
-              {isApiConfigured ? 'Configurar' : 'Conectar API'}
-            </Button>
-            
-            <Button
-              onClick={generateInsights}
-              loading={loading}
-              icon={RefreshCw}
-              disabled={campaigns.length === 0 || metrics.length === 0}
-            >
-              {loading ? 'Analisando...' : 'Gerar Análise'}
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowApiConfig(true)}
+            icon={isApiConfigured ? Settings : Key}
+          >
+            {isApiConfigured ? 'Configurar' : 'Conectar API'}
+          </Button>
         </div>
       </div>
 
       {/* Campaign Selector */}
-      <CampaignSelector onSelectionChange={handleSelectionChange} />
+      <CampaignSelector 
+        onSelectionChange={handleSelectionChange} 
+        onGenerateAnalysis={generateInsights}
+        loading={loading}
+      />
 
       {/* API Configuration Modal */}
       {showApiConfig && (
@@ -510,92 +503,85 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
         </Card>
       )}
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <tab.icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Content */}
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
-            <p className="text-gray-600">Gerando insights com IA...</p>
-            <p className="text-sm text-gray-500 mt-2">
-              Analisando elementos selecionados...
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div>
-          {activeTab === 'overview' && renderOverview()}
-          
-          {activeTab === 'campaigns' && (
-            <div className="space-y-6">
-              {campaignAnalyses.map((analysis) => (
-                <Card key={analysis.campaign_id}>
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-gray-900">{analysis.campaign_name}</h3>
-                      <div className="flex items-center space-x-4">
-                        <span className={`text-2xl font-bold ${getScoreColor(analysis.overall_score)}`}>
-                          {analysis.overall_score}/100
-                        </span>
-                        <span className="text-sm text-gray-500">{analysis.platform}</span>
-                      </div>
-                    </div>
-                    <p className="text-gray-600 mt-2">{analysis.summary}</p>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    {analysis.insights.map(renderInsightCard)}
-                  </div>
-                </Card>
+      {/* Results Section - Only show if we have results */}
+      {(campaignAnalyses.length > 0 || optimizationInsights.length > 0 || anomalies.length > 0 || marketInsights.length > 0) && (
+        <>
+          {/* Tabs */}
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                    activeTab === tab.id
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
               ))}
-            </div>
-          )}
-          
-          {activeTab === 'optimization' && (
-            <div className="space-y-4">
-              {optimizationInsights.map(renderInsightCard)}
-            </div>
-          )}
-          
-          {activeTab === 'anomalies' && (
-            <div className="space-y-4">
-              {anomalies.length > 0 ? (
-                anomalies.map(renderInsightCard)
-              ) : (
-                <Card className="text-center py-8">
-                  <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma Anomalia Detectada</h3>
-                  <p className="text-gray-600">Suas campanhas estão performando dentro dos padrões esperados.</p>
-                </Card>
-              )}
-            </div>
-          )}
-          
-          {activeTab === 'market' && (
-            <div className="space-y-4">
-              {marketInsights.map(renderInsightCard)}
-            </div>
-          )}
-        </div>
+            </nav>
+          </div>
+
+          {/* Content */}
+          <div>
+            {activeTab === 'overview' && renderOverview()}
+            
+            {activeTab === 'campaigns' && (
+              <div className="space-y-6">
+                {campaignAnalyses.map((analysis) => (
+                  <Card key={analysis.campaign_id}>
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900">{analysis.campaign_name}</h3>
+                        <div className="flex items-center space-x-4">
+                          <span className={`text-2xl font-bold ${getScoreColor(analysis.overall_score)}`}>
+                            {analysis.overall_score}/100
+                          </span>
+                          <span className="text-sm text-gray-500">{analysis.platform}</span>
+                        </div>
+                      </div>
+                      <p className="text-gray-600 mt-2">{analysis.summary}</p>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {analysis.insights.map(renderInsightCard)}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+            
+            {activeTab === 'optimization' && (
+              <div className="space-y-4">
+                {optimizationInsights.map(renderInsightCard)}
+              </div>
+            )}
+            
+            {activeTab === 'anomalies' && (
+              <div className="space-y-4">
+                {anomalies.length > 0 ? (
+                  anomalies.map(renderInsightCard)
+                ) : (
+                  <Card className="text-center py-8">
+                    <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma Anomalia Detectada</h3>
+                    <p className="text-gray-600">Suas campanhas estão performando dentro dos padrões esperados.</p>
+                  </Card>
+                )}
+              </div>
+            )}
+            
+            {activeTab === 'market' && (
+              <div className="space-y-4">
+                {marketInsights.map(renderInsightCard)}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
