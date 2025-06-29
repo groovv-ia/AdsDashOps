@@ -57,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="p-6 border-b border-gray-200/50 flex-shrink-0">
             <div className="flex items-center justify-center">
               <img 
-                src="/logotipo-adsops.webp" 
+                src="/logotipo-adsops.fw.png" 
                 alt="AdsOPS" 
                 className="h-16 w-auto object-contain"
               />

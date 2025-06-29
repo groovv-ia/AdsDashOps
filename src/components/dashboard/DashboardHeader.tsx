@@ -53,7 +53,7 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             <div className="block sm:hidden">
               <div className="flex items-center space-x-2">
                 <img 
-                  src="/logotipo-adsops.webp" 
+                  src="/logotipo-adsops.fw.png" 
                   alt="AdsOPS" 
                   className="h-8 w-auto object-contain"
                 />
