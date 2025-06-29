@@ -327,7 +327,7 @@ export const SettingsPage: React.FC = () => {
           <Card>
             <div className="flex items-center space-x-6">
               <div className="relative">
-                <div className="w-24 h-24 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center overflow-hidden">
+                <div className="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center">
                   {profile?.avatar_url ? (
                     <img 
                       src={profile.avatar_url} 
@@ -335,7 +335,9 @@ export const SettingsPage: React.FC = () => {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <User className="w-12 h-12 text-white" />
+                    <div className="w-full h-full bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+                      <User className="w-12 h-12 text-white" />
+                    </div>
                   )}
                 </div>
                 <label className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full cursor-pointer hover:bg-blue-700 transition-colors">
