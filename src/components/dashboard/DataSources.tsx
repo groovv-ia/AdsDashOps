@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { DataSourceSetup } from './DataSourceSetup';
 import { supabase } from '../../lib/supabase';
 import { 
   DataSyncService, 
@@ -139,34 +140,14 @@ export const DataSources: React.FC = () => {
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [showOAuthModal, setShowOAuthModal] = useState(false);
+  const [showSetupModal, setShowSetupModal] = useState(false);
   const [selectedConnector, setSelectedConnector] = useState<typeof availableConnectors[0] | null>(null);
-  const [configData, setConfigData] = useState<ConnectionConfig>({
-    accountId: '',
-    accessToken: '',
-    clientId: '',
-    clientSecret: '',
-    refreshToken: ''
-  });
-  const [showTokens, setShowTokens] = useState(false);
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
-  const [csvFile, setCsvFile] = useState<File | null>(null);
 
   const syncService = new DataSyncService();
 
   useEffect(() => {
     loadDataSources();
-    
-    // Listen for OAuth callback messages
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data.type === 'oauth-callback') {
-        handleOAuthCallback(event.data.code, event.data.platform);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
   const loadDataSources = async () => {
@@ -245,132 +226,34 @@ export const DataSources: React.FC = () => {
   const handleConnectSource = (connector: typeof availableConnectors[0]) => {
     setSelectedConnector(connector);
     setShowAddModal(false);
-    
-    if (connector.requiresOAuth) {
-      setShowOAuthModal(true);
-    } else {
-      setShowConfigModal(true);
-    }
+    setShowSetupModal(true);
   };
 
-  const handleOAuthStart = () => {
-    if (!selectedConnector) return;
-
-    const redirectUri = `${window.location.origin}/oauth-callback`;
-    const clientId = configData.clientId;
-
-    if (!clientId) {
-      alert('Por favor, insira o Client ID primeiro');
-      return;
-    }
-
-    switch (selectedConnector.platform.toLowerCase()) {
-      case 'meta':
-        initiateOAuth.meta(clientId, redirectUri);
-        break;
-      case 'google':
-        initiateOAuth.google(clientId, redirectUri);
-        break;
-      case 'tiktok':
-        initiateOAuth.tiktok(clientId, redirectUri);
-        break;
-    }
-  };
-
-  const handleOAuthCallback = async (code: string, platform: string) => {
-    if (!selectedConnector) return;
-
+  const handleSetupComplete = async (connectionData: any) => {
     try {
-      const redirectUri = `${window.location.origin}/oauth-callback`;
-      let tokenData;
-
-      switch (platform.toLowerCase()) {
-        case 'meta':
-          tokenData = await exchangeCodeForToken.meta(
-            code, 
-            configData.clientId, 
-            configData.clientSecret, 
-            redirectUri
-          );
-          break;
-        case 'google':
-          tokenData = await exchangeCodeForToken.google(
-            code, 
-            configData.clientId, 
-            configData.clientSecret, 
-            redirectUri
-          );
-          break;
-        case 'tiktok':
-          tokenData = await exchangeCodeForToken.tiktok(
-            code, 
-            configData.clientId, 
-            configData.clientSecret, 
-            redirectUri
-          );
-          break;
-      }
-
-      if (tokenData.access_token) {
-        setConfigData(prev => ({
-          ...prev,
-          accessToken: tokenData.access_token,
-          refreshToken: tokenData.refresh_token,
-          expiresAt: tokenData.expires_in ? 
-            new Date(Date.now() + tokenData.expires_in * 1000).toISOString() : 
-            undefined
-        }));
-        
-        setShowOAuthModal(false);
-        setShowConfigModal(true);
-      } else {
-        throw new Error('Falha na autenticação OAuth');
-      }
-    } catch (error) {
-      console.error('Erro no OAuth callback:', error);
-      alert('Erro na autenticação. Tente novamente.');
-    }
-  };
-
-  const handleSaveConnection = async () => {
-    if (!selectedConnector) return;
-
-    try {
-      const connectionData = {
-        name: `${selectedConnector.name} - ${configData.accountId}`,
-        platform: selectedConnector.platform,
-        type: selectedConnector.type,
-        status: 'disconnected',
-        config: configData,
-        logo: selectedConnector.logo,
-        description: selectedConnector.description,
-        metrics: selectedConnector.metrics
-      };
-
       const { data, error } = await supabase
         .from('data_connections')
-        .insert(connectionData)
+        .insert({
+          name: connectionData.connectionName,
+          platform: connectionData.connector.platform,
+          type: connectionData.connector.type,
+          status: connectionData.status,
+          config: connectionData.setupData,
+          logo: connectionData.connector.logo,
+          description: connectionData.connector.description,
+          metrics: connectionData.connector.metrics,
+          last_sync: new Date().toISOString()
+        })
         .select()
         .single();
 
       if (error) throw error;
 
-      // Test connection and sync data
-      await handleSync(data.id);
-      
-      setShowConfigModal(false);
-      setConfigData({
-        accountId: '',
-        accessToken: '',
-        clientId: '',
-        clientSecret: '',
-        refreshToken: ''
-      });
-      
+      setShowSetupModal(false);
+      setSelectedConnector(null);
       await loadDataSources();
     } catch (error) {
       console.error('Erro ao salvar conexão:', error);
-      alert('Erro ao salvar conexão. Verifique os dados e tente novamente.');
     }
   };
 
@@ -387,7 +270,7 @@ export const DataSources: React.FC = () => {
         platform: source.platform,
         type: source.type,
         status: source.status,
-        config: source as any // This would come from the database
+        config: source as any
       };
 
       const result = await syncService.syncDataSource(connection);
@@ -423,48 +306,6 @@ export const DataSources: React.FC = () => {
     } catch (error) {
       console.error('Erro ao deletar fonte:', error);
     }
-  };
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setCsvFile(file);
-    
-    // Process CSV file
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const csv = e.target?.result as string;
-      // Here you would parse the CSV and store it in your database
-      console.log('CSV content:', csv);
-      
-      // Create a file-based data source
-      const connectionData = {
-        name: `CSV Upload - ${file.name}`,
-        platform: 'File',
-        type: 'file',
-        status: 'connected',
-        config: { accountId: file.name, accessToken: 'file-upload' },
-        logo: 'csv',
-        description: `Dados importados de ${file.name}`,
-        metrics: ['Dados Personalizados']
-      };
-
-      try {
-        const { error } = await supabase
-          .from('data_connections')
-          .insert(connectionData);
-
-        if (error) throw error;
-        
-        await loadDataSources();
-        setShowConfigModal(false);
-      } catch (error) {
-        console.error('Erro ao salvar arquivo CSV:', error);
-      }
-    };
-    
-    reader.readAsText(file);
   };
 
   if (loading) {
@@ -661,226 +502,16 @@ export const DataSources: React.FC = () => {
         </div>
       )}
 
-      {/* OAuth Modal */}
-      {showOAuthModal && selectedConnector && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 flex items-center justify-center">
-                  {renderConnectorLogo(selectedConnector)}
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Autenticação OAuth - {selectedConnector.name}</h2>
-                  <p className="text-gray-600">Configure suas credenciais de API</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-start space-x-2">
-                  <Key className="w-5 h-5 text-blue-600 mt-0.5" />
-                  <div>
-                    <h4 className="font-medium text-blue-900">Configuração OAuth</h4>
-                    <p className="text-sm text-blue-700 mt-1">
-                      Primeiro, configure suas credenciais de API no painel de desenvolvedor do {selectedConnector.name}.
-                    </p>
-                    <a 
-                      href={selectedConnector.oauthUrl} 
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-600 hover:text-blue-800 underline mt-2 inline-flex items-center"
-                    >
-                      Acessar documentação <ExternalLink className="w-3 h-3 ml-1" />
-                    </a>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Client ID *
-                  </label>
-                  <input
-                    type="text"
-                    value={configData.clientId}
-                    onChange={(e) => setConfigData({...configData, clientId: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Digite seu Client ID"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Client Secret *
-                  </label>
-                  <input
-                    type="password"
-                    value={configData.clientSecret}
-                    onChange={(e) => setConfigData({...configData, clientSecret: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Digite seu Client Secret"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ID da Conta
-                </label>
-                <input
-                  type="text"
-                  value={configData.accountId}
-                  onChange={(e) => setConfigData({...configData, accountId: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Digite o ID da sua conta de anúncios"
-                />
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-gray-200 flex justify-between">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowOAuthModal(false)}
-              >
-                Cancelar
-              </Button>
-              <div className="space-x-3">
-                <Button 
-                  variant="outline"
-                  onClick={handleOAuthStart}
-                  disabled={!configData.clientId || !configData.clientSecret}
-                  icon={Link}
-                >
-                  Iniciar OAuth
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Configuration Modal */}
-      {showConfigModal && selectedConnector && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 flex items-center justify-center">
-                  {renderConnectorLogo(selectedConnector)}
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Configurar {selectedConnector.name}</h2>
-                  <p className="text-gray-600">
-                    {selectedConnector.type === 'file' ? 'Faça upload do seu arquivo' : 'Finalize a configuração'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {selectedConnector.type === 'file' ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Arquivo CSV
-                  </label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-600 mb-2">Clique para selecionar ou arraste seu arquivo CSV</p>
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                      id="csv-upload"
-                    />
-                    <label
-                      htmlFor="csv-upload"
-                      className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer"
-                    >
-                      Selecionar Arquivo
-                    </label>
-                    {csvFile && (
-                      <p className="text-sm text-green-600 mt-2">
-                        Arquivo selecionado: {csvFile.name}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      ID da Conta
-                    </label>
-                    <input
-                      type="text"
-                      value={configData.accountId}
-                      onChange={(e) => setConfigData({...configData, accountId: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Digite o ID da sua conta"
-                    />
-                  </div>
-
-                  {configData.accessToken && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Access Token
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showTokens ? "text" : "password"}
-                          value={configData.accessToken}
-                          readOnly
-                          className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg bg-gray-50"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowTokens(!showTokens)}
-                          className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
-                        >
-                          {showTokens ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                      <p className="text-xs text-green-600 mt-1">✓ Token obtido via OAuth</p>
-                    </div>
-                  )}
-
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-start space-x-2">
-                      <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
-                      <div>
-                        <h4 className="font-medium text-green-900">Autenticação Concluída</h4>
-                        <p className="text-sm text-green-700 mt-1">
-                          Suas credenciais foram validadas com sucesso. Clique em "Conectar" para finalizar.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowConfigModal(false)}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                onClick={handleSaveConnection}
-                disabled={!configData.accountId || (!configData.accessToken && selectedConnector.type !== 'file')}
-              >
-                {selectedConnector.type === 'file' ? 'Upload' : 'Conectar'}
-              </Button>
-            </div>
-          </div>
-        </div>
+      {/* Setup Modal */}
+      {showSetupModal && selectedConnector && (
+        <DataSourceSetup
+          connector={selectedConnector}
+          onClose={() => {
+            setShowSetupModal(false);
+            setSelectedConnector(null);
+          }}
+          onComplete={handleSetupComplete}
+        />
       )}
     </div>
   );
