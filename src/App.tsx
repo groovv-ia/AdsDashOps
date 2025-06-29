@@ -10,17 +10,20 @@ import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
+import { ThemeProvider } from './components/settings/ThemeProvider';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
+import { useSystemSettings } from './hooks/useSystemSettings';
 import { mockCampaigns, mockMetrics, mockAdSets, mockAds } from './data/mockData';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
 import { Card } from './components/ui/Card';
 import { BarChart3 } from 'lucide-react';
 
-function App() {
+function AppContent() {
   const { user, loading } = useAuth();
   const { notifications, unreadCount } = useNotifications();
+  const { settings: systemSettings } = useSystemSettings();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -41,23 +44,32 @@ function App() {
       const urlParams = new URLSearchParams(window.location.search);
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       
-      // Check for OAuth tokens in URL
       const accessToken = urlParams.get('access_token') || hashParams.get('access_token');
       const error = urlParams.get('error') || hashParams.get('error');
       
       if (accessToken) {
         console.log('OAuth callback detected, cleaning URL...');
-        // Clean the URL
         window.history.replaceState({}, document.title, window.location.pathname);
       }
       
       if (error) {
         console.error('OAuth error:', error);
-        // You could show an error message here
       }
     };
 
     handleOAuthCallback();
+  }, []);
+
+  // Listen for auto refresh events
+  useEffect(() => {
+    const handleAutoRefresh = (event: CustomEvent) => {
+      if (event.detail.source === 'system-settings') {
+        handleRefresh();
+      }
+    };
+
+    window.addEventListener('autoRefresh', handleAutoRefresh as EventListener);
+    return () => window.removeEventListener('autoRefresh', handleAutoRefresh as EventListener);
   }, []);
 
   // Filter data based on current filters
@@ -292,6 +304,14 @@ function App() {
         </div>
       </div>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }
 

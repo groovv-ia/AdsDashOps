@@ -6,6 +6,7 @@ interface ThemeContextType {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   isDark: boolean;
+  effectiveTheme: 'light' | 'dark';
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -25,6 +26,7 @@ interface ThemeProviderProps {
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const [theme, setTheme] = useState<Theme>('light');
   const [isDark, setIsDark] = useState(false);
+  const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
     // Load theme from localStorage
@@ -36,15 +38,26 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   useEffect(() => {
     const applyTheme = () => {
-      let actualTheme = theme;
+      let actualTheme: 'light' | 'dark' = 'light';
       
       if (theme === 'auto') {
         actualTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      } else {
+        actualTheme = theme as 'light' | 'dark';
       }
       
       setIsDark(actualTheme === 'dark');
+      setEffectiveTheme(actualTheme);
+      
+      // Apply theme to document
       document.documentElement.setAttribute('data-theme', actualTheme);
       document.documentElement.classList.toggle('dark', actualTheme === 'dark');
+      
+      // Update meta theme-color
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+      if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', actualTheme === 'dark' ? '#1f2937' : '#3B82F6');
+      }
     };
 
     applyTheme();
@@ -63,7 +76,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme: handleSetTheme, isDark }}>
+    <ThemeContext.Provider value={{ theme, setTheme: handleSetTheme, isDark, effectiveTheme }}>
       {children}
     </ThemeContext.Provider>
   );

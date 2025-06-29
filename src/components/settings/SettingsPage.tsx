@@ -21,23 +21,33 @@ import {
   CheckCircle,
   AlertCircle,
   Search,
-  Loader
+  Loader,
+  Zap,
+  Eye,
+  Accessibility,
+  RotateCcw
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { Tooltip } from '../ui/Tooltip';
 import { useSettings } from '../../hooks/useSettings';
+import { useSystemSettings } from '../../hooks/useSystemSettings';
+import { useTheme } from '../settings/ThemeProvider';
 import { SecurityManager } from './SecurityManager';
 import { DataExporter } from './DataExporter';
 
 export const SettingsPage: React.FC = () => {
   const { 
     profile, 
-    systemSettings, 
+    systemSettings: legacySettings, 
     loading, 
     updateProfile, 
-    updateSystemSettings, 
+    updateSystemSettings: updateLegacySettings, 
     uploadAvatar 
   } = useSettings();
+  
+  const { settings: systemSettings, updateSettings: updateSystemSettings, resetToDefaults } = useSystemSettings();
+  const { theme, setTheme } = useTheme();
 
   const [activeTab, setActiveTab] = useState('profile');
   const [saving, setSaving] = useState(false);
@@ -63,7 +73,6 @@ export const SettingsPage: React.FC = () => {
 
   useEffect(() => {
     if (profile) {
-      // Parse address to extract components if it's a full address string
       const addressParts = profile.address ? profile.address.split(',').map(part => part.trim()) : [];
       
       setFormData({
@@ -92,14 +101,10 @@ export const SettingsPage: React.FC = () => {
     }));
   };
 
-  // Phone mask function
   const formatPhone = (value: string) => {
-    // Remove all non-numeric characters
     const numbers = value.replace(/\D/g, '');
     
-    // Apply mask based on length
     if (numbers.length <= 10) {
-      // Format as (XX) XXXX-XXXX
       return numbers.replace(/(\d{2})(\d{4})(\d{0,4})/, (match, p1, p2, p3) => {
         if (p3) return `(${p1}) ${p2}-${p3}`;
         if (p2) return `(${p1}) ${p2}`;
@@ -107,7 +112,6 @@ export const SettingsPage: React.FC = () => {
         return numbers;
       });
     } else {
-      // Format as (XX) 9XXXX-XXXX
       return numbers.replace(/(\d{2})(\d{5})(\d{0,4})/, (match, p1, p2, p3) => {
         if (p3) return `(${p1}) ${p2}-${p3}`;
         if (p2) return `(${p1}) ${p2}`;
@@ -123,7 +127,6 @@ export const SettingsPage: React.FC = () => {
   };
 
   const searchAddressByCep = async (cep: string) => {
-    // Remove non-numeric characters
     const cleanCep = cep.replace(/\D/g, '');
     
     if (cleanCep.length !== 8) {
@@ -145,7 +148,6 @@ export const SettingsPage: React.FC = () => {
         return;
       }
 
-      // Update form data with address information
       setFormData(prev => ({
         ...prev,
         address: data.logradouro || prev.address,
@@ -169,7 +171,6 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleCepChange = (value: string) => {
-    // Format CEP as user types (XXXXX-XXX)
     const cleanValue = value.replace(/\D/g, '');
     let formattedValue = cleanValue;
     
@@ -179,7 +180,6 @@ export const SettingsPage: React.FC = () => {
     
     handleInputChange('cep', formattedValue);
     
-    // Auto-search when CEP is complete
     if (cleanValue.length === 8) {
       searchAddressByCep(cleanValue);
     }
@@ -190,7 +190,6 @@ export const SettingsPage: React.FC = () => {
     setSaveMessage(null);
 
     try {
-      // Combine address components into a single address string
       const addressComponents = [
         formData.address,
         formData.number,
@@ -217,8 +216,6 @@ export const SettingsPage: React.FC = () => {
       setSaveMessage({ type: 'error', text: 'Erro ao atualizar perfil. Tente novamente.' });
     } finally {
       setSaving(false);
-      
-      // Clear message after 3 seconds
       setTimeout(() => setSaveMessage(null), 3000);
     }
   };
@@ -227,16 +224,12 @@ export const SettingsPage: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    console.log('Arquivo selecionado:', file);
-
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       setSaveMessage({ type: 'error', text: 'Por favor, selecione um arquivo de imagem.' });
       setTimeout(() => setSaveMessage(null), 3000);
       return;
     }
 
-    // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       setSaveMessage({ type: 'error', text: 'A imagem deve ter no máximo 5MB.' });
       setTimeout(() => setSaveMessage(null), 3000);
@@ -247,15 +240,11 @@ export const SettingsPage: React.FC = () => {
     setSaveMessage(null);
 
     try {
-      console.log('Iniciando upload...');
       const result = await uploadAvatar(file);
       
       if (result.success) {
         setSaveMessage({ type: 'success', text: 'Avatar atualizado com sucesso!' });
-        console.log('Upload concluído com sucesso');
-        // The header will automatically update via real-time subscription
       } else {
-        console.error('Erro no upload:', result.error);
         setSaveMessage({ type: 'error', text: result.error || 'Erro ao fazer upload do avatar.' });
       }
     } catch (error) {
@@ -264,9 +253,24 @@ export const SettingsPage: React.FC = () => {
     } finally {
       setUploading(false);
       setTimeout(() => setSaveMessage(null), 5000);
-      
-      // Reset file input
       event.target.value = '';
+    }
+  };
+
+  const handleThemeChange = (newTheme: 'light' | 'dark' | 'auto') => {
+    setTheme(newTheme);
+    updateSystemSettings({ theme: newTheme });
+  };
+
+  const handleSystemSettingChange = (key: keyof typeof systemSettings, value: any) => {
+    updateSystemSettings({ [key]: value });
+  };
+
+  const handleResetSettings = () => {
+    if (confirm('Tem certeza que deseja restaurar todas as configurações para os valores padrão?')) {
+      resetToDefaults();
+      setSaveMessage({ type: 'success', text: 'Configurações restauradas para os valores padrão!' });
+      setTimeout(() => setSaveMessage(null), 3000);
     }
   };
 
@@ -357,20 +361,22 @@ export const SettingsPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <label className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full cursor-pointer hover:bg-blue-700 transition-colors">
-                  {uploading ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                  ) : (
-                    <Camera className="w-4 h-4" />
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarUpload}
-                    className="hidden"
-                    disabled={uploading}
-                  />
-                </label>
+                <Tooltip content="Clique para alterar sua foto de perfil">
+                  <label className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full cursor-pointer hover:bg-blue-700 transition-colors">
+                    {uploading ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    ) : (
+                      <Camera className="w-4 h-4" />
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarUpload}
+                      className="hidden"
+                      disabled={uploading}
+                    />
+                  </label>
+                </Tooltip>
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Foto do Perfil</h3>
@@ -628,103 +634,235 @@ export const SettingsPage: React.FC = () => {
       )}
 
       {activeTab === 'appearance' && (
-        <Card>
-          <h3 className="text-lg font-semibold text-gray-900 mb-6">Aparência</h3>
-          
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-4">
-                Tema
-              </label>
-              <div className="grid grid-cols-3 gap-4">
-                {[
-                  { value: 'light', label: 'Claro', icon: Sun },
-                  { value: 'dark', label: 'Escuro', icon: Moon },
-                  { value: 'auto', label: 'Automático', icon: Monitor }
-                ].map((theme) => (
+        <div className="space-y-6">
+          {/* Theme Selection */}
+          <Card>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Tema</h3>
+                <p className="text-sm text-gray-600">Escolha a aparência da interface</p>
+              </div>
+              <Tooltip content="Restaurar configurações padrão">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetSettings}
+                  icon={RotateCcw}
+                >
+                  Restaurar Padrão
+                </Button>
+              </Tooltip>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              {[
+                { value: 'light', label: 'Claro', icon: Sun, description: 'Interface clara e limpa' },
+                { value: 'dark', label: 'Escuro', icon: Moon, description: 'Interface escura para reduzir cansaço visual' },
+                { value: 'auto', label: 'Automático', icon: Monitor, description: 'Segue as configurações do sistema' }
+              ].map((themeOption) => (
+                <Tooltip key={themeOption.value} content={themeOption.description}>
                   <button
-                    key={theme.value}
-                    onClick={() => updateSystemSettings({ theme: theme.value as any })}
-                    className={`p-4 border-2 rounded-lg flex flex-col items-center space-y-2 transition-colors ${
-                      systemSettings.theme === theme.value
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
+                    onClick={() => handleThemeChange(themeOption.value as any)}
+                    className={`p-6 border-2 rounded-xl flex flex-col items-center space-y-3 transition-all duration-200 ${
+                      theme === themeOption.value
+                        ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                   >
-                    <theme.icon className="w-6 h-6" />
-                    <span className="text-sm font-medium">{theme.label}</span>
+                    <div className={`p-3 rounded-lg ${
+                      theme === themeOption.value ? 'bg-blue-100' : 'bg-gray-100'
+                    }`}>
+                      <themeOption.icon className={`w-6 h-6 ${
+                        theme === themeOption.value ? 'text-blue-600' : 'text-gray-600'
+                      }`} />
+                    </div>
+                    <div className="text-center">
+                      <h4 className="font-medium text-gray-900">{themeOption.label}</h4>
+                      <p className="text-xs text-gray-500 mt-1">{themeOption.description}</p>
+                    </div>
+                    {theme === themeOption.value && (
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    )}
                   </button>
-                ))}
+                </Tooltip>
+              ))}
+            </div>
+          </Card>
+
+          {/* Interface Options */}
+          <Card>
+            <h3 className="text-lg font-semibold text-gray-900 mb-6">Opções de Interface</h3>
+            
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-purple-100 rounded-lg">
+                    <Zap className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Modo Compacto</h4>
+                    <p className="text-sm text-gray-500">Reduz o espaçamento da interface</p>
+                  </div>
+                </div>
+                <Tooltip content={systemSettings.compact_mode ? "Desativar modo compacto" : "Ativar modo compacto"}>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={systemSettings.compact_mode}
+                      onChange={(e) => handleSystemSettingChange('compact_mode', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </Tooltip>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <Eye className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Mostrar Dicas</h4>
+                    <p className="text-sm text-gray-500">Exibir tooltips explicativos</p>
+                  </div>
+                </div>
+                <Tooltip content={systemSettings.show_tooltips ? "Desativar tooltips" : "Ativar tooltips"}>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={systemSettings.show_tooltips}
+                      onChange={(e) => handleSystemSettingChange('show_tooltips', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </Tooltip>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Zap className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Animações</h4>
+                    <p className="text-sm text-gray-500">Habilitar transições e animações</p>
+                  </div>
+                </div>
+                <Tooltip content={systemSettings.animations_enabled ? "Desativar animações" : "Ativar animações"}>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={systemSettings.animations_enabled}
+                      onChange={(e) => handleSystemSettingChange('animations_enabled', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </Tooltip>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-orange-100 rounded-lg">
+                    <Accessibility className="w-5 h-5 text-orange-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Alto Contraste</h4>
+                    <p className="text-sm text-gray-500">Aumenta o contraste para melhor legibilidade</p>
+                  </div>
+                </div>
+                <Tooltip content={systemSettings.high_contrast ? "Desativar alto contraste" : "Ativar alto contraste"}>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={systemSettings.high_contrast}
+                      onChange={(e) => handleSystemSettingChange('high_contrast', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </Tooltip>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-red-100 rounded-lg">
+                    <Clock className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Reduzir Movimento</h4>
+                    <p className="text-sm text-gray-500">Minimiza animações para sensibilidade ao movimento</p>
+                  </div>
+                </div>
+                <Tooltip content={systemSettings.reduce_motion ? "Permitir movimento normal" : "Reduzir movimento"}>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={systemSettings.reduce_motion}
+                      onChange={(e) => handleSystemSettingChange('reduce_motion', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </Tooltip>
               </div>
             </div>
+          </Card>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium text-gray-900">Modo Compacto</h4>
-                <p className="text-sm text-gray-500">Reduz o espaçamento da interface</p>
+          {/* Auto Refresh Settings */}
+          <Card>
+            <h3 className="text-lg font-semibold text-gray-900 mb-6">Atualização Automática</h3>
+            
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <RotateCcw className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-900">Atualização Automática</h4>
+                    <p className="text-sm text-gray-500">Atualizar dados automaticamente</p>
+                  </div>
+                </div>
+                <Tooltip content={systemSettings.auto_refresh ? "Desativar atualização automática" : "Ativar atualização automática"}>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={systemSettings.auto_refresh}
+                      onChange={(e) => handleSystemSettingChange('auto_refresh', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </Tooltip>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={systemSettings.compact_mode}
-                  onChange={(e) => updateSystemSettings({ compact_mode: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
+
+              {systemSettings.auto_refresh && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Intervalo de Atualização
+                  </label>
+                  <select
+                    value={systemSettings.refresh_interval}
+                    onChange={(e) => handleSystemSettingChange('refresh_interval', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value={60}>1 minuto</option>
+                    <option value={300}>5 minutos</option>
+                    <option value={600}>10 minutos</option>
+                    <option value={1800}>30 minutos</option>
+                    <option value={3600}>1 hora</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Frequência com que os dados serão atualizados automaticamente
+                  </p>
+                </div>
+              )}
             </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium text-gray-900">Mostrar Dicas</h4>
-                <p className="text-sm text-gray-500">Exibir tooltips explicativos</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={systemSettings.show_tooltips}
-                  onChange={(e) => updateSystemSettings({ show_tooltips: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-medium text-gray-900">Atualização Automática</h4>
-                <p className="text-sm text-gray-500">Atualizar dados automaticamente</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={systemSettings.auto_refresh}
-                  onChange={(e) => updateSystemSettings({ auto_refresh: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-
-            {systemSettings.auto_refresh && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Intervalo de Atualização (segundos)
-                </label>
-                <select
-                  value={systemSettings.refresh_interval}
-                  onChange={(e) => updateSystemSettings({ refresh_interval: parseInt(e.target.value) })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value={60}>1 minuto</option>
-                  <option value={300}>5 minutos</option>
-                  <option value={600}>10 minutos</option>
-                  <option value={1800}>30 minutos</option>
-                </select>
-              </div>
-            )}
-          </div>
-        </Card>
+          </Card>
+        </div>
       )}
 
       {activeTab === 'security' && (

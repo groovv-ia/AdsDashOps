@@ -1,3 +1,325 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Theme Variables */
+:root {
+  --spacing-unit: 1rem;
+  --card-padding: 1.5rem;
+  --button-padding-y: 0.5rem;
+  --button-padding-x: 1rem;
+  --animation-duration: 0.3s;
+  --transition-duration: 0.2s;
+}
+
+/* Dark Theme */
+[data-theme="dark"] {
+  --bg-primary: #1f2937;
+  --bg-secondary: #111827;
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --border-color: #374151;
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --border-color: #e5e7eb;
+}
+
+/* Dark mode styles */
+.dark {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.dark .bg-white {
+  background-color: var(--bg-primary) !important;
+}
+
+.dark .bg-gray-50 {
+  background-color: var(--bg-secondary) !important;
+}
+
+.dark .text-gray-900 {
+  color: var(--text-primary) !important;
+}
+
+.dark .text-gray-600 {
+  color: var(--text-secondary) !important;
+}
+
+.dark .border-gray-200 {
+  border-color: var(--border-color) !important;
+}
+
+.dark .border-gray-300 {
+  border-color: var(--border-color) !important;
+}
+
+/* Compact Mode */
+.compact-mode {
+  --spacing-unit: 0.75rem;
+  --card-padding: 1rem;
+  --button-padding-y: 0.375rem;
+  --button-padding-x: 0.75rem;
+}
+
+.compact-mode .space-y-6 > * + * {
+  margin-top: 1rem !important;
+}
+
+.compact-mode .space-y-4 > * + * {
+  margin-top: 0.75rem !important;
+}
+
+.compact-mode .p-6 {
+  padding: var(--card-padding) !important;
+}
+
+.compact-mode .py-3 {
+  padding-top: var(--button-padding-y) !important;
+  padding-bottom: var(--button-padding-y) !important;
+}
+
+.compact-mode .px-4 {
+  padding-left: var(--button-padding-x) !important;
+  padding-right: var(--button-padding-x) !important;
+}
+
+/* High Contrast Mode */
+.high-contrast {
+  --text-primary: #000000;
+  --text-secondary: #333333;
+  --border-color: #000000;
+}
+
+.high-contrast .text-gray-600 {
+  color: #333333 !important;
+}
+
+.high-contrast .border-gray-200,
+.high-contrast .border-gray-300 {
+  border-color: #000000 !important;
+  border-width: 2px !important;
+}
+
+.high-contrast .bg-blue-600 {
+  background-color: #0000ff !important;
+}
+
+.high-contrast .bg-green-600 {
+  background-color: #008000 !important;
+}
+
+.high-contrast .bg-red-600 {
+  background-color: #ff0000 !important;
+}
+
+/* Reduced Motion */
+.reduce-motion * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+.reduce-motion .animate-spin {
+  animation: none !important;
+}
+
+.reduce-motion .animate-bounce {
+  animation: none !important;
+}
+
+.reduce-motion .animate-pulse {
+  animation: none !important;
+}
+
+/* No Animations */
+.no-animations * {
+  animation: none !important;
+  transition: none !important;
+}
+
+.no-animations .animate-spin,
+.no-animations .animate-bounce,
+.no-animations .animate-pulse {
+  animation: none !important;
+}
+
+/* Smooth transitions when animations are enabled */
+.transition-all {
+  transition-duration: var(--transition-duration);
+}
+
+/* Custom scrollbar for dark mode */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Focus styles for accessibility */
+.focus\:ring-2:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--ring-color, #3b82f6);
+}
+
+/* Tooltip animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: all var(--transition-duration) ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Button animations */
+.button-scale {
+  transition: transform var(--transition-duration) ease;
+}
+
+.button-scale:active {
+  transform: scale(0.98);
+}
+
+/* Loading states */
+.loading-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.dark .loading-shimmer {
+  background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+  background-size: 200% 100%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-break {
+    page-break-before: always;
+  }
+  
+  .print-avoid-break {
+    page-break-inside: avoid;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .compact-mode .space-y-6 > * + * {
+    margin-top: 0.75rem !important;
+  }
+  
+  .compact-mode .p-6 {
+    padding: 0.75rem !important;
+  }
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-contrast: high) {
+  .text-gray-600 {
+    color: #333333 !important;
+  }
+  
+  .border-gray-200,
+  .border-gray-300 {
+    border-color: #000000 !important;
+    border-width: 2px !important;
+  }
+}
+
+/* Custom utilities */
+.text-balance {
+  text-wrap: balance;
+}
+
+.text-pretty {
+  text-wrap: pretty;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass {
+  background: rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
