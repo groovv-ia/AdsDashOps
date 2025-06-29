@@ -195,7 +195,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   };
 
   return (
-    <Card className="mb-6">
+    <Card className="mb-6 relative">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -273,7 +273,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Campaign Selection - Only show when platform is selected */}
         {selectedPlatform && (
-          <div>
+          <div className="relative">
             <div className="flex items-center justify-between mb-4">
               <label className="text-sm font-medium text-gray-700">
                 2. Campanhas
@@ -303,7 +303,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     className="fixed inset-0 z-40" 
                     onClick={() => setShowCampaignDropdown(false)}
                   />
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-[60] max-h-60 overflow-y-auto">
                     <div className="p-2 border-b border-gray-200">
                       <button
                         onClick={() => {
@@ -353,7 +353,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Ad Set Selection - Only show when campaigns are selected */}
         {selectedCampaigns.length > 0 && (
-          <div>
+          <div className="relative">
             <div className="flex items-center justify-between mb-4">
               <label className="text-sm font-medium text-gray-700">
                 3. Conjuntos de Anúncios
@@ -383,7 +383,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     className="fixed inset-0 z-40" 
                     onClick={() => setShowAdSetDropdown(false)}
                   />
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-[60] max-h-60 overflow-y-auto">
                     <div className="p-2 border-b border-gray-200">
                       <button
                         onClick={() => {
@@ -430,7 +430,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Ad Selection - Only show when ad sets are selected */}
         {selectedAdSets.length > 0 && (
-          <div>
+          <div className="relative">
             <div className="flex items-center justify-between mb-4">
               <label className="text-sm font-medium text-gray-700">
                 4. Anúncios
@@ -460,7 +460,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     className="fixed inset-0 z-40" 
                     onClick={() => setShowAdDropdown(false)}
                   />
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-[60] max-h-60 overflow-y-auto">
                     <div className="p-2 border-b border-gray-200">
                       <button
                         onClick={() => {
