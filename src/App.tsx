@@ -10,6 +10,7 @@ import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
+import { FloatingHelpButton } from './components/help/FloatingHelpButton';
 import { ThemeProvider } from './components/settings/ThemeProvider';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
@@ -303,6 +304,9 @@ function AppContent() {
           </main>
         </div>
       </div>
+
+      {/* Floating Help Button - Only show when user is logged in */}
+      <FloatingHelpButton />
     </div>
   );
 }

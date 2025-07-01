@@ -11,7 +11,12 @@ import {
   ArrowLeft,
   Star,
   ThumbsUp,
-  ThumbsDown
+  ThumbsDown,
+  Book,
+  Zap,
+  Settings,
+  CreditCard,
+  AlertTriangle
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -33,46 +38,53 @@ interface FAQItem {
 interface Category {
   id: string;
   name: string;
-  icon: string;
+  icon: React.ReactNode;
   description: string;
+  color: string;
 }
 
 const categories: Category[] = [
   {
     id: 'getting-started',
     name: 'Primeiros Passos',
-    icon: '🚀',
-    description: 'Como começar a usar o AdsOPS'
+    icon: <Zap className="w-5 h-5" />,
+    description: 'Como começar a usar o AdsOPS',
+    color: 'from-green-500 to-emerald-600'
   },
   {
     id: 'campaigns',
     name: 'Campanhas',
-    icon: '📊',
-    description: 'Gerenciamento de campanhas publicitárias'
+    icon: <Book className="w-5 h-5" />,
+    description: 'Gerenciamento de campanhas publicitárias',
+    color: 'from-blue-500 to-cyan-600'
   },
   {
     id: 'analytics',
     name: 'Análises',
-    icon: '📈',
-    description: 'Relatórios e métricas de performance'
+    icon: <Settings className="w-5 h-5" />,
+    description: 'Relatórios e métricas de performance',
+    color: 'from-purple-500 to-violet-600'
   },
   {
     id: 'integrations',
     name: 'Integrações',
-    icon: '🔗',
-    description: 'Conectar plataformas de publicidade'
+    icon: <HelpCircle className="w-5 h-5" />,
+    description: 'Conectar plataformas de publicidade',
+    color: 'from-orange-500 to-red-600'
   },
   {
     id: 'billing',
     name: 'Faturamento',
-    icon: '💳',
-    description: 'Planos, pagamentos e faturas'
+    icon: <CreditCard className="w-5 h-5" />,
+    description: 'Planos, pagamentos e faturas',
+    color: 'from-pink-500 to-rose-600'
   },
   {
     id: 'troubleshooting',
     name: 'Solução de Problemas',
-    icon: '🔧',
-    description: 'Resolver problemas comuns'
+    icon: <AlertTriangle className="w-5 h-5" />,
+    description: 'Resolver problemas comuns',
+    color: 'from-yellow-500 to-amber-600'
   }
 ];
 
@@ -80,7 +92,7 @@ const faqData: FAQItem[] = [
   {
     id: '1',
     question: 'Boas-vindas ao AdsOPS versão 4',
-    answer: 'Bem-vindo à nova versão do AdsOPS! Esta versão inclui melhorias significativas na interface, novos recursos de análise com IA e integração aprimorada com plataformas de publicidade.',
+    answer: 'Bem-vindo à nova versão do AdsOPS! Esta versão inclui melhorias significativas na interface, novos recursos de análise com IA e integração aprimorada com plataformas de publicidade. Principais novidades: Dashboard redesenhado, Análises com IA, Integração melhorada com Meta, Google e TikTok Ads, Relatórios avançados, Sistema de notificações em tempo real.',
     category: 'getting-started',
     helpful: 45,
     notHelpful: 2
@@ -88,7 +100,7 @@ const faqData: FAQItem[] = [
   {
     id: '2',
     question: 'Banner de notificação laranja em minha equipe',
-    answer: 'O banner laranja indica que há atualizações importantes ou ações pendentes para sua equipe. Clique no banner para ver os detalhes e resolver as pendências.',
+    answer: 'O banner laranja indica que há atualizações importantes ou ações pendentes para sua equipe. Isso pode incluir: Campanhas que precisam de atenção, Orçamentos próximos do limite, Problemas de sincronização com APIs, Atualizações de sistema disponíveis. Clique no banner para ver os detalhes específicos e resolver as pendências.',
     category: 'troubleshooting',
     helpful: 32,
     notHelpful: 5
@@ -96,42 +108,58 @@ const faqData: FAQItem[] = [
   {
     id: '3',
     question: 'O que esperar ao atualizar para a V4: um guia abrangente',
-    answer: 'A versão 4 traz uma interface redesenhada, análises avançadas com IA, melhor performance e novos recursos de colaboração. Este guia explica todas as mudanças e como aproveitá-las.',
+    answer: 'A versão 4 traz uma interface redesenhada, análises avançadas com IA, melhor performance e novos recursos de colaboração. Principais mudanças: Interface mais intuitiva e moderna, Análises preditivas com IA, Integração nativa com mais plataformas, Relatórios personalizáveis, Sistema de alertas inteligentes, Melhor performance geral. Este guia explica todas as mudanças e como aproveitá-las ao máximo.',
     category: 'getting-started',
     helpful: 67,
     notHelpful: 3
   },
   {
     id: '4',
-    question: 'Uso do aplicativo do AdsOPS para Mac',
-    answer: 'O aplicativo nativo para Mac oferece melhor performance e integração com o sistema. Baixe na App Store ou em nosso site oficial para ter acesso a todas as funcionalidades.',
-    category: 'integrations',
-    helpful: 28,
-    notHelpful: 1
-  },
-  {
-    id: '5',
     question: 'Como conectar minha conta do Meta Ads?',
-    answer: 'Para conectar sua conta do Meta Ads, vá até "Fontes de Dados" no menu lateral, clique em "Adicionar Fonte" e selecione "Meta Ads". Você será redirecionado para fazer login em sua conta do Facebook e autorizar o acesso.',
+    answer: 'Para conectar sua conta do Meta Ads: 1. Vá até "Fontes de Dados" no menu lateral, 2. Clique em "Adicionar Fonte", 3. Selecione "Meta Ads", 4. Você será redirecionado para fazer login em sua conta do Facebook, 5. Autorize o acesso às suas contas publicitárias, 6. Selecione as contas que deseja sincronizar. A sincronização inicial pode levar alguns minutos.',
     category: 'integrations',
     helpful: 89,
     notHelpful: 4
   },
   {
-    id: '6',
+    id: '5',
     question: 'Como interpretar as métricas de ROAS?',
-    answer: 'ROAS (Return on Ad Spend) mostra quantos reais você ganha para cada real investido em publicidade. Um ROAS de 4.0 significa que para cada R$1 gasto, você obtém R$4 em retorno. Valores acima de 3.0 são geralmente considerados bons.',
+    answer: 'ROAS (Return on Ad Spend) mostra quantos reais você ganha para cada real investido em publicidade. Como interpretar: ROAS 1.0 = Você recupera exatamente o que gastou, ROAS 2.0 = Para cada R$1 gasto, você ganha R$2, ROAS 4.0 = Para cada R$1 gasto, você ganha R$4. Valores acima de 3.0 são geralmente considerados bons, mas isso varia por setor e margem de lucro.',
     category: 'analytics',
     helpful: 156,
     notHelpful: 8
+  },
+  {
+    id: '6',
+    question: 'Como configurar alertas de orçamento?',
+    answer: 'Para configurar alertas de orçamento: 1. Vá em Configurações > Notificações, 2. Na seção "Limites de Alerta", ajuste o percentual de orçamento para receber alertas, 3. Escolha os tipos de notificação (email, push, desktop), 4. Configure horários silenciosos se necessário. Recomendamos alertas aos 80% do orçamento para ter tempo de ajustar as campanhas.',
+    category: 'billing',
+    helpful: 73,
+    notHelpful: 2
+  },
+  {
+    id: '7',
+    question: 'Por que minha campanha não está sincronizando?',
+    answer: 'Problemas de sincronização podem ter várias causas: 1. Token de acesso expirado - reconecte a conta, 2. Permissões insuficientes - verifique se autorizou todas as permissões, 3. Campanha muito nova - aguarde até 24h após criação, 4. Problemas temporários da API - tente novamente em alguns minutos. Se o problema persistir, entre em contato com o suporte.',
+    category: 'troubleshooting',
+    helpful: 41,
+    notHelpful: 12
+  },
+  {
+    id: '8',
+    question: 'Como usar a análise com IA?',
+    answer: 'A análise com IA oferece insights automáticos sobre suas campanhas: 1. Vá para "Análise com IA" no menu, 2. Selecione as campanhas que deseja analisar, 3. Clique em "Gerar Análise com IA", 4. Aguarde o processamento (1-2 minutos), 5. Revise os insights e recomendações gerados. A IA analisa padrões, detecta anomalias e sugere otimizações baseadas em dados históricos.',
+    category: 'analytics',
+    helpful: 94,
+    notHelpful: 6
   }
 ];
 
 const popularQuestions = [
   'Boas-vindas ao AdsOPS versão 4',
-  'Banner de notificação laranja em minha equipe',
-  'O que esperar ao atualizar para a V4: um guia abrangente',
-  'Uso do aplicativo do AdsOPS para Mac'
+  'Como conectar minha conta do Meta Ads?',
+  'Como interpretar as métricas de ROAS?',
+  'Como usar a análise com IA?'
 ];
 
 export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
@@ -152,6 +180,16 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
     return () => {
       document.body.style.overflow = 'unset';
     };
+  }, [isOpen]);
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setCurrentView('home');
+      setSelectedCategory('');
+      setSearchQuery('');
+      setChatMessage('');
+    }
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -236,7 +274,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
             <div className="w-2 h-2 bg-white rounded-full"></div>
             <div className="w-2 h-2 bg-white rounded-full"></div>
           </div>
-          <span className="text-lg font-semibold">frame.io</span>
+          <span className="text-lg font-semibold">AdsOPS</span>
         </div>
         <div className="flex items-center space-x-1">
           <div className="w-8 h-8 rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 flex items-center justify-center">
@@ -265,7 +303,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
     <div className="p-6 space-y-6">
       <div>
         <h3 className="text-2xl font-bold text-white mb-2 flex items-center">
-          Olá Prime2B 👋
+          Olá! 👋
         </h3>
         <p className="text-xl font-semibold text-white">Como podemos ajudar?</p>
       </div>
@@ -301,11 +339,31 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
         </Button>
       </div>
 
+      {/* Categories */}
+      <div>
+        <h4 className="font-semibold text-white text-lg mb-4">Categorias de Ajuda</h4>
+        <div className="grid grid-cols-2 gap-3">
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              onClick={() => handleCategorySelect(category.id)}
+              className="p-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all duration-200 text-white text-left"
+            >
+              <div className={`w-10 h-10 rounded-lg bg-gradient-to-r ${category.color} flex items-center justify-center mb-3`}>
+                {category.icon}
+              </div>
+              <h5 className="font-semibold text-sm mb-1">{category.name}</h5>
+              <p className="text-xs text-white/80">{category.description}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Popular Questions */}
       <div>
         <div className="flex items-center space-x-2 mb-4">
           <Search className="w-5 h-5 text-blue-300" />
-          <h4 className="font-semibold text-white text-lg">Qual é a sua dúvida?</h4>
+          <h4 className="font-semibold text-white text-lg">Perguntas Populares</h4>
         </div>
         <div className="space-y-3">
           {popularQuestions.map((question, index) => (
@@ -493,7 +551,7 @@ const FAQItem: React.FC<{ faq: FAQItem }> = ({ faq }) => {
   };
 
   return (
-    <Card className="p-4">
+    <Card className="p-4 hover:shadow-md transition-shadow">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full text-left"
