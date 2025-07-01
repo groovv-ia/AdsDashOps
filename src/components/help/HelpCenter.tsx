@@ -140,15 +140,8 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState<Array<{id: string, message: string, sender: 'user' | 'bot', timestamp: Date}>>([]);
-  const [isAnimating, setIsAnimating] = useState(false);
 
-  useEffect(() => {
-    if (isOpen) {
-      setIsAnimating(true);
-    }
-  }, [isOpen]);
-
-  if (!isOpen && !isAnimating) return null;
+  if (!isOpen) return null;
 
   const filteredFAQs = faqData.filter(faq => {
     if (currentView === 'category' && selectedCategory) {
@@ -211,13 +204,6 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(() => {
-      onClose();
-    }, 300);
-  };
-
   const renderHeader = () => (
     <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-2xl">
       <div className="flex items-center space-x-3">
@@ -237,7 +223,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
             <div className="w-2 h-2 bg-white rounded-full"></div>
             <div className="w-2 h-2 bg-white rounded-full"></div>
           </div>
-          <span className="text-lg font-semibold">AdsOPS</span>
+          <span className="text-lg font-semibold">frame.io</span>
         </div>
         <div className="flex items-center space-x-1">
           <div className="w-8 h-8 rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 flex items-center justify-center">
@@ -254,7 +240,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
       <Button 
         variant="ghost" 
         size="sm" 
-        onClick={handleClose}
+        onClick={onClose}
         className="text-white hover:bg-white/20"
       >
         <X className="w-5 h-5" />
@@ -418,23 +404,15 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
   );
 
   return (
-    <div className="fixed inset-0 z-50 pointer-events-none">
+    <>
       {/* Backdrop */}
       <div 
-        className={`absolute inset-0 bg-black/20 transition-opacity duration-300 ${
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0'
-        }`}
-        onClick={handleClose}
+        className="fixed inset-0 bg-black/20 z-40"
+        onClick={onClose}
       />
       
-      {/* Help Center Widget */}
-      <div 
-        className={`absolute bottom-4 right-4 w-96 h-[600px] bg-gradient-to-b from-blue-600 via-purple-600 to-blue-700 rounded-2xl shadow-2xl transition-all duration-300 pointer-events-auto ${
-          isOpen 
-            ? 'opacity-100 translate-y-0 scale-100' 
-            : 'opacity-0 translate-y-8 scale-95'
-        }`}
-      >
+      {/* Help Center Widget - Positioned at bottom right */}
+      <div className="fixed bottom-4 right-4 w-96 h-[600px] bg-gradient-to-b from-blue-600 via-purple-600 to-blue-700 rounded-2xl shadow-2xl z-50 animate-in slide-in-from-bottom-8 slide-in-from-right-8 duration-300">
         {renderHeader()}
         
         <div className="h-[calc(100%-140px)] overflow-hidden bg-white rounded-b-2xl">
@@ -488,7 +466,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
