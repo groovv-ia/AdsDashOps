@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Search, 
@@ -79,59 +79,59 @@ const categories: Category[] = [
 const faqData: FAQItem[] = [
   {
     id: '1',
-    question: 'Como conectar minha conta do Meta Ads?',
-    answer: 'Para conectar sua conta do Meta Ads, vá até "Fontes de Dados" no menu lateral, clique em "Adicionar Fonte" e selecione "Meta Ads". Você será redirecionado para fazer login em sua conta do Facebook e autorizar o acesso.',
-    category: 'integrations',
+    question: 'Boas-vindas ao AdsOPS versão 4',
+    answer: 'Bem-vindo à nova versão do AdsOPS! Esta versão inclui melhorias significativas na interface, novos recursos de análise com IA e integração aprimorada com plataformas de publicidade.',
+    category: 'getting-started',
     helpful: 45,
     notHelpful: 2
   },
   {
     id: '2',
-    question: 'Por que meus dados não estão sincronizando?',
-    answer: 'Verifique se: 1) Sua conexão com a internet está estável, 2) Os tokens de acesso não expiraram, 3) Você tem as permissões necessárias na plataforma conectada. Se o problema persistir, tente reconectar a fonte de dados.',
+    question: 'Banner de notificação laranja em minha equipe',
+    answer: 'O banner laranja indica que há atualizações importantes ou ações pendentes para sua equipe. Clique no banner para ver os detalhes e resolver as pendências.',
     category: 'troubleshooting',
     helpful: 32,
     notHelpful: 5
   },
   {
     id: '3',
-    question: 'Como interpretar as métricas de ROAS?',
-    answer: 'ROAS (Return on Ad Spend) mostra quantos reais você ganha para cada real investido em publicidade. Um ROAS de 4.0 significa que para cada R$1 gasto, você obtém R$4 em retorno. Valores acima de 3.0 são geralmente considerados bons.',
-    category: 'analytics',
+    question: 'O que esperar ao atualizar para a V4: um guia abrangente',
+    answer: 'A versão 4 traz uma interface redesenhada, análises avançadas com IA, melhor performance e novos recursos de colaboração. Este guia explica todas as mudanças e como aproveitá-las.',
+    category: 'getting-started',
     helpful: 67,
     notHelpful: 3
   },
   {
     id: '4',
-    question: 'Posso exportar meus relatórios?',
-    answer: 'Sim! Você pode exportar seus dados em formato CSV ou PDF. Na página de dashboard, clique no botão "Exportar" e escolha o formato desejado. Os relatórios incluem todas as métricas filtradas.',
-    category: 'analytics',
+    question: 'Uso do aplicativo do AdsOPS para Mac',
+    answer: 'O aplicativo nativo para Mac oferece melhor performance e integração com o sistema. Baixe na App Store ou em nosso site oficial para ter acesso a todas as funcionalidades.',
+    category: 'integrations',
     helpful: 28,
     notHelpful: 1
   },
   {
     id: '5',
-    question: 'Como funciona a análise com IA?',
-    answer: 'Nossa IA analisa seus dados de campanha e identifica padrões, anomalias e oportunidades de otimização. Para usar, vá até "Análise com IA", configure sua chave da OpenAI e clique em "Gerar Análise". A IA fornecerá insights acionáveis.',
-    category: 'campaigns',
+    question: 'Como conectar minha conta do Meta Ads?',
+    answer: 'Para conectar sua conta do Meta Ads, vá até "Fontes de Dados" no menu lateral, clique em "Adicionar Fonte" e selecione "Meta Ads". Você será redirecionado para fazer login em sua conta do Facebook e autorizar o acesso.',
+    category: 'integrations',
     helpful: 89,
     notHelpful: 4
   },
   {
     id: '6',
-    question: 'Qual é a diferença entre os planos?',
-    answer: 'O plano gratuito inclui até 3 campanhas e relatórios básicos. O plano Pro oferece campanhas ilimitadas, análises avançadas com IA, alertas personalizados e suporte prioritário.',
-    category: 'billing',
+    question: 'Como interpretar as métricas de ROAS?',
+    answer: 'ROAS (Return on Ad Spend) mostra quantos reais você ganha para cada real investido em publicidade. Um ROAS de 4.0 significa que para cada R$1 gasto, você obtém R$4 em retorno. Valores acima de 3.0 são geralmente considerados bons.',
+    category: 'analytics',
     helpful: 156,
     notHelpful: 8
   }
 ];
 
 const popularQuestions = [
-  'Como conectar minha conta do Meta Ads?',
-  'Por que meus dados não estão sincronizando?',
-  'Como interpretar as métricas de ROAS?',
-  'Posso exportar meus relatórios?'
+  'Boas-vindas ao AdsOPS versão 4',
+  'Banner de notificação laranja em minha equipe',
+  'O que esperar ao atualizar para a V4: um guia abrangente',
+  'Uso do aplicativo do AdsOPS para Mac'
 ];
 
 export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
@@ -140,8 +140,15 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState<Array<{id: string, message: string, sender: 'user' | 'bot', timestamp: Date}>>([]);
+  const [isAnimating, setIsAnimating] = useState(false);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (isOpen) {
+      setIsAnimating(true);
+    }
+  }, [isOpen]);
+
+  if (!isOpen && !isAnimating) return null;
 
   const filteredFAQs = faqData.filter(faq => {
     if (currentView === 'category' && selectedCategory) {
@@ -204,25 +211,52 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(() => {
+      onClose();
+    }, 300);
+  };
+
   const renderHeader = () => (
-    <div className="flex items-center justify-between p-6 border-b border-gray-200">
+    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-2xl">
       <div className="flex items-center space-x-3">
         {currentView !== 'home' && (
-          <Button variant="ghost" size="sm" onClick={handleBack}>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={handleBack}
+            className="text-white hover:bg-white/20"
+          >
             <ArrowLeft className="w-4 h-4" />
           </Button>
         )}
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-            <HelpCircle className="w-4 h-4 text-white" />
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-1">
+            <div className="w-2 h-2 bg-white rounded-full"></div>
+            <div className="w-2 h-2 bg-white rounded-full"></div>
+            <div className="w-2 h-2 bg-white rounded-full"></div>
           </div>
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">AdsOPS</h2>
-            <p className="text-xs text-gray-500">Central de Ajuda</p>
+          <span className="text-lg font-semibold">AdsOPS</span>
+        </div>
+        <div className="flex items-center space-x-1">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 flex items-center justify-center">
+            <span className="text-xs font-bold text-white">A</span>
+          </div>
+          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-green-400 to-blue-500 flex items-center justify-center">
+            <span className="text-xs font-bold text-white">B</span>
+          </div>
+          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-pink-400 to-red-500 flex items-center justify-center">
+            <span className="text-xs font-bold text-white">C</span>
           </div>
         </div>
       </div>
-      <Button variant="ghost" size="sm" onClick={onClose}>
+      <Button 
+        variant="ghost" 
+        size="sm" 
+        onClick={handleClose}
+        className="text-white hover:bg-white/20"
+      >
         <X className="w-5 h-5" />
       </Button>
     </div>
@@ -231,29 +265,28 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
   const renderHome = () => (
     <div className="p-6 space-y-6">
       <div>
-        <h3 className="text-xl font-semibold text-gray-900 mb-2 flex items-center">
-          Olá! 👋
+        <h3 className="text-2xl font-bold text-white mb-2 flex items-center">
+          Olá Prime2B 👋
         </h3>
-        <p className="text-gray-600">Como podemos ajudar?</p>
+        <p className="text-xl font-semibold text-white">Como podemos ajudar?</p>
       </div>
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input
           type="text"
           placeholder="Envie uma mensagem"
           value={searchQuery}
           onChange={(e) => handleSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full pl-4 pr-12 py-4 bg-white/90 backdrop-blur-sm border-0 rounded-xl focus:ring-2 focus:ring-white/50 focus:bg-white text-gray-900 placeholder-gray-600 text-lg"
         />
         <Button
           variant="ghost"
           size="sm"
-          className="absolute right-2 top-1/2 transform -translate-y-1/2 text-blue-600"
+          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-600 hover:bg-blue-50"
           onClick={() => setCurrentView('chat')}
         >
-          <Send className="w-4 h-4" />
+          <Send className="w-5 h-5" />
         </Button>
       </div>
 
@@ -261,58 +294,31 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
       <div className="space-y-3">
         <Button
           variant="outline"
-          className="w-full justify-between text-left"
-          onClick={() => setCurrentView('chat')}
-        >
-          <span>Enviar uma mensagem</span>
-          <MessageCircle className="w-4 h-4" />
-        </Button>
-
-        <Button
-          variant="outline"
-          className="w-full justify-between text-left"
+          className="w-full justify-between text-left bg-white/90 backdrop-blur-sm border-0 hover:bg-white text-gray-900 py-4 text-lg"
           onClick={() => window.open('mailto:suporte@adsops.com?subject=Feature Request', '_blank')}
         >
-          <span>Solicitar uma funcionalidade</span>
-          <ExternalLink className="w-4 h-4" />
+          <span>Submit a Feature Request!</span>
+          <ExternalLink className="w-5 h-5" />
         </Button>
       </div>
 
       {/* Popular Questions */}
       <div>
         <div className="flex items-center space-x-2 mb-4">
-          <Search className="w-4 h-4 text-blue-600" />
-          <h4 className="font-medium text-gray-900">Qual é a sua dúvida?</h4>
+          <Search className="w-5 h-5 text-blue-300" />
+          <h4 className="font-semibold text-white text-lg">Qual é a sua dúvida?</h4>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-3">
           {popularQuestions.map((question, index) => (
             <button
               key={index}
               onClick={() => handleSearch(question)}
-              className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+              className="w-full text-left p-4 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-all duration-200 text-white"
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700">{question}</span>
-                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <span className="text-sm font-medium">{question}</span>
+                <ChevronRight className="w-4 h-4 text-white/70" />
               </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Categories */}
-      <div>
-        <h4 className="font-medium text-gray-900 mb-4">Categorias</h4>
-        <div className="grid grid-cols-2 gap-3">
-          {categories.map((category) => (
-            <button
-              key={category.id}
-              onClick={() => handleCategorySelect(category.id)}
-              className="p-4 text-left rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
-            >
-              <div className="text-2xl mb-2">{category.icon}</div>
-              <h5 className="font-medium text-gray-900 text-sm mb-1">{category.name}</h5>
-              <p className="text-xs text-gray-500">{category.description}</p>
             </button>
           ))}
         </div>
@@ -412,18 +418,45 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
   );
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-md h-[600px] flex flex-col shadow-2xl">
+    <div className="fixed inset-0 z-50 pointer-events-none">
+      {/* Backdrop */}
+      <div 
+        className={`absolute inset-0 bg-black/20 transition-opacity duration-300 ${
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0'
+        }`}
+        onClick={handleClose}
+      />
+      
+      {/* Help Center Widget */}
+      <div 
+        className={`absolute bottom-4 right-4 w-96 h-[600px] bg-gradient-to-b from-blue-600 via-purple-600 to-blue-700 rounded-2xl shadow-2xl transition-all duration-300 pointer-events-auto ${
+          isOpen 
+            ? 'opacity-100 translate-y-0 scale-100' 
+            : 'opacity-0 translate-y-8 scale-95'
+        }`}
+      >
         {renderHeader()}
         
-        <div className="flex-1 overflow-hidden">
-          {currentView === 'home' && renderHome()}
-          {(currentView === 'category' || currentView === 'search') && renderFAQList()}
-          {currentView === 'chat' && renderChat()}
+        <div className="h-[calc(100%-140px)] overflow-hidden bg-white rounded-b-2xl">
+          {currentView === 'home' && (
+            <div className="h-full bg-gradient-to-b from-blue-600 via-purple-600 to-blue-700 overflow-y-auto">
+              {renderHome()}
+            </div>
+          )}
+          {(currentView === 'category' || currentView === 'search') && (
+            <div className="h-full overflow-y-auto">
+              {renderFAQList()}
+            </div>
+          )}
+          {currentView === 'chat' && (
+            <div className="h-full">
+              {renderChat()}
+            </div>
+          )}
         </div>
 
         {/* Bottom Navigation */}
-        <div className="border-t border-gray-200 p-4">
+        <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 rounded-b-2xl">
           <div className="flex justify-around">
             <button
               onClick={() => setCurrentView('home')}
@@ -432,7 +465,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
               }`}
             >
               <Home className="w-5 h-5" />
-              <span className="text-xs">Início</span>
+              <span className="text-xs font-medium">Início</span>
             </button>
             
             <button
@@ -442,7 +475,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
               }`}
             >
               <MessageCircle className="w-5 h-5" />
-              <span className="text-xs">Mensagens</span>
+              <span className="text-xs font-medium">Mensagens</span>
             </button>
             
             <button
@@ -450,7 +483,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
               className="flex flex-col items-center space-y-1 p-2 rounded-lg text-gray-500 hover:text-gray-700 transition-colors"
             >
               <HelpCircle className="w-5 h-5" />
-              <span className="text-xs">Ajuda</span>
+              <span className="text-xs font-medium">Ajuda</span>
             </button>
           </div>
         </div>
