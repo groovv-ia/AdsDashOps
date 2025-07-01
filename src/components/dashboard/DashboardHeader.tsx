@@ -4,7 +4,6 @@ import { Button } from '../ui/Button';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationCenter } from '../notifications/NotificationCenter';
 import { NotificationSettingsModal } from '../notifications/NotificationSettings';
-import { HelpButton } from '../help/HelpButton';
 import { signOut } from '../../lib/supabase';
 import { User as UserType } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
@@ -123,7 +122,6 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
           </div>
 
           <div className="flex items-center space-x-2 lg:space-x-3">
-            <HelpButton />
             <NotificationBell onClick={() => setNotificationCenterOpen(true)} />
 
             <div className="relative">
