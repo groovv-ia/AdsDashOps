@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Settings, Database, Sparkles } from 'lucide-react';
+import { BarChart3, Settings, Database, Sparkles, Headphones } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -12,6 +12,7 @@ const menuItems = [
   { icon: BarChart3, label: 'Dashboard', page: 'overview' },
   { icon: Sparkles, label: 'Análise com IA', page: 'ai-insights' },
   { icon: Database, label: 'Fontes de Dados', page: 'data-sources' },
+  { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configurações', page: 'settings' },
 ];
 

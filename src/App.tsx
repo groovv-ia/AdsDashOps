@@ -10,6 +10,7 @@ import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
+import { SupportPage } from './components/support/SupportPage';
 import { FloatingHelpButton } from './components/help/FloatingHelpButton';
 import { ThemeProvider } from './components/settings/ThemeProvider';
 import { useAuth } from './hooks/useAuth';
@@ -203,6 +204,8 @@ function AppContent() {
             metrics={filteredMetrics}
           />
         );
+      case 'support':
+        return <SupportPage />;
       case 'overview':
       default:
         return (
