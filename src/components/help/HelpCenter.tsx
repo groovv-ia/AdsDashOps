@@ -141,6 +141,19 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState<Array<{id: string, message: string, sender: 'user' | 'bot', timestamp: Date}>>([]);
 
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const filteredFAQs = faqData.filter(faq => {
@@ -404,15 +417,15 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
   );
 
   return (
-    <>
+    <div className="fixed inset-0 z-[9999] flex items-end justify-end p-4">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-black/20 z-40"
+        className="absolute inset-0 bg-black/20"
         onClick={onClose}
       />
       
       {/* Help Center Widget - Positioned at bottom right */}
-      <div className="fixed bottom-4 right-4 w-96 h-[600px] bg-gradient-to-b from-blue-600 via-purple-600 to-blue-700 rounded-2xl shadow-2xl z-50 animate-in slide-in-from-bottom-8 slide-in-from-right-8 duration-300">
+      <div className="relative w-96 h-[600px] bg-gradient-to-b from-blue-600 via-purple-600 to-blue-700 rounded-2xl shadow-2xl animate-in slide-in-from-bottom-8 slide-in-from-right-8 duration-300">
         {renderHeader()}
         
         <div className="h-[calc(100%-140px)] overflow-hidden bg-white rounded-b-2xl">
@@ -466,7 +479,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 };
 
