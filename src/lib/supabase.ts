@@ -88,6 +88,9 @@ export const signUp = async (email: string, password: string, fullName?: string)
         });
         
         if (retryError) {
+          if (retryError.message?.includes('Database error saving new user')) {
+            throw new Error('Erro interno do servidor ao salvar o usuário. Verifique a configuração do seu projeto Supabase (tabelas auth.users e public.profiles, triggers e RLS).');
+          }
           if (retryError.message?.includes('Signups not allowed')) {
             throw new Error('Cadastros estão desabilitados. Habilite "Enable email signups" nas configurações de Authentication do Supabase.');
           }
