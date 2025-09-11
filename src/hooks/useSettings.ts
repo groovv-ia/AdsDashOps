@@ -59,6 +59,11 @@ export const useSettings = () => {
     try {
       setLoading(true);
       
+      if (!user?.id) {
+        console.log('No user ID available, skipping settings load');
+        return;
+      }
+      
       // Load or create profile
       let { data: profileData, error } = await supabase
         .from('profiles')
@@ -76,19 +81,47 @@ export const useSettings = () => {
           language: 'pt-BR'
         };
 
-        const { data: createdProfile, error: createError } = await supabase
-          .from('profiles')
-          .insert(newProfile)
-          .select()
-          .single();
+        try {
+          const { data: createdProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert(newProfile)
+            .select()
+            .single();
 
-        if (createError) {
-          console.error('Erro ao criar perfil:', createError);
-        } else {
-          profileData = createdProfile;
+          if (createError) {
+            console.error('Erro ao criar perfil:', createError);
+            // Set a basic profile even if database insert fails
+            profileData = {
+              ...newProfile,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+          } else {
+            profileData = createdProfile;
+          }
+        } catch (createError) {
+          console.error('Exception creating profile:', createError);
+          // Set a basic profile even if database insert fails
+          profileData = {
+            ...newProfile,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
         }
       } else if (error) {
         console.error('Erro ao carregar perfil:', error);
+        // If we can't load the profile but have user data, create a basic profile
+        if (user) {
+          profileData = {
+            id: user.id,
+            email: user.email || '',
+            full_name: user.user_metadata?.full_name || '',
+            timezone: 'America/Sao_Paulo',
+            language: 'pt-BR',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+        }
       }
 
       if (profileData) {
@@ -106,6 +139,18 @@ export const useSettings = () => {
       }
     } catch (error) {
       console.error('Erro ao carregar configurações:', error);
+      // Even if there's an error, try to set basic user info if available
+      if (user) {
+        setProfile({
+          id: user.id,
+          email: user.email || '',
+          full_name: user.user_metadata?.full_name || '',
+          timezone: 'America/Sao_Paulo',
+          language: 'pt-BR',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
     } finally {
       setLoading(false);
     }

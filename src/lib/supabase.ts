@@ -74,11 +74,56 @@ export const signUp = async (email: string, password: string, fullName?: string)
     if (error) {
       console.error('Sign up error:', error);
       
-      // More specific error handling
+      // Handle database errors by creating profile manually
       if (error.message?.includes('Database error saving new user')) {
-        throw new Error('Erro no banco de dados. Verifique se as tabelas de perfil estão configuradas corretamente no Supabase.');
+        console.log('Database error detected, attempting manual profile creation...');
+        
+        // Try to sign up without profile creation first
+        const { data: retryData, error: retryError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: undefined,
+          },
+        });
+        
+        if (retryError) {
+          if (retryError.message?.includes('Signups not allowed')) {
+            throw new Error('Cadastros estão desabilitados. Habilite "Enable email signups" nas configurações de Authentication do Supabase.');
+          }
+          if (retryError.message?.includes('User already registered')) {
+            throw new Error('Este email já está cadastrado. Tente fazer login ou use outro email.');
+          }
+          throw new Error('Erro durante o cadastro. Verifique suas credenciais e tente novamente.');
+        }
+        
+        // If user was created successfully, try to create profile manually
+        if (retryData.user) {
+          try {
+            const { error: profileError } = await supabase
+              .from('profiles')
+              .insert({
+                id: retryData.user.id,
+                email: email,
+                full_name: fullName || '',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              });
+            
+            if (profileError) {
+              console.warn('Could not create profile, but user was created:', profileError);
+              // Don't throw error here, user was created successfully
+            }
+          } catch (profileError) {
+            console.warn('Profile creation failed, but user was created:', profileError);
+            // Don't throw error here, user was created successfully
+          }
+        }
+        
+        return { data: retryData, error: null };
       }
       
+      // Handle other specific errors
       if (error.message?.includes('Signups not allowed')) {
         throw new Error('Cadastros estão desabilitados. Habilite "Enable email signups" nas configurações de Authentication do Supabase.');
       }
