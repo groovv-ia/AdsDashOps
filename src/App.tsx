@@ -16,6 +16,7 @@ import { ThemeProvider } from './components/settings/ThemeProvider';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
+import { isDemoMode } from './lib/supabase';
 import { mockCampaigns, mockMetrics, mockAdSets, mockAds } from './data/mockData';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
@@ -182,13 +183,37 @@ function AppContent() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600">
+            {isDemoMode ? 'Carregando modo demonstração...' : 'Carregando...'}
+          </p>
+        </div>
       </div>
     );
   }
 
   if (!user) {
-    return <AuthForm onSuccess={() => window.location.reload()} />;
+    return (
+      <>
+        {isDemoMode && (
+          <div className="bg-yellow-50 border-b border-yellow-200 p-4">
+            <div className="max-w-7xl mx-auto">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                <p className="text-yellow-800 text-sm">
+                  <strong>Modo Demonstração:</strong> Configure o Supabase para funcionalidade completa.
+                  <a href="#" className="ml-2 underline hover:text-yellow-900">
+                    Clique aqui para configurar
+                  </a>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        <AuthForm onSuccess={() => window.location.reload()} />
+      </>
+    );
   }
 
   const renderPageContent = () => {

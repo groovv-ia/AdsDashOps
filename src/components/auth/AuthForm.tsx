@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { signIn, signUp, signInWithProvider } from '../../lib/supabase';
+import { signIn, signUp, signInWithProvider, isDemoMode } from '../../lib/supabase';
 
 interface AuthFormProps {
   onSuccess: () => void;
@@ -43,6 +43,27 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Demo mode handling
+    if (isDemoMode) {
+      // Simulate successful login in demo mode
+      setTimeout(() => {
+        // Create a mock user session
+        const mockUser = {
+          id: 'demo-user-id',
+          email: formData.email,
+          user_metadata: {
+            full_name: formData.fullName || 'Usuário Demo'
+          }
+        };
+        
+        // Store demo session
+        localStorage.setItem('demo-session', JSON.stringify(mockUser));
+        onSuccess();
+      }, 1000);
+      return;
+    }
+    
     setLoading(true);
     setError('');
 
@@ -188,6 +209,21 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
+            {isDemoMode && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start space-x-2">
+                  <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-blue-900">Modo Demonstração</h4>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Use qualquer email e senha para acessar o sistema em modo demo.
+                      Para funcionalidade completa, configure o Supabase.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             {!isLogin && (
               <div>
                 <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">

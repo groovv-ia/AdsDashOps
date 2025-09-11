@@ -1,12 +1,27 @@
 import { useState, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase, isDemoMode } from '../lib/supabase';
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Demo mode handling
+    if (isDemoMode) {
+      const demoSession = localStorage.getItem('demo-session');
+      if (demoSession) {
+        try {
+          const mockUser = JSON.parse(demoSession);
+          setUser(mockUser as User);
+        } catch (error) {
+          console.error('Erro ao carregar sessão demo:', error);
+        }
+      }
+      setLoading(false);
+      return;
+    }
+    
     // Get initial user
     const getInitialUser = async () => {
       try {

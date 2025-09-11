@@ -1,13 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables. Please check your .env file.');
+// Check if we're in development and show helpful error
+const isDevelopment = import.meta.env.DEV;
+const hasSupabaseConfig = supabaseUrl && supabaseAnonKey;
+
+if (!hasSupabaseConfig && isDevelopment) {
+  console.warn('⚠️ Supabase não configurado. Usando modo demo.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Create client with fallback for demo mode
+export const supabase = hasSupabaseConfig 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : createClient('https://demo.supabase.co', 'demo-key');
+
+// Demo mode flag
+export const isDemoMode = !hasSupabaseConfig;
 
 export const signIn = async (email: string, password: string) => {
   try {
