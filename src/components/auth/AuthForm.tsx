@@ -20,24 +20,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   const [error, setError] = useState('');
 
   const getErrorMessage = (error: any) => {
-    if (error?.message?.includes('Invalid login credentials')) {
-      return 'O email ou senha inseridos estão incorretos. Verifique suas credenciais e tente novamente.';
-    }
-    if (error?.message?.includes('Email not confirmed')) {
-      return 'Verifique seu email e clique no link de confirmação antes de fazer login.';
-    }
-    if (error?.message?.includes('User already registered')) {
-      return 'Já existe uma conta com este email. Faça login em vez disso.';
-    }
-    if (error?.message?.includes('Password should be at least')) {
-      return 'A senha deve ter pelo menos 6 caracteres.';
-    }
-    if (error?.message?.includes('Unable to validate email address')) {
-      return 'Por favor, insira um endereço de email válido.';
-    }
-    if (error?.message?.includes('Signup not allowed')) {
-      return 'Cadastro não permitido. Entre em contato com o suporte.';
-    }
+    // Return the error message as-is since we're handling it in supabase.ts
     return error?.message || 'Ocorreu um erro inesperado. Tente novamente.';
   };
 
@@ -51,19 +34,9 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
       if (isLogin) {
         const { data, error } = await signIn(formData.email, formData.password);
         if (error) throw error;
-        
-        // Handle demo mode success
-        if (isDemoMode && data?.user) {
-          localStorage.setItem('demo-session', JSON.stringify(data.user));
-        }
       } else {
         const { data, error } = await signUp(formData.email, formData.password, formData.fullName);
         if (error) throw error;
-        
-        // Handle demo mode success
-        if (isDemoMode && data?.user) {
-          localStorage.setItem('demo-session', JSON.stringify(data.user));
-        }
       }
       onSuccess();
     } catch (err: any) {
@@ -199,21 +172,6 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-            {isDemoMode && (
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-start space-x-2">
-                  <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-                  <div>
-                    <h4 className="font-medium text-blue-900">Modo Demonstração</h4>
-                    <p className="text-sm text-blue-700 mt-1">
-                      Use qualquer email e senha para acessar o sistema em modo demo.
-                      Para funcionalidade completa, configure o Supabase.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
             {!isLogin && (
               <div>
                 <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">

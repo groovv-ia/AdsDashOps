@@ -21,21 +21,7 @@ export const isDemoMode = !hasSupabaseConfig;
 
 export const signIn = async (email: string, password: string) => {
   try {
-    // Check if we're in demo mode first
-    if (isDemoMode) {
-      console.log('Demo mode: Simulating sign in');
-      return { 
-        data: { 
-          user: { 
-            id: 'demo-user-' + Date.now(), 
-            email, 
-            user_metadata: { full_name: 'Usuário Demo' } 
-          }, 
-          session: { access_token: 'demo-token', refresh_token: 'demo-refresh' } 
-        }, 
-        error: null 
-      };
-    }
+    console.log('Attempting sign in for:', email);
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -51,8 +37,14 @@ export const signIn = async (email: string, password: string) => {
       }
       
       if (error.message?.includes('Email not confirmed')) {
-        throw new Error('Confirme seu email antes de fazer login. Verifique sua caixa de entrada.');
+        throw new Error('Email não confirmado. Verifique sua caixa de entrada ou desabilite a confirmação de email no Supabase.');
       }
+      
+      if (error.message?.includes('Too many requests')) {
+        throw new Error('Muitas tentativas de login. Aguarde alguns minutos e tente novamente.');
+      }
+      
+      throw error;
     } else {
       console.log('Sign in successful:', data.user?.email);
     }
@@ -66,21 +58,7 @@ export const signIn = async (email: string, password: string) => {
 
 export const signUp = async (email: string, password: string, fullName?: string) => {
   try {
-    // Check if we're in demo mode first
-    if (isDemoMode) {
-      console.log('Demo mode: Simulating sign up');
-      return { 
-        data: { 
-          user: { 
-            id: 'demo-user-' + Date.now(), 
-            email, 
-            user_metadata: { full_name: fullName } 
-          }, 
-          session: null 
-        }, 
-        error: null 
-      };
-    }
+    console.log('Attempting sign up for:', email);
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -89,20 +67,27 @@ export const signUp = async (email: string, password: string, fullName?: string)
         data: {
           full_name: fullName,
         },
+        emailRedirectTo: undefined, // Disable email confirmation
       },
     });
     
     if (error) {
       console.error('Sign up error:', error);
       
-      // Handle specific Supabase errors
+      // More specific error handling
       if (error.message?.includes('Database error saving new user')) {
-        throw new Error('Cadastro temporariamente indisponível. Verifique se o email sign-up está habilitado no Supabase ou tente novamente mais tarde.');
+        throw new Error('Erro no banco de dados. Verifique se as tabelas de perfil estão configuradas corretamente no Supabase.');
       }
       
       if (error.message?.includes('Signups not allowed')) {
-        throw new Error('Cadastro não permitido. Entre em contato com o administrador do sistema.');
+        throw new Error('Cadastros estão desabilitados. Habilite "Enable email signups" nas configurações de Authentication do Supabase.');
       }
+      
+      if (error.message?.includes('User already registered')) {
+        throw new Error('Este email já está cadastrado. Tente fazer login ou use outro email.');
+      }
+      
+      throw error;
     } else {
       console.log('Sign up successful:', data.user?.email);
     }
