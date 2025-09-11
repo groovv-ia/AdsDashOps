@@ -1,11 +1,21 @@
 import OpenAI from 'openai';
 import { AdMetrics, Campaign } from '../types/advertising';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true // Note: In production, this should be done server-side
-});
+// Initialize OpenAI client with fallback to localStorage
+const getOpenAIClient = () => {
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY || 
+                 localStorage.getItem('openai_api_key') || 
+                 (window as any).__OPENAI_API_KEY__;
+  
+  if (!apiKey) {
+    throw new Error('OpenAI API key not configured');
+  }
+  
+  return new OpenAI({
+    apiKey,
+    dangerouslyAllowBrowser: true // Note: In production, this should be done server-side
+  });
+};
 
 export interface AIInsight {
   id: string;
@@ -65,6 +75,7 @@ export class AIInsightsService {
     industryBenchmarks?: any
   ): Promise<CampaignAnalysis> {
     try {
+      const openai = getOpenAIClient();
       const metricsData = this.prepareMetricsData(metrics);
       const prompt = this.buildAnalysisPrompt(campaign, metricsData, industryBenchmarks);
 
@@ -105,6 +116,7 @@ export class AIInsightsService {
     allMetrics: AdMetrics[]
   ): Promise<AIInsight[]> {
     try {
+      const openai = getOpenAIClient();
       const campaignSummaries = campaigns.map(campaign => {
         const campaignMetrics = allMetrics.filter(m => m.campaign_id === campaign.id);
         return {
@@ -149,6 +161,7 @@ export class AIInsightsService {
   // Detect anomalies in campaign performance
   async detectAnomalies(metrics: AdMetrics[]): Promise<AIInsight[]> {
     try {
+      const openai = getOpenAIClient();
       const anomalyData = this.prepareAnomalyData(metrics);
       const prompt = this.buildAnomalyPrompt(anomalyData);
 
@@ -189,6 +202,7 @@ export class AIInsightsService {
     timeframe: 'week' | 'month' | 'quarter'
   ): Promise<AIInsight[]> {
     try {
+      const openai = getOpenAIClient();
       const trendData = this.prepareTrendData(campaigns, metrics, timeframe);
       const prompt = this.buildMarketInsightsPrompt(trendData, timeframe);
 
