@@ -14,7 +14,7 @@ if (!hasSupabaseConfig && isDevelopment) {
 // Create client with fallback for demo mode
 export const supabase = hasSupabaseConfig 
   ? createClient(supabaseUrl, supabaseAnonKey)
-  : createClient('https://demo.supabase.co', 'demo-key');
+  : null;
 
 // Demo mode flag
 export const isDemoMode = !hasSupabaseConfig;

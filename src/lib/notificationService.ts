@@ -74,6 +74,12 @@ export class NotificationService {
   // Get user notifications
   async getNotifications(limit = 50, offset = 0): Promise<AppNotification[]> {
     try {
+      // Check if Supabase is configured
+      if (!supabase) {
+        console.warn('Supabase não configurado - retornando notificações vazias');
+        return [];
+      }
+
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
@@ -91,6 +97,12 @@ export class NotificationService {
   // Get unread count
   async getUnreadCount(): Promise<number> {
     try {
+      // Check if Supabase is configured
+      if (!supabase) {
+        console.warn('Supabase não configurado - retornando contagem 0');
+        return 0;
+      }
+
       const { count, error } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })

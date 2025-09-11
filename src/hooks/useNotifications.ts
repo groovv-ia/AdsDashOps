@@ -21,6 +21,13 @@ export const useNotifications = () => {
 
   const initialize = async () => {
     try {
+      // Check if Supabase is configured
+      if (!supabase) {
+        console.warn('Supabase não configurado - modo demo para notificações');
+        setLoading(false);
+        return;
+      }
+
       // Initialize real-time notifications
       await notificationService.initializeRealTime();
       
