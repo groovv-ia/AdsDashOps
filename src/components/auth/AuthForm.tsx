@@ -44,36 +44,26 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Demo mode handling
-    if (isDemoMode) {
-      // Simulate successful login in demo mode
-      setTimeout(() => {
-        // Create a mock user session
-        const mockUser = {
-          id: 'demo-user-id',
-          email: formData.email,
-          user_metadata: {
-            full_name: formData.fullName || 'Usuário Demo'
-          }
-        };
-        
-        // Store demo session
-        localStorage.setItem('demo-session', JSON.stringify(mockUser));
-        onSuccess();
-      }, 1000);
-      return;
-    }
-    
     setLoading(true);
     setError('');
 
     try {
       if (isLogin) {
-        const { error } = await signIn(formData.email, formData.password);
+        const { data, error } = await signIn(formData.email, formData.password);
         if (error) throw error;
+        
+        // Handle demo mode success
+        if (isDemoMode && data?.user) {
+          localStorage.setItem('demo-session', JSON.stringify(data.user));
+        }
       } else {
-        const { error } = await signUp(formData.email, formData.password, formData.fullName);
+        const { data, error } = await signUp(formData.email, formData.password, formData.fullName);
         if (error) throw error;
+        
+        // Handle demo mode success
+        if (isDemoMode && data?.user) {
+          localStorage.setItem('demo-session', JSON.stringify(data.user));
+        }
       }
       onSuccess();
     } catch (err: any) {

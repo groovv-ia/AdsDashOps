@@ -21,6 +21,22 @@ export const isDemoMode = !hasSupabaseConfig;
 
 export const signIn = async (email: string, password: string) => {
   try {
+    // Check if we're in demo mode first
+    if (isDemoMode) {
+      console.log('Demo mode: Simulating sign in');
+      return { 
+        data: { 
+          user: { 
+            id: 'demo-user-' + Date.now(), 
+            email, 
+            user_metadata: { full_name: 'Usuário Demo' } 
+          }, 
+          session: { access_token: 'demo-token', refresh_token: 'demo-refresh' } 
+        }, 
+        error: null 
+      };
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -28,6 +44,15 @@ export const signIn = async (email: string, password: string) => {
     
     if (error) {
       console.error('Sign in error:', error);
+      
+      // Handle specific Supabase errors
+      if (error.message?.includes('Invalid login credentials')) {
+        throw new Error('Email ou senha incorretos. Verifique suas credenciais e tente novamente.');
+      }
+      
+      if (error.message?.includes('Email not confirmed')) {
+        throw new Error('Confirme seu email antes de fazer login. Verifique sua caixa de entrada.');
+      }
     } else {
       console.log('Sign in successful:', data.user?.email);
     }
@@ -35,12 +60,28 @@ export const signIn = async (email: string, password: string) => {
     return { data, error };
   } catch (error) {
     console.error('Sign in exception:', error);
-    return { data: null, error };
+    return { data: null, error: error instanceof Error ? error : new Error('Erro inesperado durante o login') };
   }
 };
 
 export const signUp = async (email: string, password: string, fullName?: string) => {
   try {
+    // Check if we're in demo mode first
+    if (isDemoMode) {
+      console.log('Demo mode: Simulating sign up');
+      return { 
+        data: { 
+          user: { 
+            id: 'demo-user-' + Date.now(), 
+            email, 
+            user_metadata: { full_name: fullName } 
+          }, 
+          session: null 
+        }, 
+        error: null 
+      };
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -53,6 +94,15 @@ export const signUp = async (email: string, password: string, fullName?: string)
     
     if (error) {
       console.error('Sign up error:', error);
+      
+      // Handle specific Supabase errors
+      if (error.message?.includes('Database error saving new user')) {
+        throw new Error('Cadastro temporariamente indisponível. Verifique se o email sign-up está habilitado no Supabase ou tente novamente mais tarde.');
+      }
+      
+      if (error.message?.includes('Signups not allowed')) {
+        throw new Error('Cadastro não permitido. Entre em contato com o administrador do sistema.');
+      }
     } else {
       console.log('Sign up successful:', data.user?.email);
     }
@@ -60,7 +110,7 @@ export const signUp = async (email: string, password: string, fullName?: string)
     return { data, error };
   } catch (error) {
     console.error('Sign up exception:', error);
-    return { data: null, error };
+    return { data: null, error: error instanceof Error ? error : new Error('Erro inesperado durante o cadastro') };
   }
 };
 
