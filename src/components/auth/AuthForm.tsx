@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { signIn, signUp, signInWithProvider, isDemoMode } from '../../lib/supabase';
+import { CookieConsent } from '../legal/CookieConsent';
+import { CookiePreferencesModal } from '../legal/CookiePreferencesModal';
 
 interface AuthFormProps {
   onSuccess: () => void;
@@ -337,12 +339,16 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
 
       {/* Right Side - Image */}
       <div className="hidden lg:block relative w-0 flex-1">
-        <img 
-          src="/onboarding-1.jpg" 
-          alt="Analytics Dashboard" 
+        <img
+          src="/onboarding-1.jpg"
+          alt="Analytics Dashboard"
           className="absolute inset-0 w-full h-full object-cover"
         />
       </div>
+
+      {/* Cookie Consent Banner e Modal */}
+      <CookieConsent />
+      <CookiePreferencesModal />
     </div>
   );
 };
