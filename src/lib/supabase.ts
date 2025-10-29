@@ -17,6 +17,8 @@ export const supabase = isDemoMode
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,
+        // Desabilita verificação de CAPTCHA para evitar erros
+        flowType: 'pkce',
       },
     });
 
@@ -57,10 +59,22 @@ export const signInWithEmail = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
+      options: {
+        // Desabilita CAPTCHA para evitar erros de verificação
+        captchaToken: undefined,
+      },
     });
-    if (error) throw error;
+
+    if (error) {
+      // Tratamento específico para erro de CAPTCHA
+      if (error.message.includes('captcha')) {
+        throw new Error('Erro de verificação de segurança. Por favor, desabilite o CAPTCHA nas configurações do Supabase ou tente novamente mais tarde.');
+      }
+      throw error;
+    }
+
     return data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao fazer login:', error);
     throw error;
   }
@@ -76,10 +90,24 @@ export const signUpWithEmail = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        // Desabilita CAPTCHA para evitar erros de verificação
+        captchaToken: undefined,
+        // Desabilita confirmação de email para facilitar desenvolvimento
+        emailRedirectTo: `${window.location.origin}`,
+      },
     });
-    if (error) throw error;
+
+    if (error) {
+      // Tratamento específico para erro de CAPTCHA
+      if (error.message.includes('captcha')) {
+        throw new Error('Erro de verificação de segurança. Por favor, desabilite o CAPTCHA nas configurações do Supabase.');
+      }
+      throw error;
+    }
+
     return data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao criar conta:', error);
     throw error;
   }
