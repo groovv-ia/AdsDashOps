@@ -64,8 +64,13 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           return;
         }
 
+        // Log dos parâmetros recebidos para debug
+        console.log('Callback params:', { accessToken: !!accessToken, refreshToken: !!refreshToken, type });
+
         // Verifica se é um callback de confirmação de email
-        if (type !== 'signup' && type !== 'email') {
+        // O Supabase pode enviar type como 'signup', 'email', 'recovery', ou até mesmo vazio em alguns casos
+        // Se temos tokens válidos, podemos prosseguir independentemente do type
+        if (type && type !== 'signup' && type !== 'email' && type !== 'recovery') {
           setError('Tipo de confirmação inválido');
           setLoading(false);
           onError?.('Tipo de confirmação inválido');
