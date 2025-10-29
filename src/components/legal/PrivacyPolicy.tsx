@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Shield, Mail, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Shield, Mail, ExternalLink, Home } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 
@@ -19,44 +19,58 @@ export const PrivacyPolicy: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <Button
-            onClick={handleGoBack}
-            icon={ArrowLeft}
-            variant="ghost"
-            size="sm"
-          >
-            Voltar
-          </Button>
-          <Button
-            onClick={handleGoHome}
-            variant="outline"
-            size="sm"
-          >
-            Ir para Home
-          </Button>
+        {/* Header com Logo */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <Button
+              onClick={handleGoBack}
+              icon={ArrowLeft}
+              variant="ghost"
+              size="sm"
+              className="text-gray-600 hover:text-gray-900"
+            >
+              Voltar
+            </Button>
+            <Button
+              onClick={handleGoHome}
+              icon={Home}
+              variant="outline"
+              size="sm"
+              className="text-gray-600 hover:text-gray-900"
+            >
+              Ir para Home
+            </Button>
+          </div>
+
+          {/* Logo AdsOps */}
+          <div className="flex justify-center mb-8">
+            <img
+              src="/logotipo-adsops.fw.png"
+              alt="AdsOps"
+              className="h-16 w-auto object-contain"
+            />
+          </div>
         </div>
 
         {/* Título Principal */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-blue-100 rounded-full">
-              <Shield className="w-8 h-8 text-blue-600" />
+            <div className="p-4 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl shadow-lg">
+              <Shield className="w-10 h-10 text-white" />
             </div>
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">
             Política de Privacidade
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 text-lg">
             Válida a partir de outubro de 2025
           </p>
         </div>
 
         {/* Conteúdo */}
-        <Card className="prose prose-blue max-w-none">
+        <Card className="prose prose-blue max-w-none shadow-xl">
           <div className="space-y-6">
             {/* Introdução */}
             <section>
@@ -225,7 +239,7 @@ export const PrivacyPolicy: React.FC = () => {
             </section>
 
             {/* Contato */}
-            <section className="bg-blue-50 rounded-lg p-6">
+            <section className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Contato</h2>
 
               <p className="text-gray-700 leading-relaxed mb-4">
@@ -234,7 +248,7 @@ export const PrivacyPolicy: React.FC = () => {
 
               <div className="flex items-center gap-2 text-blue-600">
                 <Mail className="w-5 h-5" />
-                <a href="mailto:marketing@prime2b.digital" className="font-medium hover:underline">
+                <a href="mailto:marketing@prime2b.digital" className="font-semibold hover:underline">
                   marketing@prime2b.digital
                 </a>
               </div>
@@ -243,8 +257,16 @@ export const PrivacyPolicy: React.FC = () => {
         </Card>
 
         {/* Footer */}
-        <div className="mt-8 text-center text-sm text-gray-500">
-          <p>© 2025 AdsOps - Todos os direitos reservados</p>
+        <div className="mt-8 text-center">
+          <div className="flex justify-center mb-4">
+            <img
+              src="/logotipo-adsops.fw.png"
+              alt="AdsOps"
+              className="h-10 w-auto object-contain opacity-60"
+            />
+          </div>
+          <p className="text-sm text-gray-500">© 2025 AdsOps - Todos os direitos reservados</p>
+          <p className="text-xs text-gray-400 mt-2">PRIME 2 B MARKETING DIGITAL LTDA - CNPJ: 44.443.767/0001-60</p>
         </div>
       </div>
     </div>

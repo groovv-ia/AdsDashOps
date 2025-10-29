@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, FileText } from 'lucide-react';
+import { ArrowLeft, FileText, Home } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 
@@ -19,44 +19,58 @@ export const TermsOfService: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <Button
-            onClick={handleGoBack}
-            icon={ArrowLeft}
-            variant="ghost"
-            size="sm"
-          >
-            Voltar
-          </Button>
-          <Button
-            onClick={handleGoHome}
-            variant="outline"
-            size="sm"
-          >
-            Ir para Home
-          </Button>
+        {/* Header com Logo */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <Button
+              onClick={handleGoBack}
+              icon={ArrowLeft}
+              variant="ghost"
+              size="sm"
+              className="text-gray-600 hover:text-gray-900"
+            >
+              Voltar
+            </Button>
+            <Button
+              onClick={handleGoHome}
+              icon={Home}
+              variant="outline"
+              size="sm"
+              className="text-gray-600 hover:text-gray-900"
+            >
+              Ir para Home
+            </Button>
+          </div>
+
+          {/* Logo AdsOps */}
+          <div className="flex justify-center mb-8">
+            <img
+              src="/logotipo-adsops.fw.png"
+              alt="AdsOps"
+              className="h-16 w-auto object-contain"
+            />
+          </div>
         </div>
 
         {/* Título Principal */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-purple-100 rounded-full">
-              <FileText className="w-8 h-8 text-purple-600" />
+            <div className="p-4 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-lg">
+              <FileText className="w-10 h-10 text-white" />
             </div>
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">
             Termos de Uso
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 text-lg">
             Leia atentamente antes de utilizar nossos serviços
           </p>
         </div>
 
         {/* Conteúdo */}
-        <Card className="prose prose-blue max-w-none">
+        <Card className="prose prose-blue max-w-none shadow-xl">
           <div className="space-y-6">
             {/* Seção 1: Termos */}
             <section>
@@ -148,25 +162,33 @@ export const TermsOfService: React.FC = () => {
             </section>
 
             {/* Nota importante */}
-            <section className="bg-purple-50 rounded-lg p-6">
+            <section className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-100">
               <h3 className="text-xl font-semibold text-gray-900 mb-3">Importante</h3>
 
               <p className="text-gray-700 leading-relaxed">
-                Ao utilizar os serviços da AdsOps, você reconhece que leu, compreendeu e concorda em estar vinculado a estes Termos de Uso e à nossa <a href="/privacy-policy" className="text-blue-600 hover:underline font-medium">Política de Privacidade</a>.
+                Ao utilizar os serviços da AdsOps, você reconhece que leu, compreendeu e concorda em estar vinculado a estes Termos de Uso e à nossa <a href="/politica-de-privacidade" className="text-blue-600 hover:underline font-semibold">Política de Privacidade</a>.
               </p>
             </section>
           </div>
         </Card>
 
         {/* Footer */}
-        <div className="mt-8 text-center text-sm text-gray-500">
-          <p>© 2025 AdsOps - Todos os direitos reservados</p>
-          <p className="mt-2">
-            <a href="/privacy-policy" className="text-blue-600 hover:underline">
+        <div className="mt-8 text-center">
+          <div className="flex justify-center mb-4">
+            <img
+              src="/logotipo-adsops.fw.png"
+              alt="AdsOps"
+              className="h-10 w-auto object-contain opacity-60"
+            />
+          </div>
+          <p className="text-sm text-gray-500">© 2025 AdsOps - Todos os direitos reservados</p>
+          <p className="text-xs text-gray-400 mt-2">PRIME 2 B MARKETING DIGITAL LTDA - CNPJ: 44.443.767/0001-60</p>
+          <p className="mt-4 text-sm">
+            <a href="/politica-de-privacidade" className="text-blue-600 hover:underline font-medium">
               Política de Privacidade
             </a>
             {' • '}
-            <a href="/terms-of-service" className="text-blue-600 hover:underline">
+            <a href="/termos-de-uso" className="text-blue-600 hover:underline font-medium">
               Termos de Uso
             </a>
           </p>
