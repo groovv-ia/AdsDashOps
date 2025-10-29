@@ -18,6 +18,7 @@ import { TermsOfService } from './components/legal/TermsOfService';
 import { DataDeletionPolicy } from './components/legal/DataDeletionPolicy';
 import { CookiePreferencesModal } from './components/legal/CookiePreferencesModal';
 import { CookieSettingsButton } from './components/legal/CookieSettingsButton';
+import { CookieConsentProvider } from './contexts/CookieConsentContext';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -370,7 +371,9 @@ function AppContent() {
 function App() {
   return (
     <ThemeProvider>
-      <AppContent />
+      <CookieConsentProvider>
+        <AppContent />
+      </CookieConsentProvider>
     </ThemeProvider>
   );
 }

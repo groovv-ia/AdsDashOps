@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { X, Shield } from 'lucide-react';
-import { useCookieConsent } from '../../hooks/useCookieConsent';
+import { useCookieConsent } from '../../contexts/CookieConsentContext';
 
 /**
  * Componente CookieConsent

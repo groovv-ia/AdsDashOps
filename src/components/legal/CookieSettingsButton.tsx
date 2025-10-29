@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Cookie, Settings } from 'lucide-react';
-import { useCookieConsent } from '../../hooks/useCookieConsent';
+import { useCookieConsent } from '../../contexts/CookieConsentContext';
 
 /**
  * Componente CookieSettingsButton
