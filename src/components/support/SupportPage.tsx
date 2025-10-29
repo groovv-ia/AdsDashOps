@@ -709,6 +709,58 @@ export const SupportPage: React.FC = () => {
           </Button>
         </Card>
       </div>
+
+      {/* Seção de Informações Legais */}
+      <div className="mt-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Informações Legais</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="p-6 hover:shadow-lg transition-shadow">
+            <div className="flex items-start space-x-4">
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Shield className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-gray-900 mb-2">Política de Privacidade</h4>
+                <p className="text-sm text-gray-600 mb-4">
+                  Saiba como coletamos, usamos e protegemos seus dados pessoais
+                </p>
+                <a
+                  href="/politica-de-privacidade"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Ler Política de Privacidade
+                  <ExternalLink className="w-4 h-4 ml-1" />
+                </a>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 hover:shadow-lg transition-shadow">
+            <div className="flex items-start space-x-4">
+              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 text-purple-600" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-gray-900 mb-2">Termos de Uso</h4>
+                <p className="text-sm text-gray-600 mb-4">
+                  Conheça os termos e condições para usar nossos serviços
+                </p>
+                <a
+                  href="/termos-de-uso"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center text-sm text-purple-600 hover:text-purple-800 font-medium"
+                >
+                  Ler Termos de Uso
+                  <ExternalLink className="w-4 h-4 ml-1" />
+                </a>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 
