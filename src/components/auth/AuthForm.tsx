@@ -4,6 +4,7 @@ import { Button } from '../ui/Button';
 import { signIn, signUp, signInWithProvider, isDemoMode } from '../../lib/supabase';
 import { CookieConsent } from '../legal/CookieConsent';
 import { CookiePreferencesModal } from '../legal/CookiePreferencesModal';
+import { CookieSettingsButton } from '../legal/CookieSettingsButton';
 
 interface AuthFormProps {
   onSuccess: () => void;
@@ -346,9 +347,10 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
         />
       </div>
 
-      {/* Cookie Consent Banner e Modal */}
+      {/* Cookie Consent Banner, Modal e Botão Flutuante */}
       <CookieConsent />
       <CookiePreferencesModal />
+      <CookieSettingsButton />
     </div>
   );
 };

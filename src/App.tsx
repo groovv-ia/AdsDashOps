@@ -16,6 +16,8 @@ import { ThemeProvider } from './components/settings/ThemeProvider';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { TermsOfService } from './components/legal/TermsOfService';
 import { DataDeletionPolicy } from './components/legal/DataDeletionPolicy';
+import { CookiePreferencesModal } from './components/legal/CookiePreferencesModal';
+import { CookieSettingsButton } from './components/legal/CookieSettingsButton';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -357,6 +359,10 @@ function AppContent() {
 
       {/* Floating Help Button - Only show when user is logged in */}
       <FloatingHelpButton />
+
+      {/* Cookie Settings Button and Modal - Available everywhere */}
+      <CookieSettingsButton />
+      <CookiePreferencesModal />
     </div>
   );
 }
