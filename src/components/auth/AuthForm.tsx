@@ -298,14 +298,14 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
               <p>Ao continuar, você concorda com nossos</p>
               <div className="mt-2 space-x-2">
                 <a
-                  href="/terms-of-service"
+                  href="/termos-de-uso"
                   className="text-blue-600 hover:text-blue-800 hover:underline"
                 >
                   Termos de Uso
                 </a>
                 <span>e</span>
                 <a
-                  href="/privacy-policy"
+                  href="/politica-de-privacidade"
                   className="text-blue-600 hover:text-blue-800 hover:underline"
                 >
                   Política de Privacidade

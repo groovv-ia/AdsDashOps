@@ -35,8 +35,8 @@ function AppContent() {
 
   // Detecta rota atual para páginas públicas (Política de Privacidade e Termos de Uso)
   const currentPath = window.location.pathname;
-  const isPrivacyPolicyPage = currentPath === '/privacy-policy';
-  const isTermsOfServicePage = currentPath === '/terms-of-service';
+  const isPrivacyPolicyPage = currentPath === '/politica-de-privacidade';
+  const isTermsOfServicePage = currentPath === '/termos-de-uso';
 
   // Renderiza páginas públicas sem necessidade de autenticação
   if (isPrivacyPolicyPage) {
