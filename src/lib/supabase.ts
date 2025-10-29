@@ -60,6 +60,14 @@ export const signUp = async (email: string, password: string, fullName?: string)
   try {
     console.log('Attempting sign up for:', email);
 
+    // Determina a URL de redirecionamento baseada no ambiente
+    // Em produção, usa a URL configurada; em desenvolvimento, usa window.location.origin
+    const redirectUrl = window.location.hostname === 'localhost'
+      ? `${window.location.origin}/auth/callback`
+      : 'https://adsops.bolt.host/auth/callback';
+
+    console.log('Email redirect URL:', redirectUrl);
+
     // Habilita confirmação de email com redirecionamento para página de callback
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -68,7 +76,7 @@ export const signUp = async (email: string, password: string, fullName?: string)
         data: {
           full_name: fullName,
         },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: redirectUrl,
       },
     });
     
@@ -84,7 +92,7 @@ export const signUp = async (email: string, password: string, fullName?: string)
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback`,
+            emailRedirectTo: redirectUrl,
           },
         });
         
@@ -168,12 +176,14 @@ export const signOut = async () => {
 export const signInWithProvider = async (provider: 'google' | 'facebook' | 'apple') => {
   try {
     console.log(`Attempting ${provider} OAuth login...`);
-    
-    // Get the current URL to determine the correct redirect
-    const currentUrl = window.location.origin;
-    const redirectTo = `${currentUrl}/auth/callback`;
-    
-    console.log('Redirect URL:', redirectTo);
+
+    // Determina a URL de redirecionamento baseada no ambiente
+    // Em produção, usa a URL configurada; em desenvolvimento, usa window.location.origin
+    const redirectTo = window.location.hostname === 'localhost'
+      ? `${window.location.origin}/auth/callback`
+      : 'https://adsops.bolt.host/auth/callback';
+
+    console.log('OAuth redirect URL:', redirectTo);
     
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
@@ -201,8 +211,16 @@ export const signInWithProvider = async (provider: 'google' | 'facebook' | 'appl
 
 export const resetPassword = async (email: string) => {
   try {
+    // Determina a URL de redirecionamento baseada no ambiente
+    // Em produção, usa a URL configurada; em desenvolvimento, usa window.location.origin
+    const redirectTo = window.location.hostname === 'localhost'
+      ? `${window.location.origin}/reset-password`
+      : 'https://adsops.bolt.host/reset-password';
+
+    console.log('Reset password redirect URL:', redirectTo);
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo,
     });
 
     if (error) {
@@ -231,11 +249,19 @@ export const resendConfirmationEmail = async (email: string) => {
   try {
     console.log('Resending confirmation email to:', email);
 
+    // Determina a URL de redirecionamento baseada no ambiente
+    // Em produção, usa a URL configurada; em desenvolvimento, usa window.location.origin
+    const redirectUrl = window.location.hostname === 'localhost'
+      ? `${window.location.origin}/auth/callback`
+      : 'https://adsops.bolt.host/auth/callback';
+
+    console.log('Resend confirmation redirect URL:', redirectUrl);
+
     const { data, error } = await supabase.auth.resend({
       type: 'signup',
       email: email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: redirectUrl,
       },
     });
 
