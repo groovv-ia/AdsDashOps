@@ -60,6 +60,7 @@ export const signUp = async (email: string, password: string, fullName?: string)
   try {
     console.log('Attempting sign up for:', email);
 
+    // Habilita confirmação de email com redirecionamento para página de callback
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -67,7 +68,7 @@ export const signUp = async (email: string, password: string, fullName?: string)
         data: {
           full_name: fullName,
         },
-        emailRedirectTo: undefined, // Disable email confirmation
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
     
@@ -83,7 +84,7 @@ export const signUp = async (email: string, password: string, fullName?: string)
           email,
           password,
           options: {
-            emailRedirectTo: undefined,
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
         });
         
@@ -203,17 +204,69 @@ export const resetPassword = async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
-    
+
     if (error) {
       console.error('Reset password error:', error);
     } else {
       console.log('Reset password email sent to:', email);
     }
-    
+
     return { error };
   } catch (error) {
     console.error('Reset password exception:', error);
     return { error };
+  }
+};
+
+/**
+ * Função para reenviar email de confirmação
+ *
+ * Esta função reenvia o email de confirmação para o usuário que ainda não confirmou seu email.
+ * É útil quando o usuário não recebeu o email inicial ou ele expirou.
+ *
+ * @param email - Email do usuário que precisa confirmar a conta
+ * @returns Objeto com data ou error
+ */
+export const resendConfirmationEmail = async (email: string) => {
+  try {
+    console.log('Resending confirmation email to:', email);
+
+    const { data, error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+
+    if (error) {
+      console.error('Resend confirmation email error:', error);
+
+      // Tratamento de erros específicos
+      if (error.message?.includes('Email rate limit exceeded')) {
+        throw new Error('Você está enviando emails com muita frequência. Aguarde alguns minutos antes de tentar novamente.');
+      }
+
+      if (error.message?.includes('User not found')) {
+        throw new Error('Usuário não encontrado. Verifique se o email está correto.');
+      }
+
+      if (error.message?.includes('Email already confirmed')) {
+        throw new Error('Este email já foi confirmado. Você pode fazer login normalmente.');
+      }
+
+      throw error;
+    } else {
+      console.log('Confirmation email resent successfully to:', email);
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Resend confirmation email exception:', error);
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('Erro inesperado ao reenviar email de confirmação')
+    };
   }
 };
 

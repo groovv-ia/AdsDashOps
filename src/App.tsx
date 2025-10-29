@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthForm } from './components/auth/AuthForm';
 import { AuthCallback } from './components/auth/AuthCallback';
+import { EmailConfirmationCallback } from './components/auth/EmailConfirmationCallback';
 import { DashboardHeader } from './components/dashboard/DashboardHeader';
 import { Sidebar } from './components/dashboard/Sidebar';
 import { FilterBar } from './components/dashboard/FilterBar';
@@ -37,11 +38,26 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
 
-  // Detecta rota atual para páginas públicas (Política de Privacidade, Termos de Uso e Exclusão de Dados)
+  // Detecta rota atual para páginas públicas e callbacks
   const currentPath = window.location.pathname;
   const isPrivacyPolicyPage = currentPath === '/politica-de-privacidade';
   const isTermsOfServicePage = currentPath === '/termos-de-uso';
   const isDataDeletionPage = currentPath === '/exclusao-de-dados';
+  const isAuthCallbackPage = currentPath === '/auth/callback';
+
+  // Renderiza página de callback de confirmação de email
+  if (isAuthCallbackPage) {
+    return (
+      <EmailConfirmationCallback
+        onSuccess={() => {
+          console.log('Email confirmed successfully, redirecting to dashboard...');
+        }}
+        onError={(error) => {
+          console.error('Email confirmation error:', error);
+        }}
+      />
+    );
+  }
 
   // Renderiza páginas públicas sem necessidade de autenticação
   if (isPrivacyPolicyPage) {
