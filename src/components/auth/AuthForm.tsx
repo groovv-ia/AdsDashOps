@@ -292,6 +292,26 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
                 </>
               )}
             </button>
+
+            {/* Links Legais */}
+            <div className="mt-6 pt-6 border-t border-gray-200 text-center text-xs text-gray-500">
+              <p>Ao continuar, você concorda com nossos</p>
+              <div className="mt-2 space-x-2">
+                <a
+                  href="/terms-of-service"
+                  className="text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  Termos de Uso
+                </a>
+                <span>e</span>
+                <a
+                  href="/privacy-policy"
+                  className="text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  Política de Privacidade
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </div>

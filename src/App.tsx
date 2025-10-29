@@ -13,6 +13,8 @@ import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { SupportPage } from './components/support/SupportPage';
 import { FloatingHelpButton } from './components/help/FloatingHelpButton';
 import { ThemeProvider } from './components/settings/ThemeProvider';
+import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
+import { TermsOfService } from './components/legal/TermsOfService';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -30,6 +32,20 @@ function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
+
+  // Detecta rota atual para páginas públicas (Política de Privacidade e Termos de Uso)
+  const currentPath = window.location.pathname;
+  const isPrivacyPolicyPage = currentPath === '/privacy-policy';
+  const isTermsOfServicePage = currentPath === '/terms-of-service';
+
+  // Renderiza páginas públicas sem necessidade de autenticação
+  if (isPrivacyPolicyPage) {
+    return <PrivacyPolicy />;
+  }
+
+  if (isTermsOfServicePage) {
+    return <TermsOfService />;
+  }
   const [filters, setFilters] = useState({
     platforms: [] as string[],
     campaigns: [] as string[],
