@@ -13,7 +13,6 @@ import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { SupportPage } from './components/support/SupportPage';
 import { FloatingHelpButton } from './components/help/FloatingHelpButton';
 import { ThemeProvider } from './components/settings/ThemeProvider';
-import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -232,8 +231,6 @@ function AppContent() {
         );
       case 'support':
         return <SupportPage />;
-      case 'privacy-policy':
-        return <PrivacyPolicy onBack={() => setCurrentPage('overview')} />;
       case 'overview':
       default:
         return (
