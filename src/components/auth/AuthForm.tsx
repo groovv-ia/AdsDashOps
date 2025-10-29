@@ -83,21 +83,49 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   );
 
   useEffect(() => {
-    const script = document.createElement('script');
-    script.src = '//tag.goadopt.io/injector.js?website_code=2ed84cee-255f-443f-89c9-7aca3a53fe59';
-    script.className = 'adopt-injector';
-    script.async = true;
+    // Verifica se já existe o script para evitar duplicatas
+    const existingScript = document.querySelector('.adopt-injector');
+    const existingMeta = document.querySelector('meta[name="adopt-website-id"]');
 
+    if (existingScript || existingMeta) {
+      return;
+    }
+
+    // Adiciona a meta tag
     const meta = document.createElement('meta');
     meta.name = 'adopt-website-id';
     meta.content = '2ed84cee-255f-443f-89c9-7aca3a53fe59';
-
     document.head.appendChild(meta);
+
+    // Adiciona o script
+    const script = document.createElement('script');
+    script.src = 'https://tag.goadopt.io/injector.js?website_code=2ed84cee-255f-443f-89c9-7aca3a53fe59';
+    script.className = 'adopt-injector';
+    script.async = true;
+
+    // Log para debug
+    script.onload = () => {
+      console.log('Adopt script loaded successfully');
+    };
+
+    script.onerror = (error) => {
+      console.error('Error loading Adopt script:', error);
+    };
+
     document.head.appendChild(script);
 
+    // Cleanup function para remover os elementos quando o componente for desmontado
     return () => {
-      if (meta.parentNode) meta.parentNode.removeChild(meta);
-      if (script.parentNode) script.parentNode.removeChild(script);
+      const metaToRemove = document.querySelector('meta[name="adopt-website-id"]');
+      const scriptToRemove = document.querySelector('.adopt-injector');
+
+      if (metaToRemove && metaToRemove.parentNode) {
+        metaToRemove.parentNode.removeChild(metaToRemove);
+      }
+
+      if (scriptToRemove && scriptToRemove.parentNode) {
+        scriptToRemove.parentNode.removeChild(scriptToRemove);
+      }
     };
   }, []);
 
