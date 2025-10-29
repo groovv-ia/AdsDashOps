@@ -15,6 +15,7 @@ import { FloatingHelpButton } from './components/help/FloatingHelpButton';
 import { ThemeProvider } from './components/settings/ThemeProvider';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { TermsOfService } from './components/legal/TermsOfService';
+import { DataDeletionPolicy } from './components/legal/DataDeletionPolicy';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -33,10 +34,11 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
 
-  // Detecta rota atual para páginas públicas (Política de Privacidade e Termos de Uso)
+  // Detecta rota atual para páginas públicas (Política de Privacidade, Termos de Uso e Exclusão de Dados)
   const currentPath = window.location.pathname;
   const isPrivacyPolicyPage = currentPath === '/politica-de-privacidade';
   const isTermsOfServicePage = currentPath === '/termos-de-uso';
+  const isDataDeletionPage = currentPath === '/exclusao-de-dados';
 
   // Renderiza páginas públicas sem necessidade de autenticação
   if (isPrivacyPolicyPage) {
@@ -45,6 +47,10 @@ function AppContent() {
 
   if (isTermsOfServicePage) {
     return <TermsOfService />;
+  }
+
+  if (isDataDeletionPage) {
+    return <DataDeletionPolicy />;
   }
   const [filters, setFilters] = useState({
     platforms: [] as string[],

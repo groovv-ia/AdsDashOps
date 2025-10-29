@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Search, 
-  MessageCircle, 
-  Phone, 
-  Mail, 
-  ExternalLink, 
-  ChevronRight, 
+import {
+  Search,
+  MessageCircle,
+  Phone,
+  Mail,
+  ExternalLink,
+  ChevronRight,
   Send,
   ArrowLeft,
   Star,
@@ -29,7 +29,8 @@ import {
   Tag,
   TrendingUp,
   Shield,
-  Database
+  Database,
+  Trash2
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -713,7 +714,7 @@ export const SupportPage: React.FC = () => {
       {/* Seção de Informações Legais */}
       <div className="mt-8">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Informações Legais</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <Card className="p-6 hover:shadow-lg transition-shadow">
             <div className="flex items-start space-x-4">
               <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -754,6 +755,29 @@ export const SupportPage: React.FC = () => {
                   className="inline-flex items-center text-sm text-purple-600 hover:text-purple-800 font-medium"
                 >
                   Ler Termos de Uso
+                  <ExternalLink className="w-4 h-4 ml-1" />
+                </a>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6 hover:shadow-lg transition-shadow">
+            <div className="flex items-start space-x-4">
+              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-gray-900 mb-2">Exclusão de Dados</h4>
+                <p className="text-sm text-gray-600 mb-4">
+                  Solicite a exclusão permanente dos seus dados pessoais
+                </p>
+                <a
+                  href="/exclusao-de-dados"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center text-sm text-red-600 hover:text-red-800 font-medium"
+                >
+                  Solicitar Exclusão
                   <ExternalLink className="w-4 h-4 ml-1" />
                 </a>
               </div>
