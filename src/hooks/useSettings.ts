@@ -58,12 +58,30 @@ export const useSettings = () => {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      
+
       if (!user?.id) {
         console.log('No user ID available, skipping settings load');
         return;
       }
-      
+
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        console.warn('Supabase não configurado - usando configurações locais');
+        // Mesmo sem Supabase, criar um perfil básico com os dados do usuário
+        if (user) {
+          setProfile({
+            id: user.id,
+            email: user.email || '',
+            full_name: user.user_metadata?.full_name || '',
+            timezone: 'America/Sao_Paulo',
+            language: 'pt-BR',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        }
+        return;
+      }
+
       // Load or create profile
       let { data: profileData, error } = await supabase
         .from('profiles')
@@ -159,6 +177,14 @@ export const useSettings = () => {
   const updateProfile = async (updates: Partial<UserProfile>) => {
     if (!user) return { success: false, error: 'Usuário não autenticado' };
 
+    // Verificar se o Supabase está configurado
+    if (!supabase) {
+      console.warn('Supabase não configurado - atualizando apenas localmente');
+      // Atualizar perfil localmente
+      setProfile(prev => prev ? { ...prev, ...updates, updated_at: new Date().toISOString() } : null);
+      return { success: true, data: null };
+    }
+
     try {
       // Ensure required fields are present
       const profileData = {
@@ -170,9 +196,9 @@ export const useSettings = () => {
 
       const { data, error } = await supabase
         .from('profiles')
-        .upsert(profileData, { 
+        .upsert(profileData, {
           onConflict: 'id',
-          ignoreDuplicates: false 
+          ignoreDuplicates: false
         })
         .select()
         .single();
@@ -185,9 +211,9 @@ export const useSettings = () => {
       setProfile(data);
 
       // Update user metadata in auth if avatar_url is being updated
-      if (updates.avatar_url) {
+      if (updates.avatar_url && supabase) {
         await supabase.auth.updateUser({
-          data: { 
+          data: {
             avatar_url: updates.avatar_url,
             full_name: data.full_name
           }
@@ -222,6 +248,11 @@ export const useSettings = () => {
 
   const uploadAvatar = async (file: File) => {
     if (!user) return { success: false, error: 'Usuário não autenticado' };
+
+    // Verificar se o Supabase está configurado
+    if (!supabase) {
+      return { success: false, error: 'Supabase não configurado. Configure o Supabase para fazer upload de avatar.' };
+    }
 
     try {
       console.log('Iniciando upload do avatar...', { fileName: file.name, fileSize: file.size, fileType: file.type });

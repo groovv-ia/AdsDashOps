@@ -16,6 +16,12 @@ export class NotificationService {
   // Real-time notifications setup
   async initializeRealTime() {
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        console.warn('Supabase não configurado - notificações em tempo real desabilitadas');
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -136,6 +142,12 @@ export class NotificationService {
   // Mark all as read
   async markAllAsRead(): Promise<void> {
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        console.warn('Supabase não configurado - operação não disponível');
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -171,6 +183,12 @@ export class NotificationService {
   // Create notification
   async createNotification(notification: Omit<AppNotification, 'id' | 'user_id' | 'created_at'>): Promise<void> {
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        console.warn('Supabase não configurado - operação não disponível');
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -191,6 +209,12 @@ export class NotificationService {
   // Get notification settings
   async getSettings(): Promise<NotificationSettings | null> {
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        console.warn('Supabase não configurado - operação não disponível');
+        return null;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
 
@@ -212,6 +236,12 @@ export class NotificationService {
   // Update notification settings
   async updateSettings(settings: Partial<NotificationSettings>): Promise<void> {
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        console.warn('Supabase não configurado - operação não disponível');
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 

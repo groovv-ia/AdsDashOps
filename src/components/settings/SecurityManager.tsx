@@ -23,6 +23,12 @@ export const SecurityManager: React.FC<SecurityManagerProps> = ({ onSecurityChan
 
   const loadSecuritySettings = async () => {
     try {
+      // Verificar se o Supabase está configurado antes de tentar carregar configurações
+      if (!supabase) {
+        console.warn('Supabase não configurado - recursos de segurança limitados');
+        return;
+      }
+
       // Load 2FA status from user metadata or separate table
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.user_metadata?.two_factor_enabled) {
@@ -36,6 +42,13 @@ export const SecurityManager: React.FC<SecurityManagerProps> = ({ onSecurityChan
   const generateQRCode = async () => {
     setLoading(true);
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        alert('Supabase não configurado. Configure o Supabase para usar recursos de segurança.');
+        setLoading(false);
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não encontrado');
 
@@ -80,6 +93,13 @@ export const SecurityManager: React.FC<SecurityManagerProps> = ({ onSecurityChan
 
     setLoading(true);
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        alert('Supabase não configurado. Configure o Supabase para usar recursos de segurança.');
+        setLoading(false);
+        return;
+      }
+
       // In real app, verify the TOTP code server-side
       // For demo, we'll just check if it's not empty
       if (verificationCode) {
@@ -109,6 +129,13 @@ export const SecurityManager: React.FC<SecurityManagerProps> = ({ onSecurityChan
 
     setLoading(true);
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        alert('Supabase não configurado. Configure o Supabase para usar recursos de segurança.');
+        setLoading(false);
+        return;
+      }
+
       const { error } = await supabase.auth.updateUser({
         data: { two_factor_enabled: false }
       });

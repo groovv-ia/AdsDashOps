@@ -27,6 +27,15 @@ export const useDataSources = () => {
   const loadDataSources = async () => {
     try {
       setLoading(true);
+
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        console.warn('Supabase não configurado - fontes de dados não disponíveis');
+        setDataSources([]);
+        setError('Supabase não configurado');
+        return;
+      }
+
       const { data, error } = await supabase
         .from('data_connections')
         .select('*')
@@ -46,6 +55,11 @@ export const useDataSources = () => {
 
   const createDataSource = async (sourceData: Omit<DataSource, 'id' | 'lastSync'>) => {
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        throw new Error('Supabase não configurado. Configure o Supabase para criar fontes de dados.');
+      }
+
       const { data: user } = await supabase.auth.getUser();
       if (!user.user) throw new Error('Usuário não autenticado');
 
@@ -71,6 +85,11 @@ export const useDataSources = () => {
 
   const updateDataSource = async (id: string, updates: Partial<DataSource>) => {
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        throw new Error('Supabase não configurado. Configure o Supabase para atualizar fontes de dados.');
+      }
+
       const { error } = await supabase
         .from('data_connections')
         .update(updates)
@@ -87,6 +106,11 @@ export const useDataSources = () => {
 
   const deleteDataSource = async (id: string) => {
     try {
+      // Verificar se o Supabase está configurado
+      if (!supabase) {
+        throw new Error('Supabase não configurado. Configure o Supabase para deletar fontes de dados.');
+      }
+
       const { error } = await supabase
         .from('data_connections')
         .delete()
