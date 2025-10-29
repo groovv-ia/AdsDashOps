@@ -22,7 +22,7 @@ import { mockCampaigns, mockMetrics, mockAdSets, mockAds } from './data/mockData
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
 import { Card } from './components/ui/Card';
-import { BarChart3, AlertTriangle } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
 
 function AppContent() {
   const { user, loading } = useAuth();
