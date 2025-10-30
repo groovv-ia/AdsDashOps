@@ -177,31 +177,26 @@ export const signInWithProvider = async (provider: 'google' | 'facebook' | 'appl
   try {
     console.log(`Attempting ${provider} OAuth login...`);
 
-    // Determina a URL de redirecionamento baseada no ambiente
-    // Em produção, usa a URL configurada; em desenvolvimento, usa window.location.origin
-    const redirectTo = window.location.hostname === 'localhost'
-      ? `${window.location.origin}/auth/callback`
-      : 'https://adsops.bolt.host/auth/callback';
+    // Para OAuth, o Supabase gerencia automaticamente o redirecionamento
+    // Usa a URL padrão: https://[project-id].supabase.co/auth/v1/callback
+    // Após autenticação, redireciona de volta para a origem da aplicação
 
-    console.log('OAuth redirect URL:', redirectTo);
-    
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo,
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
         },
       },
     });
-    
+
     if (error) {
       console.error(`${provider} OAuth error:`, error);
     } else {
       console.log(`${provider} OAuth initiated successfully`);
     }
-    
+
     return { data, error };
   } catch (error) {
     console.error(`${provider} OAuth exception:`, error);

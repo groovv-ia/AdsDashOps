@@ -19,25 +19,28 @@
    - **Client Secret**: `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`
 4. Clique em **Save**
 
-### 3. Verificar URL de Redirecionamento
-Certifique-se de que no Google Cloud Console, nas configurações do OAuth Client, você tem esta URL:
+### 3. Configurar URLs de Redirecionamento no Google Cloud Console
+
+**IMPORTANTE:** Você deve adicionar esta URL exata no Google Cloud Console:
+
 ```
-https://[SEU-PROJETO-ID].supabase.co/auth/v1/callback
+https://ytpxpdepqwmavjphxwfv.supabase.co/auth/v1/callback
 ```
 
-**Para encontrar seu Project ID do Supabase:**
-- No painel do Supabase, vá em **Settings** > **General**
-- Copie o **Reference ID** (este é seu projeto ID)
+**Como configurar:**
 
-### 4. URLs para Configurar no Google Cloud Console
+1. Acesse [Google Cloud Console](https://console.cloud.google.com/)
+2. Vá em **APIs & Services** → **Credentials**
+3. Clique no OAuth Client ID: `835761463678-6ups9592lsg8do7rt1vno7v88tf6ajj8.apps.googleusercontent.com`
+4. Em **Authorized redirect URIs**, adicione:
+   - `https://ytpxpdepqwmavjphxwfv.supabase.co/auth/v1/callback`
+5. Clique em **Save**
 
-**Para Produção:**
-```
-https://[SEU-PROJETO-ID].supabase.co/auth/v1/callback
-```
+### 4. URLs para Sites Autorizados (opcional)
 
-**Para Desenvolvimento Local (opcional):**
+Se necessário, adicione também em **Authorized JavaScript origins**:
 ```
+https://adsops.bolt.host
 http://localhost:5173
 ```
 
