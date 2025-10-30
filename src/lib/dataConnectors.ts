@@ -327,7 +327,14 @@ export class DataSyncService {
   }
 
   private async storeMetaData(connectionId: string, campaigns: any[], insights: any[]): Promise<void> {
-    // Store campaigns
+    // Obtém o usuário autenticado
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('Usuário não autenticado ao salvar dados Meta');
+      return;
+    }
+
+    // Store campaigns com user_id
     for (const campaign of campaigns) {
       await supabase.from('campaigns').upsert({
         id: campaign.id,
@@ -337,10 +344,11 @@ export class DataSyncService {
         objective: campaign.objective,
         created_date: campaign.created_time,
         connection_id: connectionId,
+        user_id: user.id, // Adiciona user_id
       });
     }
 
-    // Store insights
+    // Store insights com user_id
     for (const insight of insights) {
       await supabase.from('ad_metrics').upsert({
         campaign_id: insight.campaign_id,
@@ -354,11 +362,19 @@ export class DataSyncService {
         ctr: parseFloat(insight.ctr || '0'),
         cpc: parseFloat(insight.cpc || '0'),
         connection_id: connectionId,
+        user_id: user.id, // Adiciona user_id
       });
     }
   }
 
   private async storeGoogleData(connectionId: string, campaigns: any[]): Promise<void> {
+    // Obtém o usuário autenticado
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('Usuário não autenticado ao salvar dados Google');
+      return;
+    }
+
     for (const result of campaigns) {
       const campaign = result.campaign;
       await supabase.from('campaigns').upsert({
@@ -368,11 +384,19 @@ export class DataSyncService {
         status: campaign.status,
         objective: campaign.advertising_channel_type,
         connection_id: connectionId,
+        user_id: user.id, // Adiciona user_id
       });
     }
   }
 
   private async storeTikTokData(connectionId: string, campaigns: any[]): Promise<void> {
+    // Obtém o usuário autenticado
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error('Usuário não autenticado ao salvar dados TikTok');
+      return;
+    }
+
     for (const campaign of campaigns) {
       await supabase.from('campaigns').upsert({
         id: campaign.campaign_id,
@@ -381,6 +405,7 @@ export class DataSyncService {
         status: campaign.status,
         objective: campaign.objective_type,
         connection_id: connectionId,
+        user_id: user.id, // Adiciona user_id
       });
     }
   }

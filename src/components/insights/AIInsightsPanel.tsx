@@ -22,6 +22,7 @@ import { Button } from '../ui/Button';
 import { CampaignSelector } from './CampaignSelector';
 import { AIInsightsService, AIInsight, CampaignAnalysis } from '../../lib/aiInsights';
 import { Campaign, AdMetrics } from '../../types/advertising';
+import { useDashboardData } from '../../hooks/useDashboardData';
 
 interface AIInsightsPanelProps {
   campaigns: Campaign[];
@@ -29,9 +30,20 @@ interface AIInsightsPanelProps {
 }
 
 export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
-  campaigns,
-  metrics
+  campaigns: propCampaigns,
+  metrics: propMetrics
 }) => {
+  // Busca dados reais do Supabase quando disponíveis
+  const {
+    campaigns: realCampaigns,
+    metrics: realMetrics,
+    isUsingRealData: hasRealData,
+    loading: dataLoading
+  } = useDashboardData();
+
+  // Usa dados reais se disponíveis, senão usa os passados por props (compatibilidade)
+  const campaigns = hasRealData ? realCampaigns : propCampaigns;
+  const metrics = hasRealData ? realMetrics : propMetrics;
   const [loading, setLoading] = useState(false);
   const [campaignAnalyses, setCampaignAnalyses] = useState<CampaignAnalysis[]>([]);
   const [optimizationInsights, setOptimizationInsights] = useState<AIInsight[]>([]);
@@ -377,12 +389,20 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
         </div>
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-3 sm:space-y-0 sm:space-x-3">
+          {/* Indicador de fonte de dados */}
+          {hasRealData && (
+            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">
+              <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+              Analisando Dados Reais
+            </span>
+          )}
+
           {lastAnalysis && (
             <div className="text-sm text-gray-500 text-center sm:text-right">
               Última análise: {new Date(lastAnalysis).toLocaleString('pt-BR')}
             </div>
           )}
-          
+
           <Button
             variant="outline"
             size="sm"

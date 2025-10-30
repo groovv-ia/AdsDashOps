@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { AuthForm } from './components/auth/AuthForm';
-import { AuthCallback } from './components/auth/AuthCallback';
 import { EmailConfirmationCallback } from './components/auth/EmailConfirmationCallback';
 import { DashboardHeader } from './components/dashboard/DashboardHeader';
 import { Sidebar } from './components/dashboard/Sidebar';
@@ -23,54 +22,33 @@ import { CookieConsentProvider } from './contexts/CookieConsentContext';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
+import { useDashboardData } from './hooks/useDashboardData';
 import { isDemoMode } from './lib/supabase';
-import { mockCampaigns, mockMetrics, mockAdSets, mockAds } from './data/mockData';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
 import { Card } from './components/ui/Card';
 import { BarChart3, AlertTriangle } from 'lucide-react';
 
 function AppContent() {
+  // Todos os hooks devem vir ANTES de qualquer early return
   const { user, loading } = useAuth();
   const { notifications, unreadCount } = useNotifications();
   const { settings: systemSettings } = useSystemSettings();
+
+  // Hook para gerenciar dados do dashboard (reais ou mocks)
+  const {
+    campaigns: mockCampaigns,
+    metrics: mockMetrics,
+    adSets: mockAdSets,
+    ads: mockAds,
+    isUsingRealData,
+    loading: dataLoading,
+    refresh: refreshData
+  } = useDashboardData();
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
-
-  // Detecta rota atual para páginas públicas e callbacks
-  const currentPath = window.location.pathname;
-  const isPrivacyPolicyPage = currentPath === '/politica-de-privacidade';
-  const isTermsOfServicePage = currentPath === '/termos-de-uso';
-  const isDataDeletionPage = currentPath === '/exclusao-de-dados';
-  const isAuthCallbackPage = currentPath === '/auth/callback';
-
-  // Renderiza página de callback de confirmação de email
-  if (isAuthCallbackPage) {
-    return (
-      <EmailConfirmationCallback
-        onSuccess={() => {
-          console.log('Email confirmed successfully, redirecting to dashboard...');
-        }}
-        onError={(error) => {
-          console.error('Email confirmation error:', error);
-        }}
-      />
-    );
-  }
-
-  // Renderiza páginas públicas sem necessidade de autenticação
-  if (isPrivacyPolicyPage) {
-    return <PrivacyPolicy />;
-  }
-
-  if (isTermsOfServicePage) {
-    return <TermsOfService />;
-  }
-
-  if (isDataDeletionPage) {
-    return <DataDeletionPolicy />;
-  }
   const [filters, setFilters] = useState({
     platforms: [] as string[],
     campaigns: [] as string[],
@@ -201,12 +179,16 @@ function AppContent() {
     }
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setDashboardLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      // Atualiza dados do dashboard (busca do Supabase ou usa mocks)
+      await refreshData();
+    } catch (error) {
+      console.error('Erro ao atualizar dados:', error);
+    } finally {
       setDashboardLoading(false);
-    }, 1000);
+    }
   };
 
   // Close sidebar when clicking outside on mobile
@@ -220,6 +202,40 @@ function AppContent() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Detecta rota atual para páginas públicas e callbacks
+  const currentPath = window.location.pathname;
+  const isPrivacyPolicyPage = currentPath === '/politica-de-privacidade';
+  const isTermsOfServicePage = currentPath === '/termos-de-uso';
+  const isDataDeletionPage = currentPath === '/exclusao-de-dados';
+  const isAuthCallbackPage = currentPath === '/auth/callback';
+
+  // Renderiza página de callback de confirmação de email
+  if (isAuthCallbackPage) {
+    return (
+      <EmailConfirmationCallback
+        onSuccess={() => {
+          console.log('Email confirmed successfully, redirecting to dashboard...');
+        }}
+        onError={(error) => {
+          console.error('Email confirmation error:', error);
+        }}
+      />
+    );
+  }
+
+  // Renderiza páginas públicas sem necessidade de autenticação
+  if (isPrivacyPolicyPage) {
+    return <PrivacyPolicy />;
+  }
+
+  if (isTermsOfServicePage) {
+    return <TermsOfService />;
+  }
+
+  if (isDataDeletionPage) {
+    return <DataDeletionPolicy />;
+  }
 
   if (loading) {
     return (
@@ -277,13 +293,52 @@ function AppContent() {
         return (
           <>
             {/* Header with Icon */}
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg">
-                <BarChart3 className="w-6 h-6 text-white" />
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-3">
+                <div className="p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg">
+                  <BarChart3 className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
+                  <p className="text-gray-600">Visão geral das suas campanhas de publicidade</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-                <p className="text-gray-600">Visão geral das suas campanhas de publicidade</p>
+
+              {/* Indicador discreto de fonte de dados */}
+              <div className="group relative">
+                <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
+                  isUsingRealData
+                    ? 'bg-green-100 text-green-700 border border-green-200'
+                    : 'bg-blue-100 text-blue-700 border border-blue-200'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full mr-2 ${
+                    isUsingRealData ? 'bg-green-500' : 'bg-blue-500'
+                  }`}></span>
+                  {isUsingRealData ? 'Dados Reais' : 'Modo Demonstração'}
+                </span>
+
+                {/* Tooltip explicativo */}
+                <div className="absolute right-0 top-full mt-2 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                  <div className="bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg">
+                    <p className="font-medium mb-1">
+                      {isUsingRealData ? '✓ Dados Reais' : '⚡ Modo Demonstração'}
+                    </p>
+                    <p>
+                      {isUsingRealData
+                        ? 'Você está visualizando dados das suas campanhas conectadas.'
+                        : 'Você está visualizando dados de exemplo. Conecte suas fontes de dados para ver suas campanhas reais.'}
+                    </p>
+                    {!isUsingRealData && (
+                      <button
+                        onClick={() => setCurrentPage('data-sources')}
+                        className="mt-2 text-blue-300 hover:text-blue-200 underline text-xs"
+                      >
+                        Conectar fontes de dados →
+                      </button>
+                    )}
+                    <div className="absolute -top-1 right-4 w-2 h-2 bg-gray-900 transform rotate-45"></div>
+                  </div>
+                </div>
               </div>
             </div>
             
