@@ -58,6 +58,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
         // Verifica se há erro nos parâmetros
         if (errorCode || errorDescription) {
           const errorMsg = decodeURIComponent(errorDescription || 'Erro ao confirmar email');
+          setSuccess(false);
           setError(errorMsg);
           setLoading(false);
           onError?.(errorMsg);
@@ -71,6 +72,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
         // O Supabase pode enviar type como 'signup', 'email', 'recovery', ou até mesmo vazio em alguns casos
         // Se temos tokens válidos, podemos prosseguir independentemente do type
         if (type && type !== 'signup' && type !== 'email' && type !== 'recovery') {
+          setSuccess(false);
           setError('Tipo de confirmação inválido');
           setLoading(false);
           onError?.('Tipo de confirmação inválido');
@@ -79,6 +81,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
 
         // Verifica se os tokens estão presentes
         if (!accessToken || !refreshToken) {
+          setSuccess(false);
           setError('Token de confirmação inválido ou ausente');
           setLoading(false);
           onError?.('Token de confirmação inválido ou ausente');
@@ -101,6 +104,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
 
         // Confirmação bem-sucedida
         console.log('Email confirmed successfully for user:', data.user.email);
+        setError('');
         setSuccess(true);
         setLoading(false);
 
@@ -137,6 +141,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           errorMessage += err.message || 'Tente novamente mais tarde.';
         }
 
+        setSuccess(false);
         setError(errorMessage);
         setLoading(false);
         onError?.(errorMessage);
@@ -149,7 +154,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
-        {loading && (
+        {loading && !success && !error && (
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-blue-100 mb-4">
               <Loader2 className="h-10 w-10 text-blue-600 animate-spin" />
@@ -163,7 +168,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           </div>
         )}
 
-        {success && (
+        {!loading && success && !error && (
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
               <CheckCircle className="h-10 w-10 text-green-600" />
@@ -184,7 +189,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           </div>
         )}
 
-        {error && (
+        {!loading && !success && error && (
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
               <XCircle className="h-10 w-10 text-red-600" />
