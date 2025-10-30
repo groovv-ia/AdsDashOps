@@ -22,6 +22,7 @@ import {
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { DataSourceSetup } from './DataSourceSetup';
+import { SimpleMetaConnect } from './SimpleMetaConnect';
 import { supabase } from '../../lib/supabase';
 import { 
   DataSyncService, 
@@ -333,16 +334,33 @@ export const DataSources: React.FC = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Fontes de Dados</h1>
-            <p className="text-gray-600">Conecte e gerencie suas fontes de dados de publicidade</p>
+            <p className="text-gray-600">Conecte suas contas de anúncios de forma simples e rápida</p>
           </div>
         </div>
-        <Button
-          onClick={() => setShowAddModal(true)}
-          icon={Plus}
-          className="mt-4 sm:mt-0"
-        >
-          Adicionar Fonte
-        </Button>
+      </div>
+
+      {/* Conexão Simplificada Meta */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <SimpleMetaConnect />
+
+        {/* Placeholder para outras plataformas */}
+        <Card className="opacity-60">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <img src="/google-ads-icon.svg" alt="Google" className="w-12 h-12" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Google Ads</h3>
+                <p className="text-sm text-gray-600">Em breve</p>
+              </div>
+            </div>
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">
+              Em breve
+            </span>
+          </div>
+          <p className="text-gray-600 text-sm">
+            Conexão com Google Ads será disponibilizada em breve.
+          </p>
+        </Card>
       </div>
 
       {/* Connected Sources */}

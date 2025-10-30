@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthForm } from './components/auth/AuthForm';
 import { EmailConfirmationCallback } from './components/auth/EmailConfirmationCallback';
+import { OAuthCallback } from './components/dashboard/OAuthCallback';
 import { DashboardHeader } from './components/dashboard/DashboardHeader';
 import { Sidebar } from './components/dashboard/Sidebar';
 import { FilterBar } from './components/dashboard/FilterBar';
@@ -209,6 +210,12 @@ function AppContent() {
   const isTermsOfServicePage = currentPath === '/termos-de-uso';
   const isDataDeletionPage = currentPath === '/exclusao-de-dados';
   const isAuthCallbackPage = currentPath === '/auth/callback';
+  const isOAuthCallbackPage = currentPath === '/oauth-callback';
+
+  // Renderiza página de callback OAuth (Meta, Google, TikTok)
+  if (isOAuthCallbackPage) {
+    return <OAuthCallback />;
+  }
 
   // Renderiza página de callback de confirmação de email
   if (isAuthCallbackPage) {
