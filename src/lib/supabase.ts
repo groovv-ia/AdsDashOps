@@ -188,11 +188,20 @@ export const signInWithProvider = async (provider: 'google' | 'facebook' | 'appl
           access_type: 'offline',
           prompt: 'consent',
         },
+        // Usa skipBrowserRedirect para controlar o popup manualmente
+        skipBrowserRedirect: false,
       },
     });
 
     if (error) {
       console.error(`${provider} OAuth error:`, error);
+
+      // Trata erro específico de popup bloqueado
+      if (error.message?.includes('popup') || error.message?.includes('blocked')) {
+        throw new Error('O popup foi bloqueado pelo navegador. Por favor, permita popups para este site.');
+      }
+
+      throw error;
     } else {
       console.log(`${provider} OAuth initiated successfully`);
     }
@@ -200,7 +209,10 @@ export const signInWithProvider = async (provider: 'google' | 'facebook' | 'appl
     return { data, error };
   } catch (error) {
     console.error(`${provider} OAuth exception:`, error);
-    return { data: null, error };
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error('Erro inesperado durante autenticação OAuth')
+    };
   }
 };
 

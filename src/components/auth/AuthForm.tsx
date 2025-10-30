@@ -6,7 +6,9 @@ import { CookieConsent } from '../legal/CookieConsent';
 import { CookiePreferencesModal } from '../legal/CookiePreferencesModal';
 import { CookieSettingsButton } from '../legal/CookieSettingsButton';
 import { EmailConfirmationModal } from './EmailConfirmationModal';
+import { GoogleOAuthModal } from './GoogleOAuthModal';
 import { useToast } from '../ui/Alert';
+import { supabase } from '../../lib/supabase';
 
 interface AuthFormProps {
   onSuccess: () => void;
@@ -27,6 +29,10 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   // Estado para controlar o modal de confirmação de email
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+
+  // Estado para controlar o modal de autenticação do Google
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
 
   // Hook para exibir toasts
   const { showToast, ToastContainer } = useToast();
@@ -94,16 +100,29 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   const handleSocialLogin = async (provider: 'google') => {
     setSocialLoading(provider);
     setError('');
+    setGoogleError(null);
+    setShowGoogleModal(true);
 
     try {
       const { error } = await signInWithProvider(provider);
-      if (error) throw error;
+      if (error) {
+        setGoogleError(getErrorMessage(error));
+        throw error;
+      }
       // Success will be handled by the auth state change listener
     } catch (err: any) {
-      setError(getErrorMessage(err));
-    } finally {
-      setSocialLoading(null);
+      setGoogleError(getErrorMessage(err));
+      setTimeout(() => {
+        setShowGoogleModal(false);
+        setSocialLoading(null);
+      }, 3000);
     }
+  };
+
+  const handleCloseGoogleModal = () => {
+    setShowGoogleModal(false);
+    setSocialLoading(null);
+    setGoogleError(null);
   };
 
   const GoogleIcon = () => (
@@ -135,6 +154,25 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
     setShowEmailConfirmation(false);
     setIsLogin(true); // Muda para tela de login
   };
+
+  // Detecta quando o usuário completa a autenticação OAuth e fecha o modal
+  useEffect(() => {
+    if (!supabase) return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && showGoogleModal) {
+        // Usuário autenticado com sucesso via Google
+        setShowGoogleModal(false);
+        setSocialLoading(null);
+        setGoogleError(null);
+        onSuccess();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [showGoogleModal, onSuccess]);
 
   useEffect(() => {
     const script = document.createElement('script');
@@ -381,6 +419,14 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
         onClose={handleCloseConfirmationModal}
         email={registeredEmail}
         onResendEmail={handleResendEmail}
+      />
+
+      {/* Modal de Autenticação Google */}
+      <GoogleOAuthModal
+        isOpen={showGoogleModal}
+        onClose={handleCloseGoogleModal}
+        onSuccess={onSuccess}
+        error={googleError}
       />
 
       {/* Container de Toasts */}
