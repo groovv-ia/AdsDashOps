@@ -403,58 +403,92 @@ export class DataSyncService {
 }
 
 // OAuth Helper Functions
+// Usa a URL configurada no ambiente ou a URL atual do navegador
+const getRedirectUri = (customUri?: string): string => {
+  if (customUri) return customUri;
+  if (import.meta.env.VITE_OAUTH_REDIRECT_URL) {
+    return import.meta.env.VITE_OAUTH_REDIRECT_URL;
+  }
+  return `${window.location.origin}/oauth-callback`;
+};
+
 export const initiateOAuth = {
-  meta: (clientId: string, redirectUri: string) => {
+  meta: (clientId: string, redirectUri?: string) => {
+    const uri = getRedirectUri(redirectUri);
     const scope = 'ads_read,ads_management,business_management';
-    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code`;
+    const state = Date.now().toString(); // Previne CSRF attacks
+    const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(uri)}&scope=${scope}&response_type=code&state=${state}`;
+    console.log('Meta OAuth URL:', authUrl);
     window.open(authUrl, 'meta-oauth', 'width=600,height=600');
   },
 
-  google: (clientId: string, redirectUri: string) => {
+  google: (clientId: string, redirectUri?: string) => {
+    const uri = getRedirectUri(redirectUri);
     const scope = 'https://www.googleapis.com/auth/adwords';
-    const authUrl = `https://accounts.google.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&access_type=offline`;
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(uri)}&scope=${scope}&response_type=code&access_type=offline&prompt=consent`;
+    console.log('Google OAuth URL:', authUrl);
     window.open(authUrl, 'google-oauth', 'width=600,height=600');
   },
 
-  tiktok: (clientId: string, redirectUri: string) => {
+  tiktok: (clientId: string, redirectUri?: string) => {
+    const uri = getRedirectUri(redirectUri);
     const scope = 'user_info:read,advertiser_management:read,campaign_management:read,reporting:read';
-    const authUrl = `https://business-api.tiktok.com/portal/auth?app_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code`;
+    const authUrl = `https://business-api.tiktok.com/portal/auth?app_id=${clientId}&redirect_uri=${encodeURIComponent(uri)}&scope=${scope}&response_type=code`;
+    console.log('TikTok OAuth URL:', authUrl);
     window.open(authUrl, 'tiktok-oauth', 'width=600,height=600');
   }
 };
 
 // Token Exchange Functions
 export const exchangeCodeForToken = {
-  meta: async (code: string, clientId: string, clientSecret: string, redirectUri: string) => {
-    const response = await fetch('https://graph.facebook.com/v18.0/oauth/access_token', {
+  meta: async (code: string, clientId: string, clientSecret: string, redirectUri?: string) => {
+    const uri = getRedirectUri(redirectUri);
+    console.log('Trocando código por token Meta com redirect_uri:', uri);
+
+    const response = await fetch('https://graph.facebook.com/v19.0/oauth/access_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
-        redirect_uri: redirectUri,
+        redirect_uri: uri,
         code: code,
       }),
     });
-    return response.json();
+
+    const data = await response.json();
+    if (data.error) {
+      console.error('Erro ao trocar código Meta:', data.error);
+    }
+    return data;
   },
 
-  google: async (code: string, clientId: string, clientSecret: string, redirectUri: string) => {
+  google: async (code: string, clientId: string, clientSecret: string, redirectUri?: string) => {
+    const uri = getRedirectUri(redirectUri);
+    console.log('Trocando código por token Google com redirect_uri:', uri);
+
     const response = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
-        redirect_uri: redirectUri,
+        redirect_uri: uri,
         code: code,
         grant_type: 'authorization_code',
       }),
     });
-    return response.json();
+
+    const data = await response.json();
+    if (data.error) {
+      console.error('Erro ao trocar código Google:', data.error);
+    }
+    return data;
   },
 
-  tiktok: async (code: string, clientId: string, clientSecret: string, redirectUri: string) => {
+  tiktok: async (code: string, clientId: string, clientSecret: string, redirectUri?: string) => {
+    console.log('Trocando código por token TikTok');
+
     const response = await fetch('https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -464,6 +498,11 @@ export const exchangeCodeForToken = {
         auth_code: code,
       }),
     });
-    return response.json();
+
+    const data = await response.json();
+    if (data.code !== 0) {
+      console.error('Erro ao trocar código TikTok:', data.message);
+    }
+    return data;
   }
 };

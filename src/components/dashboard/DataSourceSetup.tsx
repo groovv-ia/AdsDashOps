@@ -590,20 +590,50 @@ const CredentialsStep: React.FC<any> = ({ connector, setupData, onDataChange, on
       </div>
 
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h4 className="font-medium text-gray-900 mb-2">URL de Redirecionamento</h4>
-        <p className="text-sm text-gray-600 mb-2">
-          Configure esta URL no seu aplicativo {connector.platform}:
+        <h4 className="font-medium text-gray-900 mb-2">URLs de Redirecionamento OAuth</h4>
+        <p className="text-sm text-gray-600 mb-3">
+          Configure estas URLs no painel de desenvolvedor do {connector.platform}:
         </p>
-        <div className="flex items-center space-x-2 bg-white border rounded-lg p-2">
-          <code className="flex-1 text-sm text-gray-800">
-            {window.location.origin}/oauth-callback
-          </code>
-          <button
-            onClick={() => copyToClipboard(`${window.location.origin}/oauth-callback`)}
-            className="text-blue-600 hover:text-blue-700"
-          >
-            <Copy className="w-4 h-4" />
-          </button>
+        <div className="space-y-2">
+          <div className="flex items-center space-x-2 bg-white border rounded-lg p-2">
+            <code className="flex-1 text-sm text-gray-800">
+              {window.location.origin}/oauth-callback
+            </code>
+            <button
+              onClick={() => copyToClipboard(`${window.location.origin}/oauth-callback`)}
+              className="text-blue-600 hover:text-blue-700"
+              title="Copiar URL"
+            >
+              <Copy className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex items-center space-x-2 bg-white border rounded-lg p-2">
+            <code className="flex-1 text-sm text-gray-800">
+              {window.location.origin}/
+            </code>
+            <button
+              onClick={() => copyToClipboard(`${window.location.origin}/`)}
+              className="text-blue-600 hover:text-blue-700"
+              title="Copiar URL"
+            >
+              <Copy className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          💡 Adicione ambas as URLs no campo "Valid OAuth Redirect URIs" ou equivalente
+        </p>
+      </div>
+
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
+          <div>
+            <h4 className="font-medium text-yellow-900">Importante: Domínios do App</h4>
+            <p className="text-sm text-yellow-700 mt-1">
+              Para {connector.platform}, você também precisa adicionar o domínio <strong>{window.location.hostname}</strong> na seção "Domínios do App" nas configurações.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -629,20 +659,23 @@ const OAuthStep: React.FC<any> = ({ connector, setupData, onDataChange, onNext, 
   const initiateOAuth = () => {
     setLoading(true);
     setOauthStatus('authorizing');
-    
+
     const { clientId } = setupData.credentials;
-    const redirectUri = `${window.location.origin}/oauth-callback`;
-    
+    // Usa a URL do ambiente ou a URL atual do navegador
+    const redirectUri = import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
+
+    console.log('Iniciando OAuth com redirect_uri:', redirectUri);
+
     let authUrl = '';
-    
+
     switch (connector.platform.toLowerCase()) {
       case 'meta':
         const scope = 'ads_read,ads_management,business_management';
-        authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code`;
+        authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${Date.now()}`;
         break;
       case 'google':
         const googleScope = 'https://www.googleapis.com/auth/adwords';
-        authUrl = `https://accounts.google.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${googleScope}&response_type=code&access_type=offline`;
+        authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${googleScope}&response_type=code&access_type=offline&prompt=consent`;
         break;
       case 'tiktok':
         const tiktokScope = 'user_info:read,advertiser_management:read,campaign_management:read,reporting:read';
