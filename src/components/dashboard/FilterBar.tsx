@@ -312,7 +312,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                   onClick={() => !isDisabled && handlePlatformSelect(platform.id)}
                   disabled={isDisabled}
                   className={`
-                    relative p-6 rounded-xl border-2 transition-all duration-200 text-left
+                    relative p-4 rounded-xl border-2 transition-all duration-200 text-left
                     ${isDisabled
                       ? 'border-gray-200 bg-gray-50/50 cursor-not-allowed opacity-60'
                       : isSelected
