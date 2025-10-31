@@ -343,8 +343,8 @@ export const DataSources: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <SimpleMetaConnect />
 
-        {/* Placeholder para outras plataformas */}
-        <Card className="opacity-60 cursor-not-allowed relative">
+        {/* Placeholder para Google Ads - Em breve */}
+        <Card className="opacity-70 cursor-not-allowed relative bg-gray-50/80 hover:opacity-70 transition-opacity">
           {/* Badge "Em breve" no topo do card */}
           <div className="absolute top-4 right-4 z-10">
             <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
@@ -355,7 +355,7 @@ export const DataSources: React.FC = () => {
           <div className="pointer-events-none">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center space-x-3">
-                <img src="/google-ads-icon.svg" alt="Google" className="w-12 h-12 grayscale opacity-50" />
+                <img src="/google-ads-icon.svg" alt="Google Ads" className="w-12 h-12 grayscale opacity-50" />
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Google Ads</h3>
                   <p className="text-sm text-gray-600">2 campanhas</p>
