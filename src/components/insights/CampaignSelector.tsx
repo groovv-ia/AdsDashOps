@@ -218,27 +218,40 @@ export const CampaignSelector: React.FC<CampaignSelectorProps> = ({
               {platforms.map((platform) => {
                 const isSelected = selectedPlatform === platform.id;
                 const campaignCount = mockCampaigns.filter(c => c.platform.toLowerCase() === platform.id).length;
-                
+                const isDisabled = platform.id === 'google' || platform.id === 'tiktok';
+
                 return (
                   <button
                     key={platform.id}
-                    onClick={() => handlePlatformSelect(platform.id)}
+                    onClick={() => !isDisabled && handlePlatformSelect(platform.id)}
+                    disabled={isDisabled}
                     className={`
                       relative p-4 rounded-xl border-2 transition-all duration-200 text-left
-                      ${isSelected 
-                        ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200' 
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      ${isDisabled
+                        ? 'border-gray-200 bg-gray-50/50 cursor-not-allowed opacity-60'
+                        : isSelected
+                          ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                       }
                     `}
                   >
+                    {/* Badge "Em breve" para plataformas desabilitadas */}
+                    {isDisabled && (
+                      <div className="absolute top-3 right-3 z-10">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
+                          Em breve
+                        </span>
+                      </div>
+                    )}
+
                     <div className="flex items-center space-x-3">
                       <div className="relative">
-                        <img 
-                          src={platform.logo} 
+                        <img
+                          src={platform.logo}
                           alt={platform.name}
-                          className="w-10 h-10 object-contain"
+                          className={`w-10 h-10 object-contain ${isDisabled ? 'grayscale opacity-50' : ''}`}
                         />
-                        {isSelected && (
+                        {isSelected && !isDisabled && (
                           <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
                             <Check className="w-2.5 h-2.5 text-white" />
                           </div>
