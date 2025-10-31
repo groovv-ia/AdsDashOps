@@ -344,22 +344,28 @@ export const DataSources: React.FC = () => {
         <SimpleMetaConnect />
 
         {/* Placeholder para outras plataformas */}
-        <Card className="opacity-60">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-3">
-              <img src="/google-ads-icon.svg" alt="Google" className="w-12 h-12" />
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Google Ads</h3>
-                <p className="text-sm text-gray-600">Em breve</p>
-              </div>
-            </div>
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">
+        <Card className="opacity-60 cursor-not-allowed relative">
+          {/* Badge "Em breve" no topo do card */}
+          <div className="absolute top-4 right-4 z-10">
+            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
               Em breve
             </span>
           </div>
-          <p className="text-gray-600 text-sm">
-            Conexão com Google Ads será disponibilizada em breve.
-          </p>
+
+          <div className="pointer-events-none">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-3">
+                <img src="/google-ads-icon.svg" alt="Google" className="w-12 h-12 grayscale opacity-50" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Google Ads</h3>
+                  <p className="text-sm text-gray-600">2 campanhas</p>
+                </div>
+              </div>
+            </div>
+            <p className="text-gray-600 text-sm">
+              Conexão com Google Ads será disponibilizada em breve.
+            </p>
+          </div>
         </Card>
       </div>
 
