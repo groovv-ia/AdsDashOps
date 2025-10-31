@@ -112,11 +112,18 @@ export class MetaTokenValidator {
       return accounts;
     } catch (error: any) {
       logger.error('Failed to get Meta ad accounts', error);
-      throw new Error(
-        error.response?.data?.error?.message ||
-        error.message ||
-        'Erro ao buscar contas publicitárias'
-      );
+
+      // Tratamento especial para erro de permissões
+      const errorMessage = error.response?.data?.error?.message || error.message || '';
+      const errorCode = error.response?.data?.error?.code;
+
+      if (errorCode === 200 || errorMessage.includes('Missing Permissions')) {
+        throw new Error(
+          'Token sem permissões necessárias. Por favor, gere um novo token com as permissões: ads_read, ads_management, read_insights'
+        );
+      }
+
+      throw new Error(errorMessage || 'Erro ao buscar contas publicitárias');
     }
   }
 

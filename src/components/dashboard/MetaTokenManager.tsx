@@ -305,15 +305,39 @@ export const MetaTokenManager: React.FC = () => {
         {/* Instruções */}
         <div className="p-4 bg-gray-50 rounded-lg">
           <h4 className="text-sm font-semibold text-gray-900 mb-2">
-            Como obter seu Access Token:
+            🔑 Como obter seu Access Token:
           </h4>
           <ol className="text-sm text-gray-600 space-y-1 list-decimal list-inside">
-            <li>Acesse o Facebook Graph API Explorer</li>
-            <li>Selecione seu App da Meta</li>
-            <li>Adicione as permissões: ads_read, ads_management</li>
+            <li>
+              Acesse:{' '}
+              <a
+                href="https://developers.facebook.com/tools/explorer/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline font-medium"
+              >
+                Facebook Graph API Explorer
+              </a>
+            </li>
+            <li>Selecione seu App da Meta (ID: 838266108586944)</li>
+            <li className="font-semibold text-gray-900">
+              ⚠️ IMPORTANTE: Adicione as 3 permissões necessárias:
+              <ul className="ml-6 mt-1 space-y-0.5 list-disc">
+                <li>ads_read</li>
+                <li>ads_management</li>
+                <li>read_insights</li>
+              </ul>
+            </li>
             <li>Clique em "Generate Access Token"</li>
+            <li>Aceite as permissões no popup</li>
             <li>Copie o token gerado e cole acima</li>
           </ol>
+          <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
+            <p className="text-xs text-yellow-800">
+              <strong>Erro comum:</strong> Se você receber "(#200) Missing Permissions",
+              significa que faltam permissões no token. Gere um novo token seguindo o passo 3 acima.
+            </p>
+          </div>
         </div>
       </div>
     </Card>
