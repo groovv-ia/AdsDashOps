@@ -260,7 +260,7 @@ export const MetaSyncManager: React.FC = () => {
   if (!hasActiveConnection) {
     return (
       <Card className="p-6">
-        <Alert type="warning" icon={AlertCircle}>
+        <Alert variant="warning" icon={<AlertCircle className="w-5 h-5" />}>
           Você precisa conectar sua conta Meta Ads antes de sincronizar dados.
           Use o formulário acima para adicionar seu access token.
         </Alert>
@@ -352,14 +352,14 @@ export const MetaSyncManager: React.FC = () => {
 
             {/* Mensagem de erro */}
             {syncStatus.hasError && (
-              <Alert type="error" icon={AlertCircle}>
+              <Alert variant="error" icon={<AlertCircle className="w-5 h-5" />}>
                 {syncStatus.error}
               </Alert>
             )}
 
             {/* Mensagem de sucesso */}
             {syncStatus.isComplete && !syncStatus.hasError && (
-              <Alert type="success" icon={Check}>
+              <Alert variant="success" icon={<Check className="w-5 h-5" />}>
                 {syncStatus.message}
               </Alert>
             )}

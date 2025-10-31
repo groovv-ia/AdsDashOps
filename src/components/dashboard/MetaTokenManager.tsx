@@ -231,8 +231,8 @@ export const MetaTokenManager: React.FC = () => {
         {/* Resultado da Validação */}
         {validationResult && (
           <Alert
-            type={validationResult.success ? 'success' : 'error'}
-            icon={validationResult.success ? Check : AlertCircle}
+            variant={validationResult.success ? 'success' : 'error'}
+            icon={validationResult.success ? <Check className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
           >
             {validationResult.message}
           </Alert>
