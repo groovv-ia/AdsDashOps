@@ -304,27 +304,40 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             {platforms.map((platform) => {
               const isSelected = selectedPlatform === platform.id;
               const campaignCount = mockCampaigns.filter(c => c.platform.toLowerCase() === platform.id).length;
-              
+              const isGoogleAds = platform.id === 'google';
+
               return (
                 <button
                   key={platform.id}
-                  onClick={() => handlePlatformSelect(platform.id)}
+                  onClick={() => !isGoogleAds && handlePlatformSelect(platform.id)}
+                  disabled={isGoogleAds}
                   className={`
                     relative p-6 rounded-xl border-2 transition-all duration-200 text-left
-                    ${isSelected 
-                      ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200' 
-                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    ${isGoogleAds
+                      ? 'border-gray-200 bg-gray-50/50 cursor-not-allowed opacity-60'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }
                   `}
                 >
+                  {/* Badge "Em breve" para Google Ads */}
+                  {isGoogleAds && (
+                    <div className="absolute top-3 right-3 z-10">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
+                        Em breve
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex items-center space-x-4">
                     <div className="relative">
-                      <img 
-                        src={platform.logo} 
+                      <img
+                        src={platform.logo}
                         alt={platform.name}
-                        className="w-12 h-12 object-contain"
+                        className={`w-12 h-12 object-contain ${isGoogleAds ? 'grayscale opacity-50' : ''}`}
                       />
-                      {isSelected && (
+                      {isSelected && !isGoogleAds && (
                         <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
                           <Check className="w-3 h-3 text-white" />
                         </div>
@@ -335,8 +348,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                       <p className="text-sm text-gray-500">{campaignCount} campanhas</p>
                     </div>
                   </div>
-                  
-                  {isSelected && (
+
+                  {isSelected && !isGoogleAds && (
                     <div className="absolute top-3 right-3">
                       <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
                     </div>
