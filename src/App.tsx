@@ -12,6 +12,7 @@ import { DataSources } from './components/dashboard/DataSources';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { SupportPage } from './components/support/SupportPage';
+import { MetaIntegrationPage } from './components/dashboard/MetaIntegrationPage';
 import { FloatingHelpButton } from './components/help/FloatingHelpButton';
 import { ThemeProvider } from './components/settings/ThemeProvider';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
@@ -284,6 +285,8 @@ function AppContent() {
     switch (currentPage) {
       case 'data-sources':
         return <DataSources />;
+      case 'meta-integration':
+        return <MetaIntegrationPage onBack={() => setCurrentPage('data-sources')} />;
       case 'settings':
         return <SettingsPage />;
       case 'ai-insights':

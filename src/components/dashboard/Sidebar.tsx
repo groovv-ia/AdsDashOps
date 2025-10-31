@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Settings, Database, Sparkles, Headphones } from 'lucide-react';
+import { BarChart3, Settings, Database, Sparkles, Headphones, Zap } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -12,6 +12,7 @@ const menuItems = [
   { icon: BarChart3, label: 'Dashboard', page: 'overview' },
   { icon: Sparkles, label: 'Análise com IA', page: 'ai-insights' },
   { icon: Database, label: 'Fontes de Dados', page: 'data-sources' },
+  { icon: Zap, label: 'Integração Meta', page: 'meta-integration', highlight: true },
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configurações', page: 'settings' },
 ];
@@ -69,15 +70,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <button
                     onClick={() => handlePageClick(item.page)}
                     className={`
-                      w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-left transition-colors
+                      w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-left transition-colors relative
                       ${currentPage === item.page
-                        ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-r-2 border-blue-500' 
+                        ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-r-2 border-blue-500'
+                        : item.highlight
+                        ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
                         : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                       }
                     `}
                   >
                     <item.icon className="w-5 h-5 flex-shrink-0" />
                     <span className="font-medium">{item.label}</span>
+                    {item.highlight && (
+                      <span className="absolute right-2 top-2 flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}
