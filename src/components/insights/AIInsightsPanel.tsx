@@ -92,15 +92,21 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
   };
 
   const generateInsights = async () => {
+    // Verifica se a API está configurada
     if (!isApiConfigured) {
       setShowApiConfig(true);
       return;
     }
 
     setLoading(true);
+    console.log('Iniciando geração de insights...');
+
     try {
       let targetCampaigns = campaigns;
       let targetMetrics = metrics;
+
+      console.log('Campanhas disponíveis:', campaigns.length);
+      console.log('Métricas disponíveis:', metrics.length);
 
       // Filter by selection
       if (selection.platform) {
@@ -109,58 +115,90 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
           const campaign = campaigns.find(c => c.id === m.campaign_id);
           return campaign && campaign.platform.toLowerCase() === selection.platform;
         });
+        console.log(`Filtrado por plataforma ${selection.platform}:`, targetCampaigns.length, 'campanhas');
       }
 
       if (selection.campaigns.length > 0) {
         targetCampaigns = targetCampaigns.filter(c => selection.campaigns.includes(c.id));
         targetMetrics = targetMetrics.filter(m => selection.campaigns.includes(m.campaign_id));
+        console.log('Filtrado por campanhas selecionadas:', targetCampaigns.length);
       }
 
       if (selection.adSets.length > 0) {
-        targetMetrics = targetMetrics.filter(m => 
+        targetMetrics = targetMetrics.filter(m =>
           m.ad_set_id && selection.adSets.includes(m.ad_set_id)
         );
+        console.log('Filtrado por ad sets:', targetMetrics.length, 'métricas');
       }
 
       if (selection.ads.length > 0) {
-        targetMetrics = targetMetrics.filter(m => 
+        targetMetrics = targetMetrics.filter(m =>
           m.ad_id && selection.ads.includes(m.ad_id)
         );
+        console.log('Filtrado por anúncios:', targetMetrics.length, 'métricas');
       }
 
       if (targetCampaigns.length === 0 || targetMetrics.length === 0) {
         alert('Nenhuma campanha ou métrica encontrada para análise com a seleção atual.');
+        setLoading(false);
         return;
       }
 
+      console.log('Analisando', targetCampaigns.length, 'campanhas com', targetMetrics.length, 'métricas');
+
       // Analyze individual campaigns
+      console.log('Iniciando análise de campanhas individuais...');
       const campaignPromises = targetCampaigns.slice(0, 3).map(async (campaign) => {
         const campaignMetrics = targetMetrics.filter(m => m.campaign_id === campaign.id);
         if (campaignMetrics.length > 0) {
+          console.log(`Analisando campanha: ${campaign.name} (${campaignMetrics.length} métricas)`);
           return await aiService.analyzeCampaignPerformance(campaign, campaignMetrics);
         }
         return null;
       });
 
       const analyses = await Promise.all(campaignPromises);
-      setCampaignAnalyses(analyses.filter(Boolean) as CampaignAnalysis[]);
+      const validAnalyses = analyses.filter(Boolean) as CampaignAnalysis[];
+      console.log('Análises completadas:', validAnalyses.length);
+      setCampaignAnalyses(validAnalyses);
 
       // Generate optimization recommendations
+      console.log('Gerando recomendações de otimização...');
       const optimizations = await aiService.generateOptimizationRecommendations(targetCampaigns, targetMetrics);
+      console.log('Otimizações geradas:', optimizations.length);
       setOptimizationInsights(optimizations);
 
       // Detect anomalies
+      console.log('Detectando anomalias...');
       const detectedAnomalies = await aiService.detectAnomalies(targetMetrics);
+      console.log('Anomalias detectadas:', detectedAnomalies.length);
       setAnomalies(detectedAnomalies);
 
       // Generate market insights
+      console.log('Gerando insights de mercado...');
       const marketTrends = await aiService.generateMarketInsights(targetCampaigns, targetMetrics, 'month');
+      console.log('Insights de mercado gerados:', marketTrends.length);
       setMarketInsights(marketTrends);
 
       setLastAnalysis(new Date().toISOString());
-    } catch (error) {
+      console.log('Análise concluída com sucesso!');
+    } catch (error: any) {
       console.error('Erro ao gerar insights:', error);
-      alert('Erro ao gerar insights. Verifique sua chave da API OpenAI e tente novamente.');
+
+      // Mensagem de erro mais específica
+      let errorMessage = 'Erro ao gerar insights. ';
+
+      if (error.message?.includes('API key')) {
+        errorMessage += 'Verifique se sua chave da API OpenAI está correta.';
+      } else if (error.message?.includes('quota')) {
+        errorMessage += 'Você atingiu o limite de uso da API OpenAI.';
+      } else if (error.message?.includes('network')) {
+        errorMessage += 'Erro de conexão. Verifique sua internet.';
+      } else {
+        errorMessage += error.message || 'Tente novamente.';
+      }
+
+      alert(errorMessage);
     } finally {
       setLoading(false);
     }
