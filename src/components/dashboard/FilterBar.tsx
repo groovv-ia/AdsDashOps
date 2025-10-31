@@ -304,16 +304,16 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             {platforms.map((platform) => {
               const isSelected = selectedPlatform === platform.id;
               const campaignCount = mockCampaigns.filter(c => c.platform.toLowerCase() === platform.id).length;
-              const isGoogleAds = platform.id === 'google';
+              const isDisabled = platform.id === 'google' || platform.id === 'tiktok';
 
               return (
                 <button
                   key={platform.id}
-                  onClick={() => !isGoogleAds && handlePlatformSelect(platform.id)}
-                  disabled={isGoogleAds}
+                  onClick={() => !isDisabled && handlePlatformSelect(platform.id)}
+                  disabled={isDisabled}
                   className={`
                     relative p-6 rounded-xl border-2 transition-all duration-200 text-left
-                    ${isGoogleAds
+                    ${isDisabled
                       ? 'border-gray-200 bg-gray-50/50 cursor-not-allowed opacity-60'
                       : isSelected
                         ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200'
@@ -321,8 +321,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     }
                   `}
                 >
-                  {/* Badge "Em breve" para Google Ads */}
-                  {isGoogleAds && (
+                  {/* Badge "Em breve" para plataformas desabilitadas */}
+                  {isDisabled && (
                     <div className="absolute top-3 right-3 z-10">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
                         Em breve
@@ -335,9 +335,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                       <img
                         src={platform.logo}
                         alt={platform.name}
-                        className={`w-12 h-12 object-contain ${isGoogleAds ? 'grayscale opacity-50' : ''}`}
+                        className={`w-12 h-12 object-contain ${isDisabled ? 'grayscale opacity-50' : ''}`}
                       />
-                      {isSelected && !isGoogleAds && (
+                      {isSelected && !isDisabled && (
                         <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
                           <Check className="w-3 h-3 text-white" />
                         </div>
@@ -349,7 +349,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     </div>
                   </div>
 
-                  {isSelected && !isGoogleAds && (
+                  {isSelected && !isDisabled && (
                     <div className="absolute top-3 right-3">
                       <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
                     </div>
