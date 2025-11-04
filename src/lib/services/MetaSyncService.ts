@@ -15,6 +15,28 @@ export class MetaSyncService {
   }
 
   /**
+   * Valida o token de acesso testando uma chamada simples à API
+   */
+  private async validateToken(): Promise<boolean> {
+    try {
+      const url = `${this.baseUrl}/me?access_token=${this.accessToken}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.error) {
+        logger.error('Token inválido', data.error);
+        return false;
+      }
+
+      logger.info('Token validado com sucesso', { userId: data.id });
+      return true;
+    } catch (error) {
+      logger.error('Erro ao validar token', error);
+      return false;
+    }
+  }
+
+  /**
    * Sincroniza todos os dados de uma conexão Meta
    * @param connectionId ID da conexão no banco de dados
    */
@@ -43,11 +65,24 @@ export class MetaSyncService {
           .from('oauth_tokens')
           .select('access_token')
           .eq('connection_id', connectionId)
-          .single();
+          .maybeSingle();
 
         if (tokenData?.access_token) {
-          this.accessToken = tokenData.access_token;
+          // Limpa o token removendo espaços extras
+          this.accessToken = tokenData.access_token.trim();
         }
+      }
+
+      if (!this.accessToken) {
+        throw new Error('Token de acesso não encontrado');
+      }
+
+      logger.info('Token encontrado', { tokenLength: this.accessToken.length });
+
+      // Valida o token antes de prosseguir
+      const tokenValid = await this.validateToken();
+      if (!tokenValid) {
+        throw new Error('Invalid OAuth access token - Cannot parse access token');
       }
 
       const accountId = connection.config?.accountId;
@@ -122,11 +157,14 @@ export class MetaSyncService {
   private async fetchCampaigns(accountId: string): Promise<any[]> {
     const url = `${this.baseUrl}/${accountId}/campaigns?fields=id,name,status,objective,created_time,start_time,stop_time,daily_budget,lifetime_budget,budget_remaining&access_token=${this.accessToken}`;
 
+    logger.info('Buscando campanhas da Meta API', { accountId, url: url.replace(this.accessToken, 'TOKEN_HIDDEN') });
+
     const response = await fetch(url);
     const data = await response.json();
 
     if (data.error) {
-      throw new Error(`Meta API Error: ${data.error.message}`);
+      logger.error('Erro na Meta API ao buscar campanhas', data.error);
+      throw new Error(`Meta API Error: ${data.error.message} (Code: ${data.error.code}, Type: ${data.error.type})`);
     }
 
     return data.data || [];

@@ -260,6 +260,13 @@ export const SimpleMetaConnect: React.FC = () => {
 
       if (insertError) throw insertError;
 
+      // Limpa e valida o token antes de salvar
+      const cleanToken = accessToken.trim();
+
+      if (!cleanToken || cleanToken.length < 50) {
+        throw new Error('Token de acesso inválido ou muito curto');
+      }
+
       // Salva token OAuth de forma segura
       const { error: tokenError } = await supabase
         .from('oauth_tokens')
@@ -267,7 +274,8 @@ export const SimpleMetaConnect: React.FC = () => {
           user_id: user.id,
           connection_id: connection.id,
           platform: 'meta',
-          access_token: accessToken,
+          access_token: cleanToken,
+          account_id: selectedAcc.id,
           expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 dias
         });
 
