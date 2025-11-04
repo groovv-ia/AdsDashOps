@@ -331,24 +331,7 @@ export const SimpleMetaConnect: React.FC = () => {
         })
         .catch((error) => {
           console.error('Erro na sincronização:', error);
-
-          // Mensagem de erro amigável baseada no tipo de erro
-          let errorMessage = 'Erro ao sincronizar dados: ';
-
-          if (error.message.includes('User request limit reached') ||
-              error.message.includes('rate limit') ||
-              error.message.includes('Code: 17') ||
-              error.message.includes('Code: 4')) {
-            errorMessage = 'Limite de requisições atingido. A Meta Ads tem limites de chamadas à API. Por favor, aguarde alguns minutos e tente novamente.';
-          } else if (error.message.includes('Invalid OAuth')) {
-            errorMessage = 'Token de acesso inválido. Por favor, reconecte sua conta Meta.';
-          } else if (error.message.includes('permissions')) {
-            errorMessage = 'Permissões insuficientes. Certifique-se de que o app tem acesso às permissões necessárias.';
-          } else {
-            errorMessage += error.message;
-          }
-
-          setError(errorMessage);
+          setError('Erro ao sincronizar dados: ' + error.message);
         });
 
     } catch (err: any) {
@@ -527,51 +510,17 @@ export const SimpleMetaConnect: React.FC = () => {
 
       {/* Mensagem de erro */}
       {error && (
-        <div className={`mt-4 rounded-lg p-4 border ${
-          error.includes('Limite de requisições') || error.includes('rate limit')
-            ? 'bg-yellow-50 border-yellow-200'
-            : 'bg-red-50 border-red-200'
-        }`}>
+        <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="flex items-start space-x-2">
-            <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
-              error.includes('Limite de requisições') || error.includes('rate limit')
-                ? 'text-yellow-600'
-                : 'text-red-600'
-            }`} />
-            <div className="flex-1">
-              <p className={`text-sm font-medium mb-2 ${
-                error.includes('Limite de requisições') || error.includes('rate limit')
-                  ? 'text-yellow-800'
-                  : 'text-red-800'
-              }`}>
-                {error}
-              </p>
-              <div className="flex items-center space-x-3">
-                {(error.includes('Limite de requisições') || error.includes('rate limit')) && connectionData && (
-                  <button
-                    onClick={() => {
-                      setError(null);
-                      // Aguarda 5 segundos e tenta novamente
-                      setTimeout(() => {
-                        syncData(connectionData.id);
-                      }, 5000);
-                    }}
-                    className="text-xs text-yellow-700 hover:text-yellow-900 underline font-medium"
-                  >
-                    Tentar novamente em 5s
-                  </button>
-                )}
-                <button
-                  onClick={() => setError(null)}
-                  className={`text-xs underline ${
-                    error.includes('Limite de requisições') || error.includes('rate limit')
-                      ? 'text-yellow-600 hover:text-yellow-800'
-                      : 'text-red-600 hover:text-red-800'
-                  }`}
-                >
-                  Fechar
-                </button>
-              </div>
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-red-800">{error}</p>
+              <button
+                onClick={() => setError(null)}
+                className="text-xs text-red-600 underline mt-1"
+              >
+                Fechar
+              </button>
             </div>
           </div>
         </div>

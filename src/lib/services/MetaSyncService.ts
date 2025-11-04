@@ -8,77 +8,10 @@ import { logger } from '../utils/logger';
 export class MetaSyncService {
   private baseUrl = 'https://graph.facebook.com/v19.0';
   private accessToken: string;
-  private readonly MAX_RETRIES = 3;
-  private readonly INITIAL_BACKOFF = 1000; // 1 segundo
-  private readonly MAX_BACKOFF = 30000; // 30 segundos
 
   constructor(accessToken?: string) {
     // Usa token passado ou busca do ambiente
     this.accessToken = accessToken || import.meta.env.VITE_META_ACCESS_TOKEN || '';
-  }
-
-  /**
-   * Faz uma requisição à API com retry e backoff exponencial
-   * Lida com rate limits e erros temporários
-   */
-  private async fetchWithRetry(url: string, retryCount = 0): Promise<any> {
-    try {
-      const response = await fetch(url);
-      const data = await response.json();
-
-      // Verifica erros da API
-      if (data.error) {
-        const error = data.error;
-
-        // Rate limit atingido (código 17 ou 4)
-        if (error.code === 17 || error.code === 4 || error.type === 'OAuthException') {
-          logger.warn('Rate limit atingido', { code: error.code, message: error.message });
-
-          // Se ainda temos tentativas, aguarda e tenta novamente
-          if (retryCount < this.MAX_RETRIES) {
-            const backoff = Math.min(
-              this.INITIAL_BACKOFF * Math.pow(2, retryCount),
-              this.MAX_BACKOFF
-            );
-
-            logger.info('Aguardando antes de tentar novamente', {
-              backoff,
-              retryCount: retryCount + 1,
-              maxRetries: this.MAX_RETRIES
-            });
-
-            await new Promise(resolve => setTimeout(resolve, backoff));
-            return this.fetchWithRetry(url, retryCount + 1);
-          }
-        }
-
-        // Outros erros
-        throw new Error(`Meta API Error: ${error.message} (Code: ${error.code}, Type: ${error.type})`);
-      }
-
-      return data;
-    } catch (error: any) {
-      // Erro de rede ou timeout
-      if (retryCount < this.MAX_RETRIES && !error.message.includes('Meta API Error')) {
-        const backoff = Math.min(
-          this.INITIAL_BACKOFF * Math.pow(2, retryCount),
-          this.MAX_BACKOFF
-        );
-
-        logger.warn('Erro de rede, tentando novamente', { error: error.message, backoff });
-        await new Promise(resolve => setTimeout(resolve, backoff));
-        return this.fetchWithRetry(url, retryCount + 1);
-      }
-
-      throw error;
-    }
-  }
-
-  /**
-   * Adiciona delay entre requisições para evitar rate limit
-   */
-  private async rateLimit(ms: number = 500): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -226,7 +159,14 @@ export class MetaSyncService {
 
     logger.info('Buscando campanhas da Meta API', { accountId, url: url.replace(this.accessToken, 'TOKEN_HIDDEN') });
 
-    const data = await this.fetchWithRetry(url);
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error) {
+      logger.error('Erro na Meta API ao buscar campanhas', data.error);
+      throw new Error(`Meta API Error: ${data.error.message} (Code: ${data.error.code}, Type: ${data.error.type})`);
+    }
+
     return data.data || [];
   }
 
@@ -234,10 +174,15 @@ export class MetaSyncService {
    * Busca todos os ad sets de uma campanha
    */
   private async fetchAdSets(campaignId: string): Promise<any[]> {
-    await this.rateLimit(); // Aguarda entre requisições
     const url = `${this.baseUrl}/${campaignId}/adsets?fields=id,name,status,daily_budget,lifetime_budget,targeting,optimization_goal&access_token=${this.accessToken}`;
 
-    const data = await this.fetchWithRetry(url);
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(`Meta API Error: ${data.error.message}`);
+    }
+
     return data.data || [];
   }
 
@@ -245,10 +190,15 @@ export class MetaSyncService {
    * Busca todos os anúncios de um ad set
    */
   private async fetchAds(adSetId: string): Promise<any[]> {
-    await this.rateLimit(); // Aguarda entre requisições
     const url = `${this.baseUrl}/${adSetId}/ads?fields=id,name,status,creative{title,body,image_url}&access_token=${this.accessToken}`;
 
-    const data = await this.fetchWithRetry(url);
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(`Meta API Error: ${data.error.message}`);
+    }
+
     return data.data || [];
   }
 
@@ -256,10 +206,15 @@ export class MetaSyncService {
    * Busca métricas/insights de uma campanha
    */
   private async fetchInsights(campaignId: string, dateStart: string, dateEnd: string): Promise<any[]> {
-    await this.rateLimit(800); // Insights são mais pesados, aguarda mais tempo
     const url = `${this.baseUrl}/${campaignId}/insights?fields=impressions,clicks,spend,reach,ctr,cpc,actions,action_values&time_range={"since":"${dateStart}","until":"${dateEnd}"}&time_increment=1&access_token=${this.accessToken}`;
 
-    const data = await this.fetchWithRetry(url);
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(`Meta API Error: ${data.error.message}`);
+    }
+
     return data.data || [];
   }
 

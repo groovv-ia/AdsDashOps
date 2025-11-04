@@ -1,60 +1,32 @@
 import React from 'react';
-import { BarChart3, Settings, Database, Sparkles, Headphones, Zap } from 'lucide-react';
+import { BarChart3, Settings, Database, Sparkles, Headphones } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   currentPage?: string;
   onPageChange?: (page: string) => void;
-  hasConnectedSources?: boolean;
 }
 
 const menuItems = [
-  {
-    icon: Zap,
-    label: 'Conectar Campanhas',
-    page: 'data-sources',
-    highlight: true,
-    description: 'Primeiro passo'
-  },
-  {
-    icon: BarChart3,
-    label: 'Painel de Análise',
-    page: 'overview',
-    description: 'Visualize métricas'
-  },
-  {
-    icon: Sparkles,
-    label: 'Insights com IA',
-    page: 'ai-insights',
-    description: 'Análise inteligente'
-  },
-  {
-    icon: Headphones,
-    label: 'Ajuda e Suporte',
-    page: 'support',
-    description: 'Precisa de ajuda?'
-  },
-  {
-    icon: Settings,
-    label: 'Configurações',
-    page: 'settings',
-    description: 'Personalize'
-  },
+  { icon: BarChart3, label: 'Dashboard', page: 'overview' },
+  { icon: Sparkles, label: 'Análise com IA', page: 'ai-insights' },
+  { icon: Database, label: 'Fontes de Dados', page: 'data-sources' },
+  { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
+  { icon: Settings, label: 'Configurações', page: 'settings' },
 ];
 
-export const Sidebar: React.FC<SidebarProps> = ({
-  isOpen,
-  onClose,
+export const Sidebar: React.FC<SidebarProps> = ({ 
+  isOpen, 
+  onClose, 
   currentPage = 'overview',
-  onPageChange,
-  hasConnectedSources = false
+  onPageChange 
 }) => {
   const handlePageClick = (page: string) => {
     if (onPageChange) {
       onPageChange(page);
     }
-    // Fecha sidebar no mobile após seleção
+    // Close sidebar on mobile after selection
     if (window.innerWidth < 1024) {
       onClose();
     }
@@ -92,42 +64,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <nav className="p-4 flex-1 overflow-y-auto">
             <ul className="space-y-2">
-              {menuItems.map((item, index) => {
-                const isActive = currentPage === item.page;
-                const isHighlighted = item.highlight && !hasConnectedSources;
-
-                return (
-                  <li key={index}>
-                    <button
-                      onClick={() => handlePageClick(item.page)}
-                      className={`
-                        w-full flex flex-col px-3 py-3 rounded-lg text-left transition-all relative
-                        ${isActive
-                          ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 shadow-sm'
-                          : isHighlighted
-                          ? 'bg-gradient-to-r from-green-500/10 to-blue-500/10 text-green-700 hover:shadow-md border-2 border-green-300'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                        }
-                      `}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <item.icon className={`w-5 h-5 flex-shrink-0 ${isHighlighted ? 'animate-pulse' : ''}`} />
-                        <span className="font-medium">{item.label}</span>
-                        {isHighlighted && (
-                          <span className="ml-auto px-2 py-0.5 bg-green-500 text-white text-xs rounded-full font-semibold animate-pulse">
-                            1º
-                          </span>
-                        )}
-                      </div>
-                      {item.description && (
-                        <span className="text-xs text-gray-500 ml-8 mt-0.5">
-                          {item.description}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
+              {menuItems.map((item, index) => (
+                <li key={index}>
+                  <button
+                    onClick={() => handlePageClick(item.page)}
+                    className={`
+                      w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-left transition-colors
+                      ${currentPage === item.page
+                        ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-r-2 border-blue-500' 
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                      }
+                    `}
+                  >
+                    <item.icon className="w-5 h-5 flex-shrink-0" />
+                    <span className="font-medium">{item.label}</span>
+                  </button>
+                </li>
+              ))}
             </ul>
           </nav>
 
