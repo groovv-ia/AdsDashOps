@@ -187,27 +187,45 @@ export class MetaSyncService {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
-    const { error } = await supabase
+    // Verifica se a campanha já existe
+    const { data: existing } = await supabase
       .from('campaigns')
-      .upsert({
-        id: campaign.id,
-        connection_id: connectionId,
-        user_id: user.id,
-        name: campaign.name,
-        platform: 'Meta',
-        status: campaign.status,
-        objective: campaign.objective,
-        created_date: campaign.created_time,
-        start_date: campaign.start_time,
-        end_date: campaign.stop_time,
-        daily_budget: campaign.daily_budget ? parseFloat(campaign.daily_budget) / 100 : null,
-        lifetime_budget: campaign.lifetime_budget ? parseFloat(campaign.lifetime_budget) / 100 : null,
-        budget_remaining: campaign.budget_remaining ? parseFloat(campaign.budget_remaining) / 100 : null,
-      }, {
-        onConflict: 'id'
-      });
+      .select('id')
+      .eq('id', campaign.id)
+      .maybeSingle();
 
-    if (error) throw error;
+    const campaignData = {
+      name: campaign.name,
+      status: campaign.status,
+      objective: campaign.objective,
+      start_date: campaign.start_time,
+      end_date: campaign.stop_time,
+      daily_budget: campaign.daily_budget ? parseFloat(campaign.daily_budget) / 100 : null,
+      lifetime_budget: campaign.lifetime_budget ? parseFloat(campaign.lifetime_budget) / 100 : null,
+      budget_remaining: campaign.budget_remaining ? parseFloat(campaign.budget_remaining) / 100 : null,
+    };
+
+    if (existing) {
+      // Atualiza campanha existente
+      const { error } = await supabase
+        .from('campaigns')
+        .update(campaignData)
+        .eq('id', campaign.id);
+      if (error) throw error;
+    } else {
+      // Insere nova campanha
+      const { error } = await supabase
+        .from('campaigns')
+        .insert({
+          id: campaign.id,
+          connection_id: connectionId,
+          user_id: user.id,
+          platform: 'Meta',
+          created_date: campaign.created_time,
+          ...campaignData,
+        });
+      if (error) throw error;
+    }
   }
 
   /**
@@ -217,24 +235,42 @@ export class MetaSyncService {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
-    const { error } = await supabase
+    // Verifica se o ad set já existe
+    const { data: existing } = await supabase
       .from('ad_sets')
-      .upsert({
-        id: adSet.id,
-        campaign_id: campaignId,
-        connection_id: connectionId,
-        user_id: user.id,
-        name: adSet.name,
-        status: adSet.status,
-        daily_budget: adSet.daily_budget ? parseFloat(adSet.daily_budget) / 100 : null,
-        lifetime_budget: adSet.lifetime_budget ? parseFloat(adSet.lifetime_budget) / 100 : null,
-        targeting: JSON.stringify(adSet.targeting || {}),
-        optimization_goal: adSet.optimization_goal,
-      }, {
-        onConflict: 'id'
-      });
+      .select('id')
+      .eq('id', adSet.id)
+      .maybeSingle();
 
-    if (error) throw error;
+    const adSetData = {
+      name: adSet.name,
+      status: adSet.status,
+      daily_budget: adSet.daily_budget ? parseFloat(adSet.daily_budget) / 100 : null,
+      lifetime_budget: adSet.lifetime_budget ? parseFloat(adSet.lifetime_budget) / 100 : null,
+      targeting: JSON.stringify(adSet.targeting || {}),
+      optimization_goal: adSet.optimization_goal,
+    };
+
+    if (existing) {
+      // Atualiza ad set existente
+      const { error } = await supabase
+        .from('ad_sets')
+        .update(adSetData)
+        .eq('id', adSet.id);
+      if (error) throw error;
+    } else {
+      // Insere novo ad set
+      const { error } = await supabase
+        .from('ad_sets')
+        .insert({
+          id: adSet.id,
+          campaign_id: campaignId,
+          connection_id: connectionId,
+          user_id: user.id,
+          ...adSetData,
+        });
+      if (error) throw error;
+    }
   }
 
   /**
@@ -244,25 +280,43 @@ export class MetaSyncService {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
-    const { error } = await supabase
+    // Verifica se o anúncio já existe
+    const { data: existing } = await supabase
       .from('ads')
-      .upsert({
-        id: ad.id,
-        ad_set_id: adSetId,
-        campaign_id: campaignId,
-        connection_id: connectionId,
-        user_id: user.id,
-        name: ad.name,
-        status: ad.status,
-        ad_type: ad.creative?.object_type || 'other',
-        headline: ad.creative?.title,
-        description: ad.creative?.body,
-        thumbnail_url: ad.creative?.image_url,
-      }, {
-        onConflict: 'id'
-      });
+      .select('id')
+      .eq('id', ad.id)
+      .maybeSingle();
 
-    if (error) throw error;
+    const adData = {
+      name: ad.name,
+      status: ad.status,
+      ad_type: ad.creative?.object_type || 'other',
+      headline: ad.creative?.title,
+      description: ad.creative?.body,
+      thumbnail_url: ad.creative?.image_url,
+    };
+
+    if (existing) {
+      // Atualiza anúncio existente
+      const { error } = await supabase
+        .from('ads')
+        .update(adData)
+        .eq('id', ad.id);
+      if (error) throw error;
+    } else {
+      // Insere novo anúncio
+      const { error } = await supabase
+        .from('ads')
+        .insert({
+          id: ad.id,
+          ad_set_id: adSetId,
+          campaign_id: campaignId,
+          connection_id: connectionId,
+          user_id: user.id,
+          ...adData,
+        });
+      if (error) throw error;
+    }
   }
 
   /**
@@ -289,25 +343,46 @@ export class MetaSyncService {
     const spend = parseFloat(insight.spend || '0');
     const roas = conversionValue > 0 && spend > 0 ? conversionValue / spend : 0;
 
-    const { error } = await supabase
+    // Verifica se a métrica já existe (usando a unique constraint)
+    const { data: existing } = await supabase
       .from('ad_metrics')
-      .upsert({
-        connection_id: connectionId,
-        user_id: user.id,
-        campaign_id: campaignId,
-        date: insight.date_start,
-        impressions: parseInt(insight.impressions || '0'),
-        clicks: parseInt(insight.clicks || '0'),
-        spend: spend,
-        reach: parseInt(insight.reach || '0'),
-        ctr: parseFloat(insight.ctr || '0'),
-        cpc: parseFloat(insight.cpc || '0'),
-        conversions: parseFloat(conversions),
-        roas: roas,
-      }, {
-        onConflict: 'connection_id,campaign_id,date'
-      });
+      .select('id')
+      .eq('campaign_id', campaignId)
+      .eq('date', insight.date_start)
+      .is('ad_set_id', null)
+      .is('ad_id', null)
+      .maybeSingle();
 
-    if (error) throw error;
+    const metricsData = {
+      impressions: parseInt(insight.impressions || '0'),
+      clicks: parseInt(insight.clicks || '0'),
+      spend: spend,
+      reach: parseInt(insight.reach || '0'),
+      ctr: parseFloat(insight.ctr || '0'),
+      cpc: parseFloat(insight.cpc || '0'),
+      conversions: parseFloat(conversions),
+      roas: roas,
+    };
+
+    if (existing) {
+      // Atualiza métrica existente
+      const { error } = await supabase
+        .from('ad_metrics')
+        .update(metricsData)
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      // Insere nova métrica
+      const { error } = await supabase
+        .from('ad_metrics')
+        .insert({
+          connection_id: connectionId,
+          user_id: user.id,
+          campaign_id: campaignId,
+          date: insight.date_start,
+          ...metricsData,
+        });
+      if (error) throw error;
+    }
   }
 }
