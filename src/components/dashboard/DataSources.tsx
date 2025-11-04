@@ -326,55 +326,100 @@ export const DataSources: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header com destaque */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center space-x-3">
-          <div className="p-3 bg-gradient-to-r from-green-600 to-blue-600 rounded-lg">
+          <div className="p-3 bg-gradient-to-r from-green-600 to-blue-600 rounded-lg shadow-lg">
             <Database className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Fontes de Dados</h1>
-            <p className="text-gray-600">Conecte suas contas de anúncios de forma simples e rápida</p>
+            <h1 className="text-2xl font-bold text-gray-900">Conectar Campanhas</h1>
+            <p className="text-gray-600">Importe suas campanhas de anúncios em poucos minutos</p>
           </div>
         </div>
       </div>
 
-      {/* Conexão Simplificada Meta */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SimpleMetaConnect />
-
-        {/* Placeholder para Google Ads - Em breve */}
-        <Card className="opacity-70 cursor-not-allowed relative bg-gray-50/80 hover:opacity-70 transition-opacity">
-          {/* Badge "Em breve" no topo do card */}
-          <div className="absolute top-4 right-4 z-10">
-            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
-              Em breve
-            </span>
-          </div>
-
-          <div className="pointer-events-none">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <img src="/google-ads-icon.svg" alt="Google Ads" className="w-12 h-12 grayscale opacity-50" />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Google Ads</h3>
-                  <p className="text-sm text-gray-600">2 campanhas</p>
-                </div>
+      {/* Banner informativo quando não há conexões */}
+      {dataSources.length === 0 && (
+        <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200">
+          <div className="flex items-start space-x-4">
+            <div className="flex-shrink-0">
+              <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center">
+                <Zap className="w-6 h-6 text-white" />
               </div>
             </div>
-            <p className="text-gray-600 text-sm">
-              Conexão com Google Ads será disponibilizada em breve.
-            </p>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Primeiro Passo: Conecte Suas Campanhas
+              </h3>
+              <p className="text-gray-700 mb-4">
+                Para começar a analisar suas métricas, você precisa conectar ao menos uma conta de anúncios.
+                O processo é rápido, seguro e totalmente automatizado.
+              </p>
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <span>Sincronização automática diária</span>
+                <span className="mx-2">•</span>
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <span>Dados sempre atualizados</span>
+                <span className="mx-2">•</span>
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <span>100% seguro com OAuth</span>
+              </div>
+            </div>
           </div>
         </Card>
+      )}
+
+      {/* Seção: Conexão Rápida - Destaque para Meta */}
+      <div>
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+            <Zap className="w-5 h-5 mr-2 text-green-600" />
+            Conexão Rápida
+          </h2>
+          <p className="text-sm text-gray-600">Comece agora mesmo com Meta Ads (Facebook e Instagram)</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SimpleMetaConnect />
+
+          {/* Placeholder para Google Ads - Em breve */}
+          <Card className="opacity-70 cursor-not-allowed relative bg-gray-50/80 hover:opacity-70 transition-opacity">
+            <div className="absolute top-4 right-4 z-10">
+              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
+                Em breve
+              </span>
+            </div>
+
+            <div className="pointer-events-none">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <img src="/google-ads-icon.svg" alt="Google Ads" className="w-12 h-12 grayscale opacity-50" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Google Ads</h3>
+                    <p className="text-sm text-gray-600">Disponível em breve</p>
+                  </div>
+                </div>
+              </div>
+              <p className="text-gray-600 text-sm">
+                Conexão com Google Ads será disponibilizada em breve. Cadastre-se na lista de espera!
+              </p>
+            </div>
+          </Card>
+        </div>
       </div>
 
-      {/* Connected Sources */}
-      <Card>
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Fontes Conectadas</h2>
-          <p className="text-sm text-gray-600">Gerencie suas conexões ativas</p>
-        </div>
+      {/* Connected Sources - Só mostra se houver conexões */}
+      {dataSources.length > 0 && (
+        <Card>
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
+              <CheckCircle className="w-5 h-5 mr-2 text-green-600" />
+              Fontes Conectadas ({dataSources.length})
+            </h2>
+            <p className="text-sm text-gray-600">Gerencie suas conexões ativas e visualize o status de sincronização</p>
+          </div>
 
         <div className="space-y-4">
           {dataSources.map((source) => {
@@ -455,18 +500,8 @@ export const DataSources: React.FC = () => {
             );
           })}
         </div>
-
-        {dataSources.length === 0 && (
-          <div className="text-center py-12">
-            <Database className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhuma fonte conectada</h3>
-            <p className="text-gray-500 mb-4">Conecte suas primeiras fontes de dados para começar</p>
-            <Button onClick={() => setShowAddModal(true)} icon={Plus}>
-              Adicionar Primeira Fonte
-            </Button>
-          </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
       {/* Add Source Modal */}
       {showAddModal && (

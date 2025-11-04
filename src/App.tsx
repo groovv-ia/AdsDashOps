@@ -9,6 +9,8 @@ import { MetricsOverview } from './components/dashboard/MetricsOverview';
 import { PerformanceChart } from './components/dashboard/PerformanceChart';
 import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
+import { EmptyState } from './components/dashboard/EmptyState';
+import { WelcomeOnboarding } from './components/dashboard/WelcomeOnboarding';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { SupportPage } from './components/support/SupportPage';
@@ -24,7 +26,7 @@ import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
 import { useDashboardData } from './hooks/useDashboardData';
-import { isDemoMode } from './lib/supabase';
+import { isDemoMode, supabase } from './lib/supabase';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
 import { Card } from './components/ui/Card';
@@ -47,9 +49,16 @@ function AppContent() {
     refresh: refreshData
   } = useDashboardData();
 
+  // Verifica se há fontes conectadas
+  useEffect(() => {
+    setHasConnectedSources(isUsingRealData);
+  }, [isUsingRealData]);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [hasConnectedSources, setHasConnectedSources] = useState(false);
   const [filters, setFilters] = useState({
     platforms: [] as string[],
     campaigns: [] as string[],
@@ -94,6 +103,30 @@ function AppContent() {
     window.addEventListener('autoRefresh', handleAutoRefresh as EventListener);
     return () => window.removeEventListener('autoRefresh', handleAutoRefresh as EventListener);
   }, []);
+
+  // Verifica se deve mostrar onboarding
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      if (!user) return;
+
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('onboarding_completed')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        // Mostra onboarding se não foi completado e não há fontes conectadas
+        if (profile && !profile.onboarding_completed && !hasConnectedSources) {
+          setShowOnboarding(true);
+        }
+      } catch (error) {
+        console.error('Erro ao verificar onboarding:', error);
+      }
+    };
+
+    checkOnboarding();
+  }, [user, hasConnectedSources]);
 
   // Filter data based on current filters
   const filteredCampaigns = mockCampaigns.filter(campaign => {
@@ -297,6 +330,16 @@ function AppContent() {
         return <SupportPage />;
       case 'overview':
       default:
+        // Se não tem fontes conectadas, mostra EmptyState
+        if (!hasConnectedSources) {
+          return (
+            <EmptyState
+              onConnectClick={() => setCurrentPage('data-sources')}
+            />
+          );
+        }
+
+        // Se tem fontes conectadas, mostra dashboard completo
         return (
           <>
             {/* Header with Icon */}
@@ -353,6 +396,7 @@ function AppContent() {
               onFilterChange={handleFilterChange}
               onExport={handleExport}
               onRefresh={handleRefresh}
+              hasConnectedSources={hasConnectedSources}
             />
             
             <MetricsOverview
@@ -413,11 +457,12 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       <div className="flex h-screen overflow-hidden">
-        <Sidebar 
-          isOpen={sidebarOpen} 
+        <Sidebar
+          isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           currentPage={currentPage}
           onPageChange={setCurrentPage}
+          hasConnectedSources={hasConnectedSources}
         />
         
         <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
@@ -442,6 +487,17 @@ function AppContent() {
       {/* Cookie Settings Button and Modal - Available everywhere */}
       <CookieSettingsButton />
       <CookiePreferencesModal />
+
+      {/* Welcome Onboarding Modal */}
+      {showOnboarding && (
+        <WelcomeOnboarding
+          onClose={() => setShowOnboarding(false)}
+          onComplete={() => {
+            setShowOnboarding(false);
+            setCurrentPage('data-sources');
+          }}
+        />
+      )}
     </div>
   );
 }

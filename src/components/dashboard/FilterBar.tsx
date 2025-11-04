@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Calendar, Download, BarChart3, ChevronDown, X, Check, ChevronRight } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
+import { InfoTooltip } from '../ui/InfoTooltip';
 import { mockCampaigns, mockAdSets, mockAds } from '../../data/mockData';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
@@ -10,6 +11,7 @@ interface FilterBarProps {
   onFilterChange: (filters: any) => void;
   onExport: (format: 'csv' | 'pdf') => void;
   onRefresh: () => void;
+  hasConnectedSources?: boolean;
 }
 
 interface Platform {
@@ -43,7 +45,8 @@ const platforms: Platform[] = [
 export const FilterBar: React.FC<FilterBarProps> = ({
   onFilterChange,
   onExport,
-  onRefresh
+  onRefresh,
+  hasConnectedSources = true
 }) => {
   const [selectedPlatform, setSelectedPlatform] = useState<string>(''); // Changed to single platform
   const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([]);
@@ -276,7 +279,14 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Filtros de Análise</h3>
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              Filtros de Análise
+              {!hasConnectedSources && (
+                <span className="ml-3 px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                  Dados de demonstração
+                </span>
+              )}
+            </h3>
             <p className="text-sm text-gray-600">{getSelectionSummary()}</p>
           </div>
           <div className="flex items-center space-x-2">
@@ -294,9 +304,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         {/* Platform Selection - Single Selection */}
         <div>
           <div className="flex items-center justify-between mb-4">
-            <label className="text-sm font-medium text-gray-700">
-              1. Plataforma de Publicidade
-            </label>
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">
+                1. Plataforma de Publicidade
+              </label>
+              <InfoTooltip
+                content="Selecione a plataforma que deseja analisar. Você pode filtrar apenas uma plataforma por vez para visualizar métricas específicas."
+                position="right"
+              />
+            </div>
             <span className="text-xs text-gray-500">Selecione apenas uma plataforma</span>
           </div>
 
