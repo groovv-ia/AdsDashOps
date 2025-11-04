@@ -3,6 +3,7 @@ import { CheckCircle, AlertCircle, Loader, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { supabase } from '../../lib/supabase';
+import { MetaSyncService } from '../../lib/services/MetaSyncService';
 
 /**
  * Componente simplificado para conexão com Meta Ads
@@ -16,6 +17,7 @@ export const SimpleMetaConnect: React.FC = () => {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [connectionData, setConnectionData] = useState<any>(null);
+  const [showDirectConnect, setShowDirectConnect] = useState(false);
 
   // Verificar se já existe conexão Meta ativa
   useEffect(() => {
@@ -46,6 +48,29 @@ export const SimpleMetaConnect: React.FC = () => {
       }
     } catch (err) {
       console.error('Erro ao verificar conexão existente:', err);
+    }
+  };
+
+  /**
+   * Conecta diretamente usando o token do ambiente (para desenvolvimento/teste)
+   */
+  const handleDirectConnect = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const accessToken = import.meta.env.VITE_META_ACCESS_TOKEN;
+
+      if (!accessToken) {
+        throw new Error('Token de acesso não configurado no ambiente');
+      }
+
+      console.log('Conectando diretamente com token do ambiente...');
+      await fetchAccounts(accessToken);
+    } catch (err: any) {
+      console.error('Erro ao conectar:', err);
+      setError(err.message || 'Erro ao conectar');
+      setLoading(false);
     }
   };
 
@@ -271,26 +296,39 @@ export const SimpleMetaConnect: React.FC = () => {
    */
   const syncData = async (connectionId: string) => {
     try {
-      // Atualiza status para sincronizando
-      await supabase
-        .from('data_connections')
-        .update({ status: 'syncing' })
-        .eq('id', connectionId);
+      console.log('Iniciando sincronização de dados da Meta...', connectionId);
 
-      // TODO: Implementar lógica de sincronização real
-      // Por enquanto, apenas simula a sincronização
+      // Busca o token de acesso
+      const { data: tokenData } = await supabase
+        .from('oauth_tokens')
+        .select('access_token')
+        .eq('connection_id', connectionId)
+        .maybeSingle();
 
-      setTimeout(async () => {
-        await supabase
-          .from('data_connections')
-          .update({
-            status: 'connected',
-            last_sync: new Date().toISOString()
-          })
-          .eq('id', connectionId);
-      }, 3000);
-    } catch (err) {
-      console.error('Erro ao sincronizar:', err);
+      const accessToken = tokenData?.access_token || import.meta.env.VITE_META_ACCESS_TOKEN;
+
+      if (!accessToken) {
+        throw new Error('Token de acesso não encontrado');
+      }
+
+      // Cria instância do serviço de sincronização
+      const syncService = new MetaSyncService(accessToken);
+
+      // Inicia sincronização em background
+      syncService.syncConnection(connectionId)
+        .then(() => {
+          console.log('Sincronização concluída com sucesso!');
+          // Recarrega dados da conexão
+          checkExistingConnection();
+        })
+        .catch((error) => {
+          console.error('Erro na sincronização:', error);
+          setError('Erro ao sincronizar dados: ' + error.message);
+        });
+
+    } catch (err: any) {
+      console.error('Erro ao iniciar sincronização:', err);
+      setError('Erro ao iniciar sincronização: ' + err.message);
     }
   };
 
@@ -363,9 +401,22 @@ export const SimpleMetaConnect: React.FC = () => {
           <p className="text-gray-600 mb-4">
             Conecte sua conta Meta para importar dados de campanhas do Facebook e Instagram Ads.
           </p>
-          <Button onClick={handleConnect} loading={loading} disabled={loading}>
-            Conectar com Meta
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button onClick={handleConnect} loading={loading} disabled={loading}>
+              Conectar com Meta (OAuth)
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleDirectConnect}
+              loading={loading}
+              disabled={loading}
+            >
+              Usar Token Configurado
+            </Button>
+          </div>
+          <p className="text-xs text-gray-500 mt-3">
+            💡 Use "Token Configurado" se você já configurou o VITE_META_ACCESS_TOKEN no arquivo .env
+          </p>
         </div>
       )}
 
