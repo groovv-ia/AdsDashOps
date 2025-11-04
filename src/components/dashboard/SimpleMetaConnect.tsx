@@ -266,7 +266,7 @@ export const SimpleMetaConnect: React.FC = () => {
         .insert({
           user_id: user.id,
           connection_id: connection.id,
-          platform: 'Meta',
+          platform: 'meta',
           access_token: accessToken,
           expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 dias
         });
