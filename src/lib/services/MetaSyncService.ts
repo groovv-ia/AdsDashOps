@@ -115,9 +115,9 @@ export class MetaSyncService {
           }
         }
 
-        // 7. Busca métricas da campanha (últimos 30 dias)
+        // 7. Busca métricas da campanha (últimos 7 dias)
         const dateEnd = new Date().toISOString().split('T')[0];
-        const dateStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const dateStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
         const insights = await this.fetchInsights(campaign.id, dateStart, dateEnd);
         logger.info('Métricas encontradas', { campaignId: campaign.id, count: insights.length });
