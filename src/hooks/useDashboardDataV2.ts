@@ -3,11 +3,13 @@
  *
  * Versão 2: Requer connection_id obrigatório e busca apenas dados reais do Supabase.
  * Não possui fallback para dados mockados.
+ * Suporta filtragem por campanhas selecionadas em contas Meta.
  */
 
 import { useState, useEffect } from 'react';
 import { DashboardDataService } from '../lib/services/DashboardDataService';
 import { Campaign, AdMetrics, AdSet, Ad, AdAccount } from '../types/advertising';
+import { supabase } from '../lib/supabase';
 
 interface UseDashboardDataV2Params {
   // ID da conexão ativa (obrigatório)
@@ -51,6 +53,7 @@ export const useDashboardDataV2 = ({
 
   /**
    * Carrega dados do Supabase para a conexão específica
+   * Filtra apenas campanhas selecionadas se houver
    */
   const loadData = async () => {
     try {
@@ -61,15 +64,51 @@ export const useDashboardDataV2 = ({
         throw new Error('Connection ID é obrigatório');
       }
 
-      // Busca todos os dados filtrados pela conexão
+      // 1. Busca meta_account associada à conexão (se houver)
+      const { data: metaAccount } = await supabase
+        .from('meta_accounts')
+        .select('id')
+        .eq('connection_id', connectionId)
+        .maybeSingle();
+
+      // 2. Se houver meta_account, busca IDs de campanhas selecionadas
+      let selectedCampaignIds: string[] = [];
+      if (metaAccount) {
+        const { data: selectedCampaigns } = await supabase
+          .from('selected_campaigns')
+          .select('campaign_id')
+          .eq('meta_account_id', metaAccount.id);
+
+        selectedCampaignIds = (selectedCampaigns || []).map(sc => sc.campaign_id);
+
+        console.log('📊 Campanhas selecionadas:', {
+          metaAccountId: metaAccount.id,
+          total: selectedCampaignIds.length,
+          ids: selectedCampaignIds
+        });
+      }
+
+      // 3. Busca todos os dados filtrados pela conexão
       const data = await dataService.fetchAllDashboardData();
 
-      // Filtra dados apenas da conexão selecionada
-      const connectionCampaigns = data.campaigns.filter(
+      // 4. Filtra dados apenas da conexão selecionada
+      let connectionCampaigns = data.campaigns.filter(
         c => c.account_id === connectionId ||
         // Fallback: se account_id não bater, tenta pelo user_id
         data.campaigns.some(camp => camp.id === c.id)
       );
+
+      // 5. Se houver campanhas selecionadas, filtra apenas elas
+      if (selectedCampaignIds.length > 0) {
+        connectionCampaigns = connectionCampaigns.filter(
+          c => selectedCampaignIds.includes(c.id)
+        );
+
+        console.log('✅ Filtrando por campanhas selecionadas:', {
+          total: connectionCampaigns.length,
+          selecionadas: selectedCampaignIds.length
+        });
+      }
 
       const campaignIds = connectionCampaigns.map(c => c.id);
 
@@ -96,7 +135,8 @@ export const useDashboardDataV2 = ({
         campanhas: connectionCampaigns.length,
         métricas: connectionMetrics.length,
         adSets: connectionAdSets.length,
-        ads: connectionAds.length
+        ads: connectionAds.length,
+        filtradoPorSeleção: selectedCampaignIds.length > 0
       });
 
     } catch (err) {
