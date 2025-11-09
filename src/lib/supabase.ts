@@ -60,11 +60,8 @@ export const signUp = async (email: string, password: string, fullName?: string)
   try {
     console.log('Attempting sign up for:', email);
 
-    // Determina a URL de redirecionamento baseada no ambiente
-    // Em produção, usa a URL configurada; em desenvolvimento, usa window.location.origin
-    const redirectUrl = window.location.hostname === 'localhost'
-      ? `${window.location.origin}/auth/callback`
-      : 'https://adsops.bolt.host/auth/callback';
+    // URL de redirecionamento em produção
+    const redirectUrl = 'https://adsops.bolt.host/auth/callback';
 
     console.log('Email redirect URL:', redirectUrl);
 
@@ -173,44 +170,89 @@ export const signOut = async () => {
   }
 };
 
+/**
+ * Função para realizar login com provedores OAuth (Google, Facebook, Apple)
+ *
+ * Esta função inicia o fluxo OAuth com o provedor selecionado.
+ * O Supabase gerencia automaticamente o redirecionamento e callback.
+ *
+ * Para Facebook, solicita os seguintes escopos:
+ * - email: para obter o email do usuário
+ * - public_profile: para obter nome e foto de perfil
+ * - ads_read: para futura integração com Meta Ads API (opcional)
+ *
+ * @param provider - Provedor OAuth: 'google', 'facebook' ou 'apple'
+ * @returns Objeto com data ou error do Supabase
+ */
 export const signInWithProvider = async (provider: 'google' | 'facebook' | 'apple') => {
   try {
-    console.log(`Attempting ${provider} OAuth login...`);
+    console.log(`Iniciando login OAuth com ${provider}...`);
 
-    // Para OAuth, o Supabase gerencia automaticamente o redirecionamento
-    // Usa a URL padrão: https://[project-id].supabase.co/auth/v1/callback
-    // Após autenticação, redireciona de volta para a origem da aplicação
-
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
+    // Configurações específicas para cada provedor
+    const providerOptions: Record<string, any> = {
+      google: {
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
         },
       },
+      facebook: {
+        scopes: 'email,public_profile',
+        queryParams: {
+          auth_type: 'rerequest',
+        },
+      },
+      apple: {
+        queryParams: {
+          prompt: 'consent',
+        },
+      },
+    };
+
+    // URL de redirecionamento após autenticação bem-sucedida
+    // Em produção: https://adsops.bolt.host
+    const redirectTo = 'https://adsops.bolt.host';
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo,
+        ...providerOptions[provider],
+      },
     });
 
     if (error) {
-      console.error(`${provider} OAuth error:`, error);
+      console.error(`Erro no OAuth ${provider}:`, error);
+
+      // Tratamento de erros específicos do Facebook
+      if (provider === 'facebook') {
+        if (error.message?.includes('access_denied')) {
+          throw new Error('Você cancelou o login com Facebook. Tente novamente.');
+        }
+        if (error.message?.includes('temporarily blocked')) {
+          throw new Error('Seu acesso ao Facebook está temporariamente bloqueado. Tente novamente mais tarde.');
+        }
+      }
+
+      throw error;
     } else {
-      console.log(`${provider} OAuth initiated successfully`);
+      console.log(`OAuth ${provider} iniciado com sucesso`);
     }
 
-    return { data, error };
+    return { data, error: null };
   } catch (error) {
-    console.error(`${provider} OAuth exception:`, error);
-    return { data: null, error };
+    console.error(`Exceção no OAuth ${provider}:`, error);
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error(`Erro inesperado ao fazer login com ${provider}`)
+    };
   }
 };
 
 export const resetPassword = async (email: string) => {
   try {
-    // Determina a URL de redirecionamento baseada no ambiente
-    // Em produção, usa a URL configurada; em desenvolvimento, usa window.location.origin
-    const redirectTo = window.location.hostname === 'localhost'
-      ? `${window.location.origin}/reset-password`
-      : 'https://adsops.bolt.host/reset-password';
+    // URL de redirecionamento em produção
+    const redirectTo = 'https://adsops.bolt.host/reset-password';
 
     console.log('Reset password redirect URL:', redirectTo);
 
@@ -244,11 +286,8 @@ export const resendConfirmationEmail = async (email: string) => {
   try {
     console.log('Resending confirmation email to:', email);
 
-    // Determina a URL de redirecionamento baseada no ambiente
-    // Em produção, usa a URL configurada; em desenvolvimento, usa window.location.origin
-    const redirectUrl = window.location.hostname === 'localhost'
-      ? `${window.location.origin}/auth/callback`
-      : 'https://adsops.bolt.host/auth/callback';
+    // URL de redirecionamento em produção
+    const redirectUrl = 'https://adsops.bolt.host/auth/callback';
 
     console.log('Resend confirmation redirect URL:', redirectUrl);
 
