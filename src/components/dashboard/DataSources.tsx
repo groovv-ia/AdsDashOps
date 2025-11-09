@@ -23,6 +23,8 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { DataSourceSetup } from './DataSourceSetup';
 import { SimpleMetaConnect } from './SimpleMetaConnect';
+import { MetaAdsSetup } from './MetaAdsSetup';
+import { MetaConnectionsManager } from './MetaConnectionsManager';
 import { supabase } from '../../lib/supabase';
 import { 
   DataSyncService, 
@@ -339,35 +341,63 @@ export const DataSources: React.FC = () => {
         </div>
       </div>
 
-      {/* Conexão Simplificada Meta */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SimpleMetaConnect />
+      {/* Sistema Simplificado de Configuração Meta Ads */}
+      {showSetupModal && selectedConnector?.id === 'meta-ads' ? (
+        <MetaAdsSetup
+          onSuccess={() => {
+            setShowSetupModal(false);
+            setSelectedConnector(null);
+            loadDataSources();
+          }}
+          onCancel={() => {
+            setShowSetupModal(false);
+            setSelectedConnector(null);
+          }}
+        />
+      ) : (
+        <>
+          {/* Gerenciamento de Conexões Meta */}
+          <MetaConnectionsManager
+            onAddNew={() => {
+              const metaConnector = availableConnectors.find(c => c.id === 'meta-ads');
+              if (metaConnector) {
+                setSelectedConnector(metaConnector);
+                setShowSetupModal(true);
+              }
+            }}
+          />
 
-        {/* Placeholder para Google Ads - Em breve */}
-        <Card className="opacity-70 cursor-not-allowed relative bg-gray-50/80 hover:opacity-70 transition-opacity">
-          {/* Badge "Em breve" no topo do card */}
-          <div className="absolute top-4 right-4 z-10">
-            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
-              Em breve
-            </span>
-          </div>
+          {/* Conexão Simplificada Meta - Mantida para compatibilidade */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <SimpleMetaConnect />
 
-          <div className="pointer-events-none">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <img src="/google-ads-icon.svg" alt="Google Ads" className="w-12 h-12 grayscale opacity-50" />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Google Ads</h3>
-                  <p className="text-sm text-gray-600">2 campanhas</p>
-                </div>
+            {/* Placeholder para Google Ads - Em breve */}
+            <Card className="opacity-70 cursor-not-allowed relative bg-gray-50/80 hover:opacity-70 transition-opacity">
+              {/* Badge "Em breve" no topo do card */}
+              <div className="absolute top-4 right-4 z-10">
+                <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
+                  Em breve
+                </span>
               </div>
-            </div>
-            <p className="text-gray-600 text-sm">
-              Conexão com Google Ads será disponibilizada em breve.
-            </p>
+
+              <div className="pointer-events-none">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center space-x-3">
+                    <img src="/google-ads-icon.svg" alt="Google Ads" className="w-12 h-12 grayscale opacity-50" />
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Google Ads</h3>
+                      <p className="text-sm text-gray-600">2 campanhas</p>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-gray-600 text-sm">
+                  Conexão com Google Ads será disponibilizada em breve.
+                </p>
+              </div>
+            </Card>
           </div>
-        </Card>
-      </div>
+        </>
+      )}
 
       {/* Connected Sources */}
       <Card>
