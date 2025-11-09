@@ -22,7 +22,7 @@ import {
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { DataSourceSetup } from './DataSourceSetup';
-import { SimpleMetaConnectV2 } from './SimpleMetaConnectV2';
+import { SimpleMetaConnect } from './SimpleMetaConnect';
 import { supabase } from '../../lib/supabase';
 import { 
   DataSyncService, 
@@ -341,7 +341,7 @@ export const DataSources: React.FC = () => {
 
       {/* Conexão Simplificada Meta */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SimpleMetaConnectV2 />
+        <SimpleMetaConnect />
 
         {/* Placeholder para Google Ads - Em breve */}
         <Card className="opacity-70 cursor-not-allowed relative bg-gray-50/80 hover:opacity-70 transition-opacity">

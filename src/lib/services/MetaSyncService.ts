@@ -38,7 +38,6 @@ export class MetaSyncService {
 
   /**
    * Sincroniza todos os dados de uma conexão Meta
-   * Agora suporta sincronização seletiva de campanhas
    * @param connectionId ID da conexão no banco de dados
    */
   async syncConnection(connectionId: string): Promise<void> {
@@ -89,36 +88,10 @@ export class MetaSyncService {
       const accountId = connection.config?.accountId;
       if (!accountId) throw new Error('Account ID não encontrado');
 
-      // Busca meta_account associada a esta conexão
-      const { data: metaAccount } = await supabase
-        .from('meta_accounts')
-        .select('id')
-        .eq('connection_id', connectionId)
-        .maybeSingle();
-
-      // Busca IDs de campanhas selecionadas se houver meta_account
-      let selectedCampaignIds: string[] = [];
-      if (metaAccount) {
-        const { data: selectedCampaigns } = await supabase
-          .from('selected_campaigns')
-          .select('campaign_id')
-          .eq('meta_account_id', metaAccount.id);
-
-        selectedCampaignIds = (selectedCampaigns || []).map(sc => sc.campaign_id);
-        logger.info('Campanhas selecionadas encontradas', { count: selectedCampaignIds.length });
-      }
-
       // 1. Busca campanhas
       logger.info('Buscando campanhas Meta');
-      const allCampaigns = await this.fetchCampaigns(accountId);
-      logger.info('Campanhas encontradas', { count: allCampaigns.length });
-
-      // Filtra apenas campanhas selecionadas se houver seleção
-      const campaigns = selectedCampaignIds.length > 0
-        ? allCampaigns.filter(c => selectedCampaignIds.includes(c.id))
-        : allCampaigns;
-
-      logger.info('Campanhas a sincronizar', { count: campaigns.length });
+      const campaigns = await this.fetchCampaigns(accountId);
+      logger.info('Campanhas encontradas', { count: campaigns.length });
 
       // 2. Salva campanhas no banco
       for (const campaign of campaigns) {
@@ -142,9 +115,9 @@ export class MetaSyncService {
           }
         }
 
-        // 7. Busca métricas da campanha (últimos 7 dias)
+        // 7. Busca métricas da campanha (últimos 30 dias)
         const dateEnd = new Date().toISOString().split('T')[0];
-        const dateStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const dateStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
         const insights = await this.fetchInsights(campaign.id, dateStart, dateEnd);
         logger.info('Métricas encontradas', { campaignId: campaign.id, count: insights.length });
