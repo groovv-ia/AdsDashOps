@@ -283,17 +283,35 @@ export class MetaSyncService {
       if (shouldOnlyFetchCampaigns) {
         logger.info('Aguardando seleção de campanhas pelo usuário');
 
+        // Transforma campanhas para o formato esperado pelo seletor
+        const formattedCampaigns = allCampaigns.map(campaign => ({
+          id: campaign.id,
+          name: campaign.name,
+          status: campaign.status,
+          objective: campaign.objective || 'OUTCOME_ENGAGEMENT',
+          dailyBudget: campaign.daily_budget ? parseFloat(campaign.daily_budget) / 100 : undefined,
+          lifetimeBudget: campaign.lifetime_budget ? parseFloat(campaign.lifetime_budget) / 100 : undefined,
+          startDate: campaign.start_time,
+          endDate: campaign.stop_time,
+          platform: 'Meta'
+        }));
+
         this.updateProgress('awaiting_selection', allCampaigns.length, allCampaigns.length, 'Aguardando seleção de campanhas', {
-          campaigns: allCampaigns
+          campaigns: formattedCampaigns
         });
 
         // Atualiza status para aguardando seleção
         await supabase
           .from('data_connections')
           .update({
-            status: 'awaiting_selection'
+            status: 'awaiting_selection',
+            last_sync: new Date().toISOString()
           })
           .eq('id', connectionId);
+
+        logger.info('Status atualizado para awaiting_selection, campanhas formatadas', {
+          count: formattedCampaigns.length
+        });
 
         return;
       }

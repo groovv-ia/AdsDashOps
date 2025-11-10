@@ -218,12 +218,25 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
             count: progress.campaigns.length
           });
 
+          // Para o spinner de sincronização
+          setSyncingId(null);
+          setSyncProgress('');
+
           // Busca informações da conexão
           const connection = connections.find(c => c.id === connectionId);
           if (connection) {
+            logger.info('Exibindo seletor de campanhas', {
+              connectionId: connection.id,
+              accountName: connection.accountName,
+              campaignsCount: progress.campaigns.length
+            });
+
             setSelectedAccount(connection);
             setAvailableCampaigns(progress.campaigns);
             setShowCampaignSelector(true);
+          } else {
+            logger.error('Conexão não encontrada para exibir seletor', { connectionId });
+            setError('Erro ao exibir seletor de campanhas. Recarregue a página.');
           }
         }
       });
@@ -232,10 +245,13 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
       await syncService.syncConnection(connectionId);
 
       logger.info('Sincronização concluída', { connectionId });
-      setSyncProgress('');
 
-      // Recarrega conexões para atualizar last_sync
-      await loadConnections();
+      // Se não está mostrando o seletor, significa que a sincronização foi completa
+      if (!showCampaignSelector) {
+        setSyncProgress('');
+        // Recarrega conexões para atualizar last_sync
+        await loadConnections();
+      }
 
     } catch (err: any) {
       logger.error('Erro na sincronização', err);
@@ -393,6 +409,7 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
     const statusMap: Record<string, { label: string; variant: 'success' | 'warning' | 'error' | 'info' }> = {
       connected: { label: 'Conectado', variant: 'success' },
       syncing: { label: 'Sincronizando', variant: 'info' },
+      awaiting_selection: { label: 'Aguardando Seleção', variant: 'warning' },
       error: { label: 'Erro', variant: 'error' },
       disconnected: { label: 'Desconectado', variant: 'warning' },
     };
@@ -585,8 +602,37 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                 </div>
               )}
 
+              {/* Alerta para seleção de campanhas */}
+              {connection.status === 'awaiting_selection' && (
+                <div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <div className="flex items-center space-x-2">
+                    <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-yellow-900">
+                        Seleção de Campanhas Necessária
+                      </p>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        {connection.totalCampaigns} campanhas encontradas. Clique em "Selecionar Campanhas" para escolher quais deseja monitorar.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Ações */}
               <div className="flex items-center space-x-2 mt-4 pt-4 border-t border-gray-200">
+                {/* Botão Selecionar Campanhas - se está aguardando seleção */}
+                {connection.status === 'awaiting_selection' && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={() => handleManageSelection(connection)}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Selecionar Campanhas
+                  </Button>
+                )}
+
                 {/* Botão Ver Métricas - apenas se campanhas foram selecionadas */}
                 {connection.campaignSelectionCompleted && connection.selectedCampaignsCount && connection.selectedCampaignsCount > 0 && (
                   <Button
