@@ -6,27 +6,17 @@ import { decryptData } from '../utils/encryption';
  * Interface para callback de progresso da sincronização
  */
 export interface SyncProgress {
-  phase: 'validating' | 'campaigns' | 'adsets' | 'ads' | 'metrics' | 'complete' | 'error' | 'awaiting_selection';
+  phase: 'validating' | 'campaigns' | 'adsets' | 'ads' | 'metrics' | 'complete' | 'error';
   current: number;
   total: number;
   message: string;
   percentage: number;
-  campaigns?: any[]; // Campanhas disponíveis para seleção
 }
 
 /**
  * Tipo do callback de progresso
  */
 export type ProgressCallback = (progress: SyncProgress) => void;
-
-/**
- * Interface para resultado da sincronização
- */
-export interface SyncResult {
-  success: boolean;
-  campaigns?: any[];
-  error?: string;
-}
 
 /**
  * Serviço responsável por sincronizar dados da Meta Ads API
@@ -60,18 +50,11 @@ export class MetaSyncService {
   /**
    * Atualiza o progresso da sincronização
    */
-  private updateProgress(phase: SyncProgress['phase'], current: number, total: number, message: string, extra?: { campaigns?: any[] }): void {
+  private updateProgress(phase: SyncProgress['phase'], current: number, total: number, message: string): void {
     const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
 
     if (this.progressCallback) {
-      this.progressCallback({
-        phase,
-        current,
-        total,
-        message,
-        percentage,
-        campaigns: extra?.campaigns
-      });
+      this.progressCallback({ phase, current, total, message, percentage });
     }
 
     logger.info(`Progresso da sincronização: ${message}`, { phase, current, total, percentage });
@@ -184,9 +167,6 @@ export class MetaSyncService {
 
       if (!connection) throw new Error('Conexão não encontrada');
 
-      // Verifica se deve fazer sincronização completa ou apenas buscar campanhas
-      const shouldOnlyFetchCampaigns = !connection?.campaign_selection_completed;
-
       // Busca token OAuth se não foi passado no construtor
       if (!this.accessToken) {
         const { data: tokenData, error: tokenError } = await supabase
@@ -256,17 +236,27 @@ export class MetaSyncService {
       const accountId = connection.config?.accountId;
       if (!accountId) throw new Error('Account ID não encontrado');
 
-      // 1. Busca todas as campanhas da conta
+      // 1. Busca campanhas ativas dos últimos 90 dias
       this.updateProgress('campaigns', 0, 1, 'Buscando campanhas...');
       logger.info('Buscando campanhas Meta');
       const allCampaigns = await this.fetchCampaigns(accountId);
 
-      logger.info('Campanhas encontradas', {
-        total: allCampaigns.length
+      // Filtra apenas campanhas ativas ou recentes
+      const recentDate = new Date();
+      recentDate.setDate(recentDate.getDate() - 90); // Últimos 90 dias
+
+      const campaigns = allCampaigns.filter(campaign => {
+        const createdDate = new Date(campaign.created_time);
+        return campaign.status === 'ACTIVE' || createdDate >= recentDate;
       });
 
-      if (allCampaigns.length === 0) {
-        this.updateProgress('complete', 1, 1, 'Nenhuma campanha encontrada');
+      logger.info('Campanhas filtradas para sincronização', {
+        total: allCampaigns.length,
+        filtered: campaigns.length
+      });
+
+      if (campaigns.length === 0) {
+        this.updateProgress('complete', 1, 1, 'Nenhuma campanha ativa encontrada');
 
         await supabase
           .from('data_connections')
@@ -278,67 +268,6 @@ export class MetaSyncService {
 
         return;
       }
-
-      // Se ainda não selecionou campanhas, retorna lista para seleção
-      if (shouldOnlyFetchCampaigns) {
-        logger.info('Aguardando seleção de campanhas pelo usuário');
-
-        // Transforma campanhas para o formato esperado pelo seletor
-        const formattedCampaigns = allCampaigns.map(campaign => ({
-          id: campaign.id,
-          name: campaign.name,
-          status: campaign.status,
-          objective: campaign.objective || 'OUTCOME_ENGAGEMENT',
-          dailyBudget: campaign.daily_budget ? parseFloat(campaign.daily_budget) / 100 : undefined,
-          lifetimeBudget: campaign.lifetime_budget ? parseFloat(campaign.lifetime_budget) / 100 : undefined,
-          startDate: campaign.start_time,
-          endDate: campaign.stop_time,
-          platform: 'Meta'
-        }));
-
-        this.updateProgress('awaiting_selection', allCampaigns.length, allCampaigns.length, 'Aguardando seleção de campanhas', {
-          campaigns: formattedCampaigns
-        });
-
-        // Atualiza status para aguardando seleção
-        await supabase
-          .from('data_connections')
-          .update({
-            status: 'awaiting_selection',
-            last_sync: new Date().toISOString()
-          })
-          .eq('id', connectionId);
-
-        logger.info('Status atualizado para awaiting_selection, campanhas formatadas', {
-          count: formattedCampaigns.length
-        });
-
-        return;
-      }
-
-      // Busca campanhas selecionadas pelo usuário
-      const { data: selectedCampaigns } = await supabase
-        .from('selected_campaigns')
-        .select('campaign_id')
-        .eq('connection_id', connectionId);
-
-      if (!selectedCampaigns || selectedCampaigns.length === 0) {
-        logger.warn('Nenhuma campanha selecionada para sincronizar');
-        this.updateProgress('complete', 1, 1, 'Nenhuma campanha selecionada');
-        return;
-      }
-
-      const selectedCampaignIds = new Set(selectedCampaigns.map(sc => sc.campaign_id));
-
-      // Filtra apenas campanhas selecionadas
-      const campaigns = allCampaigns.filter(campaign =>
-        selectedCampaignIds.has(campaign.id)
-      );
-
-      logger.info('Sincronizando apenas campanhas selecionadas', {
-        total: allCampaigns.length,
-        selected: campaigns.length
-      });
 
       // 2. Processa campanhas em lotes para evitar rate limit
       const totalCampaigns = campaigns.length;

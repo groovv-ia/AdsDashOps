@@ -101,40 +101,20 @@ export const CampaignTable: React.FC<CampaignTableProps> = ({
   };
 
   const getStatusColor = (status: string) => {
-    // Normaliza o status para maiúsculas para comparar
-    const normalizedStatus = status?.toUpperCase();
-
-    switch (normalizedStatus) {
-      case 'ACTIVE':
-        return 'bg-green-100 text-green-800';
-      case 'PAUSED':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'ENDED':
-      case 'ARCHIVED':
-      case 'DELETED':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+    switch (status) {
+      case 'Active': return 'bg-green-100 text-green-800';
+      case 'Paused': return 'bg-yellow-100 text-yellow-800';
+      case 'Ended': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getStatusText = (status: string) => {
-    // Normaliza o status para maiúsculas para comparar
-    const normalizedStatus = status?.toUpperCase();
-
-    switch (normalizedStatus) {
-      case 'ACTIVE':
-        return 'Ativo';
-      case 'PAUSED':
-        return 'Pausado';
-      case 'ENDED':
-      case 'ARCHIVED':
-        return 'Finalizado';
-      case 'DELETED':
-        return 'Deletado';
-      default:
-        // Retorna o status original se não reconhecido
-        return status;
+    switch (status) {
+      case 'Active': return 'Ativo';
+      case 'Paused': return 'Pausado';
+      case 'Ended': return 'Finalizado';
+      default: return status;
     }
   };
 

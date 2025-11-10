@@ -42,7 +42,7 @@ interface DataSource {
   name: string;
   platform: string;
   type: 'advertising' | 'analytics' | 'crm' | 'database' | 'file';
-  status: 'connected' | 'disconnected' | 'error' | 'syncing' | 'awaiting_selection';
+  status: 'connected' | 'disconnected' | 'error' | 'syncing';
   lastSync: string;
   accountId?: string;
   logo: string;
@@ -174,7 +174,6 @@ export const DataSources: React.FC = () => {
     switch (status) {
       case 'connected': return 'text-green-600 bg-green-100';
       case 'syncing': return 'text-blue-600 bg-blue-100';
-      case 'awaiting_selection': return 'text-yellow-600 bg-yellow-100';
       case 'error': return 'text-red-600 bg-red-100';
       case 'disconnected': return 'text-gray-600 bg-gray-100';
       default: return 'text-gray-600 bg-gray-100';
@@ -185,7 +184,6 @@ export const DataSources: React.FC = () => {
     switch (status) {
       case 'connected': return 'Conectado';
       case 'syncing': return 'Sincronizando';
-      case 'awaiting_selection': return 'Aguardando Seleção';
       case 'error': return 'Erro';
       case 'disconnected': return 'Desconectado';
       default: return status;

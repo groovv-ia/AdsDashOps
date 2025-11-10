@@ -16,7 +16,6 @@ import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { MetaAdsService } from '../../lib/connectors/meta/MetaAdsService';
-import { supabase } from '../../lib/supabase';
 import { logger } from '../../lib/utils/logger';
 
 interface MetaCampaignDetailsProps {
@@ -27,7 +26,7 @@ interface MetaCampaignDetailsProps {
 }
 
 type ViewLevel = 'campaigns' | 'adsets' | 'ads';
-type StatusFilter = 'ACTIVE' | 'all' | 'PAUSED' | 'ARCHIVED';
+type StatusFilter = 'all' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
 
 /**
  * Componente para visualização detalhada de campanhas Meta
@@ -48,7 +47,6 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
 }) => {
   // Estados para dados
   const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [selectedCampaignIds, setSelectedCampaignIds] = useState<Set<string>>(new Set());
   const [adSets, setAdSets] = useState<Record<string, any[]>>({});
   const [ads, setAds] = useState<Record<string, any[]>>({});
 
@@ -58,59 +56,36 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set());
   const [expandedAdSets, setExpandedAdSets] = useState<Set<string>>(new Set());
 
-  // Estados de filtro - Por padrão mostra apenas campanhas ATIVAS
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ACTIVE');
+  // Estados de filtro
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   /**
-   * Carrega campanhas selecionadas ao montar componente
+   * Carrega campanhas da conta ao montar componente
    */
   useEffect(() => {
-    loadSelectedCampaigns();
-  }, [connectionId]);
+    loadCampaigns();
+  }, [accountId]);
 
   /**
-   * Carrega apenas campanhas selecionadas pelo usuário
+   * Busca todas as campanhas da conta
    */
-  const loadSelectedCampaigns = async () => {
+  const loadCampaigns = async () => {
     setLoading(true);
     setError('');
 
     try {
-      logger.info('Carregando campanhas selecionadas', { connectionId });
+      logger.info('Carregando campanhas da conta', { accountId });
 
-      // Busca IDs das campanhas selecionadas
-      const { data: selectedCampaigns, error: selectedError } = await supabase
-        .from('selected_campaigns')
-        .select('campaign_id')
-        .eq('connection_id', connectionId);
+      const metaService = new MetaAdsService();
+      const campaignsList = await metaService.getCampaigns(connectionId, accountId);
 
-      if (selectedError) throw selectedError;
-
-      if (!selectedCampaigns || selectedCampaigns.length === 0) {
-        setError('Nenhuma campanha selecionada para esta conta');
-        setLoading(false);
-        return;
-      }
-
-      const selectedIds = new Set(selectedCampaigns.map(sc => sc.campaign_id));
-      setSelectedCampaignIds(selectedIds);
-
-      // Busca detalhes das campanhas do banco (já sincronizadas)
-      const { data: campaignsData, error: campaignsError } = await supabase
-        .from('campaigns')
-        .select('*')
-        .eq('connection_id', connectionId)
-        .in('id', Array.from(selectedIds));
-
-      if (campaignsError) throw campaignsError;
-
-      logger.info('Campanhas selecionadas carregadas', { count: campaignsData?.length || 0 });
-      setCampaigns(campaignsData || []);
+      logger.info('Campanhas carregadas', { count: campaignsList.length });
+      setCampaigns(campaignsList);
 
     } catch (err: any) {
-      logger.error('Erro ao carregar campanhas selecionadas', err);
-      setError(err.message || 'Erro ao carregar campanhas selecionadas');
+      logger.error('Erro ao carregar campanhas', err);
+      setError(err.message || 'Erro ao carregar campanhas');
     } finally {
       setLoading(false);
     }
@@ -247,12 +222,9 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
 
   /**
    * Filtra campanhas baseado em status e busca
-   * Por padrão mostra apenas campanhas ATIVAS
    */
   const filteredCampaigns = campaigns.filter(campaign => {
-    // Normaliza o status da campanha para comparar
-    const campaignStatus = campaign.status?.toUpperCase();
-    const matchesStatus = statusFilter === 'all' || campaignStatus === statusFilter;
+    const matchesStatus = statusFilter === 'all' || campaign.status === statusFilter;
     const matchesSearch = campaign.name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
   });
@@ -412,14 +384,14 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
 
-          {/* Filtro de status - ACTIVE como padrão */}
+          {/* Filtro de status */}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           >
-            <option value="ACTIVE">Somente Ativos</option>
             <option value="all">Todos os Status</option>
+            <option value="ACTIVE">Ativos</option>
             <option value="PAUSED">Pausados</option>
             <option value="ARCHIVED">Arquivados</option>
           </select>
@@ -427,10 +399,7 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
 
         {/* Contador */}
         <p className="mt-3 text-sm text-gray-600">
-          Exibindo <strong>{filteredCampaigns.length}</strong> de <strong>{campaigns.length}</strong> campanhas selecionadas
-        </p>
-        <p className="text-xs text-gray-500 mt-1">
-          ℹ️ Apenas campanhas que você selecionou estão sendo exibidas
+          Exibindo <strong>{filteredCampaigns.length}</strong> de <strong>{campaigns.length}</strong> campanhas
         </p>
       </Card>
 

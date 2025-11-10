@@ -7,7 +7,7 @@ export interface DataSource {
   name: string;
   platform: string;
   type: 'advertising' | 'analytics' | 'crm' | 'file';
-  status: 'connected' | 'disconnected' | 'error' | 'syncing' | 'awaiting_selection';
+  status: 'connected' | 'disconnected' | 'error' | 'syncing';
   lastSync: string;
   accountId?: string;
   logo: string;
