@@ -17,6 +17,8 @@ import { MetaSyncService } from '../../lib/services/MetaSyncService';
 import { logger } from '../../lib/utils/logger';
 import { decryptData, encryptData } from '../../lib/utils/encryption';
 import { MetaCampaignDetails } from './MetaCampaignDetails';
+import { MetaCampaignSelector } from './MetaCampaignSelector';
+import { SelectedCampaignsMetrics } from './SelectedCampaignsMetrics';
 import { Modal } from '../ui/Modal';
 
 interface MetaConnection {
@@ -28,6 +30,8 @@ interface MetaConnection {
   currency: string;
   totalCampaigns: number;
   activeCampaigns: number;
+  selectedCampaignsCount?: number;
+  campaignSelectionCompleted?: boolean;
 }
 
 interface MetaConnectionsManagerProps {
@@ -56,6 +60,10 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
   // Estados para visualização de campanhas
   const [selectedAccount, setSelectedAccount] = useState<MetaConnection | null>(null);
   const [showCampaigns, setShowCampaigns] = useState(false);
+  const [showCampaignSelector, setShowCampaignSelector] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(false);
+  const [availableCampaigns, setAvailableCampaigns] = useState<any[]>([]);
+  const [syncProgress, setSyncProgress] = useState<string>('');
 
   // Estados para edição de token
   const [showTokenModal, setShowTokenModal] = useState(false);
@@ -103,17 +111,24 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
           .eq('connection_id', conn.id)
           .maybeSingle();
 
-        // Conta campanhas
+        // Conta campanhas totais
         const { count: totalCampaigns } = await supabase
           .from('campaigns')
           .select('*', { count: 'exact', head: true })
           .eq('connection_id', conn.id);
 
+        // Conta campanhas ativas
         const { count: activeCampaigns } = await supabase
           .from('campaigns')
           .select('*', { count: 'exact', head: true })
           .eq('connection_id', conn.id)
           .eq('status', 'ACTIVE');
+
+        // Conta campanhas selecionadas
+        const { count: selectedCampaignsCount } = await supabase
+          .from('selected_campaigns')
+          .select('*', { count: 'exact', head: true })
+          .eq('connection_id', conn.id);
 
         enrichedConnections.push({
           id: conn.id,
@@ -124,6 +139,8 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
           currency: conn.config?.currency || metaAccount?.currency || 'BRL',
           totalCampaigns: totalCampaigns || 0,
           activeCampaigns: activeCampaigns || 0,
+          selectedCampaignsCount: selectedCampaignsCount || 0,
+          campaignSelectionCompleted: conn.campaign_selection_completed || false,
         });
       }
 
@@ -191,13 +208,31 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
         accessToken = tokenData.access_token.trim();
       }
 
-      // Cria serviço de sincronização
-      const syncService = new MetaSyncService(accessToken);
+      // Cria serviço de sincronização com callback de progresso
+      const syncService = new MetaSyncService(accessToken, (progress) => {
+        setSyncProgress(progress.message);
+
+        // Se chegou na fase de aguardar seleção, mostra seletor
+        if (progress.phase === 'awaiting_selection' && progress.campaigns) {
+          logger.info('Sincronização retornou campanhas para seleção', {
+            count: progress.campaigns.length
+          });
+
+          // Busca informações da conexão
+          const connection = connections.find(c => c.id === connectionId);
+          if (connection) {
+            setSelectedAccount(connection);
+            setAvailableCampaigns(progress.campaigns);
+            setShowCampaignSelector(true);
+          }
+        }
+      });
 
       // Executa sincronização
       await syncService.syncConnection(connectionId);
 
       logger.info('Sincronização concluída', { connectionId });
+      setSyncProgress('');
 
       // Recarrega conexões para atualizar last_sync
       await loadConnections();
@@ -314,6 +349,44 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
   };
 
   /**
+   * Abre visualização de métricas das campanhas selecionadas
+   */
+  const handleViewMetrics = (connection: MetaConnection) => {
+    setSelectedAccount(connection);
+    setShowMetrics(true);
+  };
+
+  /**
+   * Abre seletor de campanhas para editar seleção
+   */
+  const handleManageSelection = async (connection: MetaConnection) => {
+    try {
+      logger.info('Carregando campanhas para editar seleção', { connectionId: connection.id });
+
+      // Busca todas as campanhas sincronizadas desta conta
+      const { data: campaigns, error: campaignsError } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('connection_id', connection.id);
+
+      if (campaignsError) throw campaignsError;
+
+      if (!campaigns || campaigns.length === 0) {
+        setError('Nenhuma campanha encontrada. Sincronize a conta primeiro.');
+        return;
+      }
+
+      setSelectedAccount(connection);
+      setAvailableCampaigns(campaigns);
+      setShowCampaignSelector(true);
+
+    } catch (err: any) {
+      logger.error('Erro ao carregar campanhas', err);
+      setError(err.message || 'Erro ao carregar campanhas');
+    }
+  };
+
+  /**
    * Retorna badge de status da conexão
    */
   const getStatusBadge = (status: string) => {
@@ -348,6 +421,43 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
     const diffDays = Math.floor(diffHours / 24);
     return `Há ${diffDays} dia${diffDays > 1 ? 's' : ''}`;
   };
+
+  // Se está exibindo seletor de campanhas
+  if (showCampaignSelector && selectedAccount) {
+    return (
+      <MetaCampaignSelector
+        connectionId={selectedAccount.id}
+        accountId={selectedAccount.accountId}
+        accountName={selectedAccount.accountName}
+        campaigns={availableCampaigns}
+        onSelectionComplete={() => {
+          setShowCampaignSelector(false);
+          setSelectedAccount(null);
+          setAvailableCampaigns([]);
+          loadConnections();
+        }}
+        onCancel={() => {
+          setShowCampaignSelector(false);
+          setSelectedAccount(null);
+          setAvailableCampaigns([]);
+        }}
+      />
+    );
+  }
+
+  // Se está exibindo métricas
+  if (showMetrics && selectedAccount) {
+    return (
+      <SelectedCampaignsMetrics
+        connectionId={selectedAccount.id}
+        accountName={selectedAccount.accountName}
+        onBack={() => {
+          setShowMetrics(false);
+          setSelectedAccount(null);
+        }}
+      />
+    );
+  }
 
   // Se está exibindo campanhas, mostra o componente de detalhes
   if (showCampaigns && selectedAccount) {
@@ -452,9 +562,9 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                       <p className="font-medium text-gray-900">{connection.currency}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Campanhas Ativas</p>
+                      <p className="text-gray-500">Campanhas Selecionadas</p>
                       <p className="font-medium text-gray-900">
-                        {connection.activeCampaigns} / {connection.totalCampaigns}
+                        {connection.selectedCampaignsCount || 0} de {connection.totalCampaigns}
                       </p>
                     </div>
                     <div>
@@ -468,8 +578,27 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                 </div>
               </div>
 
+              {/* Progresso da sincronização */}
+              {syncingId === connection.id && syncProgress && (
+                <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-700">{syncProgress}</p>
+                </div>
+              )}
+
               {/* Ações */}
               <div className="flex items-center space-x-2 mt-4 pt-4 border-t border-gray-200">
+                {/* Botão Ver Métricas - apenas se campanhas foram selecionadas */}
+                {connection.campaignSelectionCompleted && connection.selectedCampaignsCount && connection.selectedCampaignsCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={() => handleViewMetrics(connection)}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Ver Métricas
+                  </Button>
+                )}
+
                 <Button
                   size="sm"
                   variant="secondary"
@@ -478,6 +607,18 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                   <Eye className="h-4 w-4 mr-2" />
                   Ver Campanhas
                 </Button>
+
+                {/* Botão Gerenciar Seleção - se já selecionou antes */}
+                {connection.campaignSelectionCompleted && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleManageSelection(connection)}
+                  >
+                    <Settings className="h-4 w-4 mr-2" />
+                    Gerenciar Seleção
+                  </Button>
+                )}
 
                 <Button
                   size="sm"
@@ -488,7 +629,7 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                   {syncingId === connection.id ? (
                     <>
                       <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      Sincronizando...
+                      {syncProgress ? 'Sincronizando...' : 'Aguarde...'}
                     </>
                   ) : (
                     <>
@@ -505,7 +646,7 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                   title="Atualizar token de acesso"
                 >
                   <Settings className="h-4 w-4 mr-2" />
-                  Atualizar Token
+                  Token
                 </Button>
 
                 <Button

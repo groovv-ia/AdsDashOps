@@ -16,6 +16,7 @@ import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { MetaAdsService } from '../../lib/connectors/meta/MetaAdsService';
+import { supabase } from '../../lib/supabase';
 import { logger } from '../../lib/utils/logger';
 
 interface MetaCampaignDetailsProps {
@@ -47,6 +48,7 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
 }) => {
   // Estados para dados
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<Set<string>>(new Set());
   const [adSets, setAdSets] = useState<Record<string, any[]>>({});
   const [ads, setAds] = useState<Record<string, any[]>>({});
 
@@ -61,31 +63,54 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
 
   /**
-   * Carrega campanhas da conta ao montar componente
+   * Carrega campanhas selecionadas ao montar componente
    */
   useEffect(() => {
-    loadCampaigns();
-  }, [accountId]);
+    loadSelectedCampaigns();
+  }, [connectionId]);
 
   /**
-   * Busca todas as campanhas da conta
+   * Carrega apenas campanhas selecionadas pelo usuário
    */
-  const loadCampaigns = async () => {
+  const loadSelectedCampaigns = async () => {
     setLoading(true);
     setError('');
 
     try {
-      logger.info('Carregando campanhas da conta', { accountId });
+      logger.info('Carregando campanhas selecionadas', { connectionId });
 
-      const metaService = new MetaAdsService();
-      const campaignsList = await metaService.getCampaigns(connectionId, accountId);
+      // Busca IDs das campanhas selecionadas
+      const { data: selectedCampaigns, error: selectedError } = await supabase
+        .from('selected_campaigns')
+        .select('campaign_id')
+        .eq('connection_id', connectionId);
 
-      logger.info('Campanhas carregadas', { count: campaignsList.length });
-      setCampaigns(campaignsList);
+      if (selectedError) throw selectedError;
+
+      if (!selectedCampaigns || selectedCampaigns.length === 0) {
+        setError('Nenhuma campanha selecionada para esta conta');
+        setLoading(false);
+        return;
+      }
+
+      const selectedIds = new Set(selectedCampaigns.map(sc => sc.campaign_id));
+      setSelectedCampaignIds(selectedIds);
+
+      // Busca detalhes das campanhas do banco (já sincronizadas)
+      const { data: campaignsData, error: campaignsError } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('connection_id', connectionId)
+        .in('id', Array.from(selectedIds));
+
+      if (campaignsError) throw campaignsError;
+
+      logger.info('Campanhas selecionadas carregadas', { count: campaignsData?.length || 0 });
+      setCampaigns(campaignsData || []);
 
     } catch (err: any) {
-      logger.error('Erro ao carregar campanhas', err);
-      setError(err.message || 'Erro ao carregar campanhas');
+      logger.error('Erro ao carregar campanhas selecionadas', err);
+      setError(err.message || 'Erro ao carregar campanhas selecionadas');
     } finally {
       setLoading(false);
     }
@@ -402,7 +427,10 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
 
         {/* Contador */}
         <p className="mt-3 text-sm text-gray-600">
-          Exibindo <strong>{filteredCampaigns.length}</strong> de <strong>{campaigns.length}</strong> campanhas
+          Exibindo <strong>{filteredCampaigns.length}</strong> de <strong>{campaigns.length}</strong> campanhas selecionadas
+        </p>
+        <p className="text-xs text-gray-500 mt-1">
+          ℹ️ Apenas campanhas que você selecionou estão sendo exibidas
         </p>
       </Card>
 
