@@ -222,6 +222,11 @@ export const MetaAdsSetup: React.FC<MetaAdsSetupProps> = ({ onSuccess, onCancel 
       setSuccess('Configuração salva com sucesso!');
       setCurrentStep('complete');
 
+      // Dispara evento de sincronização completa
+      window.dispatchEvent(new CustomEvent('syncCompleted', {
+        detail: { platform: 'meta', accountsCount: selectedAccounts.size }
+      }));
+
       // Chama callback de sucesso após 2 segundos
       setTimeout(() => {
         if (onSuccess) onSuccess();

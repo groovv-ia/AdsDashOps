@@ -199,6 +199,11 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
 
       logger.info('Sincronização concluída', { connectionId });
 
+      // Dispara evento de sincronização completa
+      window.dispatchEvent(new CustomEvent('syncCompleted', {
+        detail: { platform: 'meta', connectionId }
+      }));
+
       // Recarrega conexões para atualizar last_sync
       await loadConnections();
 

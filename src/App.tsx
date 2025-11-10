@@ -20,6 +20,8 @@ import { DataDeletionPolicy } from './components/legal/DataDeletionPolicy';
 import { CookiePreferencesModal } from './components/legal/CookiePreferencesModal';
 import { CookieSettingsButton } from './components/legal/CookieSettingsButton';
 import { CookieConsentProvider } from './contexts/CookieConsentContext';
+import { CampaignsPage } from './components/campaigns/CampaignsPage';
+import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -50,6 +52,7 @@ function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     platforms: [] as string[],
     campaigns: [] as string[],
@@ -93,6 +96,21 @@ function AppContent() {
 
     window.addEventListener('autoRefresh', handleAutoRefresh as EventListener);
     return () => window.removeEventListener('autoRefresh', handleAutoRefresh as EventListener);
+  }, []);
+
+  // Listen for sync completion and redirect to campaigns page
+  useEffect(() => {
+    const handleSyncCompleted = (event: CustomEvent) => {
+      console.log('Sincronização concluída, redirecionando para página de campanhas', event.detail);
+
+      // Aguarda 2 segundos para que o usuário veja a mensagem de sucesso
+      setTimeout(() => {
+        setCurrentPage('campaigns');
+      }, 2000);
+    };
+
+    window.addEventListener('syncCompleted', handleSyncCompleted as EventListener);
+    return () => window.removeEventListener('syncCompleted', handleSyncCompleted as EventListener);
   }, []);
 
   // Filter data based on current filters
@@ -282,6 +300,29 @@ function AppContent() {
 
   const renderPageContent = () => {
     switch (currentPage) {
+      case 'campaigns':
+        return (
+          <CampaignsPage
+            onNavigateToAnalysis={(campaignId) => {
+              setSelectedCampaignId(campaignId);
+              setCurrentPage('campaign-analysis');
+            }}
+          />
+        );
+      case 'campaign-analysis':
+        if (!selectedCampaignId) {
+          setCurrentPage('campaigns');
+          return null;
+        }
+        return (
+          <CampaignAnalysisPage
+            campaignId={selectedCampaignId}
+            onBack={() => {
+              setSelectedCampaignId(null);
+              setCurrentPage('campaigns');
+            }}
+          />
+        );
       case 'data-sources':
         return <DataSources />;
       case 'settings':
