@@ -8,7 +8,8 @@ import {
   Target,
   Clock,
   BarChart3,
-  ExternalLink
+  ExternalLink,
+  AlertCircle
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
@@ -75,9 +76,16 @@ export const CampaignCard: React.FC<CampaignCardProps> = ({ campaign, onViewAnal
 
   /**
    * Retorna cor de fundo do card baseado na performance (ROAS)
+   * ATUALIZADO: Verifica se tem dados antes de avaliar performance
    */
   const getPerformanceColor = (): string => {
     const roas = campaign.metrics.roas;
+    const hasMetrics = campaign.metrics.impressions > 0 || campaign.metrics.spend > 0;
+
+    // Se não tem métricas, usa cor neutra
+    if (!hasMetrics) return 'border-l-4 border-l-gray-300';
+
+    // Se tem métricas, avalia performance
     if (roas >= 3) return 'border-l-4 border-l-green-500';
     if (roas >= 1.5) return 'border-l-4 border-l-yellow-500';
     if (roas > 0) return 'border-l-4 border-l-orange-500';
@@ -153,10 +161,21 @@ export const CampaignCard: React.FC<CampaignCardProps> = ({ campaign, onViewAnal
     return objectivesMap[objective.toUpperCase()] || objective;
   };
 
+  // Verifica se a campanha tem métricas
+  const hasMetrics = campaign.metrics.impressions > 0 || campaign.metrics.spend > 0 || campaign.metrics.clicks > 0;
+
   return (
     <Card
       className={`hover:shadow-xl transition-all duration-300 ${getPerformanceColor()} overflow-hidden`}
     >
+      {/* Banner de aviso se não tiver métricas */}
+      {!hasMetrics && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 flex items-center space-x-2">
+          <AlertCircle className="h-4 w-4 text-yellow-600 flex-shrink-0" />
+          <span className="text-xs text-yellow-800">Sem métricas - Execute uma nova sincronização</span>
+        </div>
+      )}
+
       {/* Header do card */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0">

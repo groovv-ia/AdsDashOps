@@ -77,6 +77,7 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({ onNavigateToAnalys
 
   /**
    * Busca campanhas do usuário
+   * ATUALIZADO: Agora busca com período mais amplo (90 dias) para garantir pegar todas as campanhas
    */
   const loadCampaigns = async () => {
     setLoading(true);
@@ -86,12 +87,15 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({ onNavigateToAnalys
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
-      logger.info('Carregando campanhas do usuário');
+      logger.info('Carregando campanhas do usuário', { userId: user.id });
+      console.log('🔍 CampaignsPage: Buscando campanhas do usuário:', user.id);
 
-      // Calcula período
+      // Calcula período - usa 90 dias para garantir pegar todas as campanhas recentes
       const dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - parseInt(dateRange));
+      dateFrom.setDate(dateFrom.getDate() - 90);
       const dateTo = new Date();
+
+      console.log(`📅 Período de busca: ${dateFrom.toISOString().split('T')[0]} até ${dateTo.toISOString().split('T')[0]}`);
 
       // Busca campanhas
       const campaignsData = await campaignService.fetchUserCampaigns(user.id, {
@@ -99,11 +103,26 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({ onNavigateToAnalys
         dateTo: dateTo.toISOString().split('T')[0],
       });
 
+      console.log(`✅ ${campaignsData.length} campanhas carregadas com sucesso`);
+
+      // Verifica se alguma campanha não tem métricas
+      const campaignsWithoutMetrics = campaignsData.filter(c =>
+        c.metrics.impressions === 0 &&
+        c.metrics.clicks === 0 &&
+        c.metrics.spend === 0
+      );
+
+      if (campaignsWithoutMetrics.length > 0) {
+        console.log(`⚠️ ${campaignsWithoutMetrics.length} campanhas sem métricas (valores zerados)`);
+        console.log('   Execute uma nova sincronização para buscar métricas.');
+      }
+
       setCampaigns(campaignsData);
       logger.info('Campanhas carregadas', { count: campaignsData.length });
 
     } catch (err: any) {
       logger.error('Erro ao carregar campanhas', err);
+      console.error('❌ Erro ao carregar campanhas:', err);
       setError(err.message || 'Erro ao carregar campanhas');
     } finally {
       setLoading(false);
@@ -427,6 +446,26 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({ onNavigateToAnalys
               </button>
             </div>
           )}
+        </Card>
+      )}
+
+      {/* Aviso sobre métricas */}
+      {campaigns.length > 0 && campaigns.every(c =>
+        c.metrics.impressions === 0 &&
+        c.metrics.clicks === 0 &&
+        c.metrics.spend === 0
+      ) && (
+        <Card className="bg-yellow-50 border-yellow-200">
+          <div className="flex items-center space-x-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600" />
+            <div>
+              <p className="text-yellow-800 font-medium">Campanhas sem métricas</p>
+              <p className="text-yellow-700 text-sm">
+                Suas campanhas foram sincronizadas, mas as métricas ainda não foram carregadas.
+                Execute uma nova sincronização para buscar os dados de performance.
+              </p>
+            </div>
+          </div>
         </Card>
       )}
 

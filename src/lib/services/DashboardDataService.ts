@@ -23,28 +23,34 @@ export class DashboardDataService {
   /**
    * Verifica se o usuário tem dados reais no banco
    * Retorna true se existem campanhas salvas
+   * ATUALIZADO: Agora verifica apenas campanhas, métricas são opcionais
    */
   async hasRealData(): Promise<boolean> {
     try {
       if (!supabase) return false;
 
       const { data: user } = await supabase.auth.getUser();
-      if (!user.user) return false;
-
-      const { data, error } = await supabase
-        .from('campaigns')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.user.id)
-        .limit(1);
-
-      if (error) {
-        console.error('Erro ao verificar dados reais:', error);
+      if (!user.user) {
+        console.log('❌ hasRealData: Usuário não autenticado');
         return false;
       }
 
-      return (data?.length ?? 0) > 0;
+      const { count, error } = await supabase
+        .from('campaigns')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.user.id);
+
+      if (error) {
+        console.error('❌ Erro ao verificar dados reais:', error);
+        return false;
+      }
+
+      const hasData = (count ?? 0) > 0;
+      console.log(`✅ hasRealData: ${hasData} (${count} campanhas encontradas)`);
+
+      return hasData;
     } catch (error) {
-      console.error('Erro ao verificar dados reais:', error);
+      console.error('❌ Erro ao verificar dados reais:', error);
       return false;
     }
   }
@@ -52,24 +58,35 @@ export class DashboardDataService {
   /**
    * Busca campanhas do usuário autenticado
    * Retorna array vazio se não houver dados
+   * CORRIGIDO: Usa order by created_date ao invés de created_at
    */
   async fetchCampaigns(): Promise<Campaign[]> {
     try {
-      if (!supabase) return [];
+      if (!supabase) {
+        console.log('❌ fetchCampaigns: Supabase não disponível');
+        return [];
+      }
 
       const { data: user } = await supabase.auth.getUser();
-      if (!user.user) return [];
+      if (!user.user) {
+        console.log('❌ fetchCampaigns: Usuário não autenticado');
+        return [];
+      }
+
+      console.log('🔍 Buscando campanhas do usuário:', user.user.id);
 
       const { data, error } = await supabase
         .from('campaigns')
         .select('*')
         .eq('user_id', user.user.id)
-        .order('created_at', { ascending: false });
+        .order('created_date', { ascending: false });
 
       if (error) {
-        console.error('Erro ao buscar campanhas:', error);
+        console.error('❌ Erro ao buscar campanhas:', error);
         return [];
       }
+
+      console.log(`✅ ${data?.length || 0} campanhas encontradas`);
 
       // Transforma dados do banco para formato esperado pela aplicação
       return (data || []).map(campaign => ({
@@ -84,7 +101,7 @@ export class DashboardDataService {
         end_date: campaign.end_date
       }));
     } catch (error) {
-      console.error('Erro ao buscar campanhas:', error);
+      console.error('❌ Erro ao buscar campanhas:', error);
       return [];
     }
   }
@@ -92,13 +109,22 @@ export class DashboardDataService {
   /**
    * Busca métricas de anúncios do usuário
    * Pode filtrar por IDs de campanhas específicas
+   * ATUALIZADO: Retorna array vazio se não houver métricas (sem erro)
    */
   async fetchMetrics(campaignIds?: string[]): Promise<AdMetrics[]> {
     try {
-      if (!supabase) return [];
+      if (!supabase) {
+        console.log('❌ fetchMetrics: Supabase não disponível');
+        return [];
+      }
 
       const { data: user } = await supabase.auth.getUser();
-      if (!user.user) return [];
+      if (!user.user) {
+        console.log('❌ fetchMetrics: Usuário não autenticado');
+        return [];
+      }
+
+      console.log('🔍 Buscando métricas do usuário:', user.user.id, campaignIds ? `para ${campaignIds.length} campanhas` : '');
 
       let query = supabase
         .from('ad_metrics')
@@ -114,7 +140,15 @@ export class DashboardDataService {
       const { data, error } = await query;
 
       if (error) {
-        console.error('Erro ao buscar métricas:', error);
+        console.error('❌ Erro ao buscar métricas:', error);
+        return [];
+      }
+
+      console.log(`✅ ${data?.length || 0} métricas encontradas`);
+
+      // Se não há métricas, retorna array vazio (não é erro)
+      if (!data || data.length === 0) {
+        console.log('⚠️ Nenhuma métrica encontrada - campanhas sem dados de performance');
         return [];
       }
 
@@ -137,7 +171,7 @@ export class DashboardDataService {
         cost_per_result: parseFloat(metric.cost_per_result || '0')
       }));
     } catch (error) {
-      console.error('Erro ao buscar métricas:', error);
+      console.error('❌ Erro ao buscar métricas:', error);
       return [];
     }
   }

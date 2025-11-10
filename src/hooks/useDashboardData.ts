@@ -49,31 +49,47 @@ export const useDashboardData = (): DashboardData => {
 
   /**
    * Carrega dados do Supabase ou usa mocks como fallback
+   * ATUALIZADO: Agora exibe campanhas reais mesmo sem métricas
    */
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
 
+      console.log('\n🔄 Iniciando carregamento de dados do dashboard...');
+
       // Busca todos os dados do banco em paralelo
       const data = await dataService.fetchAllDashboardData();
 
-      // Verifica se temos dados reais
+      console.log('📄 Resultado da busca:', {
+        hasRealData: data.hasRealData,
+        campanhas: data.campaigns.length,
+        métricas: data.metrics.length,
+        adSets: data.adSets.length,
+        ads: data.ads.length
+      });
+
+      // Verifica se temos campanhas reais (métricas são opcionais)
       if (data.hasRealData && data.campaigns.length > 0) {
         // Usa dados reais do banco
         setCampaigns(data.campaigns);
-        setMetrics(data.metrics);
+        setMetrics(data.metrics); // Pode ser vazio, sem problema
         setAdSets(data.adSets);
         setAds(data.ads);
         setAdAccounts(data.adAccounts);
         setIsUsingRealData(true);
 
-        console.log('✅ Usando dados reais do Supabase:', {
-          campanhas: data.campaigns.length,
-          métricas: data.metrics.length,
-          adSets: data.adSets.length,
-          ads: data.ads.length
-        });
+        console.log('✅ Usando dados reais do Supabase!');
+        console.log(`   • ${data.campaigns.length} campanhas`);
+        console.log(`   • ${data.metrics.length} métricas`);
+        console.log(`   • ${data.adSets.length} ad sets`);
+        console.log(`   • ${data.ads.length} anúncios`);
+
+        if (data.metrics.length === 0) {
+          console.log('⚠️ Atenção: Campanhas encontradas, mas sem métricas.');
+          console.log('   As campanhas serão exibidas com valores zero.');
+          console.log('   Execute uma nova sincronização para buscar métricas.');
+        }
       } else {
         // Usa dados mockados como fallback
         setCampaigns(mockCampaigns);
@@ -84,9 +100,10 @@ export const useDashboardData = (): DashboardData => {
         setIsUsingRealData(false);
 
         console.log('📊 Usando dados de demonstração (mocks)');
+        console.log('   Nenhuma campanha encontrada no banco.');
       }
     } catch (err) {
-      console.error('Erro ao carregar dados:', err);
+      console.error('❌ Erro ao carregar dados:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
 
       // Em caso de erro, usa mocks como fallback
