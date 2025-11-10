@@ -420,26 +420,6 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
             </Button>
           )}
         </div>
-
-        {/* Estatísticas gerais */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-          <div className="bg-blue-50 rounded-lg p-3">
-            <p className="text-sm text-blue-700 font-medium">Total de Contas</p>
-            <p className="text-2xl font-bold text-blue-900">{connections.length}</p>
-          </div>
-          <div className="bg-green-50 rounded-lg p-3">
-            <p className="text-sm text-green-700 font-medium">Campanhas Ativas</p>
-            <p className="text-2xl font-bold text-green-900">
-              {connections.reduce((sum, conn) => sum + conn.activeCampaigns, 0)}
-            </p>
-          </div>
-          <div className="bg-purple-50 rounded-lg p-3">
-            <p className="text-sm text-purple-700 font-medium">Total de Campanhas</p>
-            <p className="text-2xl font-bold text-purple-900">
-              {connections.reduce((sum, conn) => sum + conn.totalCampaigns, 0)}
-            </p>
-          </div>
-        </div>
       </Card>
 
       {/* Lista de conexões */}
