@@ -3,7 +3,7 @@ import { CheckCircle, AlertCircle, Loader, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { supabase } from '../../lib/supabase';
-import { MetaSyncService } from '../../lib/services/MetaSyncService';
+import { MetaSyncService, SyncProgress } from '../../lib/services/MetaSyncService';
 
 /**
  * Componente simplificado para conexão com Meta Ads
@@ -11,13 +11,17 @@ import { MetaSyncService } from '../../lib/services/MetaSyncService';
  */
 export const SimpleMetaConnect: React.FC = () => {
   // Estados para controle do fluxo
-  const [status, setStatus] = useState<'disconnected' | 'connecting' | 'selecting' | 'connected'>('disconnected');
+  const [status, setStatus] = useState<'disconnected' | 'connecting' | 'selecting' | 'connected' | 'syncing'>('disconnected');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [connectionData, setConnectionData] = useState<any>(null);
   const [showDirectConnect, setShowDirectConnect] = useState(false);
+
+  // Estados para progresso da sincronização
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Verificar se já existe conexão Meta ativa
   useEffect(() => {
@@ -300,11 +304,36 @@ export const SimpleMetaConnect: React.FC = () => {
   };
 
   /**
+   * Callback para receber progresso da sincronização
+   */
+  const handleSyncProgress = (progress: SyncProgress) => {
+    setSyncProgress(progress);
+
+    // Se a sincronização foi concluída, atualiza status
+    if (progress.phase === 'complete') {
+      setStatus('connected');
+      setIsSyncing(false);
+      setTimeout(() => {
+        setSyncProgress(null);
+        checkExistingConnection();
+      }, 3000);
+    } else if (progress.phase === 'error') {
+      setIsSyncing(false);
+      setError(progress.message);
+    }
+  };
+
+  /**
    * Inicia sincronização de dados da conta Meta
    */
   const syncData = async (connectionId: string) => {
     try {
       console.log('Iniciando sincronização de dados da Meta...', connectionId);
+
+      setIsSyncing(true);
+      setStatus('syncing');
+      setSyncProgress(null);
+      setError(null);
 
       // Busca o token de acesso
       const { data: tokenData } = await supabase
@@ -319,24 +348,19 @@ export const SimpleMetaConnect: React.FC = () => {
         throw new Error('Token de acesso não encontrado');
       }
 
-      // Cria instância do serviço de sincronização
-      const syncService = new MetaSyncService(accessToken);
+      // Cria instância do serviço de sincronização com callback de progresso
+      const syncService = new MetaSyncService(accessToken, handleSyncProgress);
 
-      // Inicia sincronização em background
-      syncService.syncConnection(connectionId)
-        .then(() => {
-          console.log('Sincronização concluída com sucesso!');
-          // Recarrega dados da conexão
-          checkExistingConnection();
-        })
-        .catch((error) => {
-          console.error('Erro na sincronização:', error);
-          setError('Erro ao sincronizar dados: ' + error.message);
-        });
+      // Inicia sincronização
+      await syncService.syncConnection(connectionId);
+
+      console.log('Sincronização concluída com sucesso!');
 
     } catch (err: any) {
       console.error('Erro ao iniciar sincronização:', err);
-      setError('Erro ao iniciar sincronização: ' + err.message);
+      setError('Erro ao sincronizar: ' + err.message);
+      setIsSyncing(false);
+      setStatus('connected');
     }
   };
 
@@ -476,12 +500,61 @@ export const SimpleMetaConnect: React.FC = () => {
         </div>
       )}
 
+      {/* Estado: Sincronizando */}
+      {status === 'syncing' && (
+        <div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center space-x-3 mb-3">
+              <Loader className="w-5 h-5 text-blue-600 animate-spin" />
+              <p className="text-sm font-medium text-blue-800">
+                Sincronizando dados do Meta Ads...
+              </p>
+            </div>
+
+            {syncProgress && (
+              <div className="space-y-2">
+                {/* Barra de progresso */}
+                <div className="w-full bg-blue-100 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${syncProgress.percentage}%` }}
+                  />
+                </div>
+
+                {/* Mensagem de progresso */}
+                <p className="text-xs text-blue-700">
+                  {syncProgress.message}
+                </p>
+
+                {/* Contador de itens processados */}
+                {syncProgress.total > 0 && (
+                  <p className="text-xs text-blue-600">
+                    {syncProgress.current} de {syncProgress.total} processados ({syncProgress.percentage}%)
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!syncProgress && (
+              <p className="text-xs text-blue-600">
+                Preparando sincronização...
+              </p>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-500">
+            Este processo pode levar alguns minutos dependendo da quantidade de campanhas.
+            A sincronização continua em background e você pode navegar normalmente.
+          </p>
+        </div>
+      )}
+
       {/* Estado: Conectado */}
-      {status === 'connected' && connectionData && (
+      {status === 'connected' && connectionData && !isSyncing && (
         <div>
           <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
             <p className="text-sm text-green-800">
-              <strong>{connectionData.name}</strong> está conectado e sincronizando automaticamente.
+              <strong>{connectionData.name}</strong> está conectado e sincronizado.
             </p>
             <p className="text-xs text-green-600 mt-1">
               Última sincronização: {new Date(connectionData.last_sync).toLocaleString('pt-BR')}
@@ -493,6 +566,7 @@ export const SimpleMetaConnect: React.FC = () => {
               size="sm"
               onClick={() => syncData(connectionData.id)}
               icon={RefreshCw}
+              disabled={isSyncing}
             >
               Sincronizar Agora
             </Button>
@@ -500,7 +574,7 @@ export const SimpleMetaConnect: React.FC = () => {
               variant="outline"
               size="sm"
               onClick={handleDisconnect}
-              disabled={loading}
+              disabled={loading || isSyncing}
             >
               Desconectar
             </Button>
