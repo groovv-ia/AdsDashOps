@@ -15,8 +15,9 @@ import { Button } from '../ui/Button';
 import { supabase } from '../../lib/supabase';
 import { MetaSyncService } from '../../lib/services/MetaSyncService';
 import { logger } from '../../lib/utils/logger';
-import { decryptData } from '../../lib/utils/encryption';
+import { decryptData, encryptData } from '../../lib/utils/encryption';
 import { MetaCampaignDetails } from './MetaCampaignDetails';
+import { Modal } from '../ui/Modal';
 
 interface MetaConnection {
   id: string;
@@ -55,6 +56,12 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
   // Estados para visualização de campanhas
   const [selectedAccount, setSelectedAccount] = useState<MetaConnection | null>(null);
   const [showCampaigns, setShowCampaigns] = useState(false);
+
+  // Estados para edição de token
+  const [showTokenModal, setShowTokenModal] = useState(false);
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
+  const [newToken, setNewToken] = useState('');
+  const [updatingToken, setUpdatingToken] = useState(false);
 
   /**
    * Carrega todas as conexões Meta do usuário
@@ -200,6 +207,72 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
       setError(err.message || 'Erro ao sincronizar dados');
     } finally {
       setSyncingId(null);
+    }
+  };
+
+  /**
+   * Abre modal para atualizar token
+   */
+  const handleEditToken = (connectionId: string) => {
+    setEditingConnectionId(connectionId);
+    setNewToken('');
+    setShowTokenModal(true);
+    setError('');
+  };
+
+  /**
+   * Atualiza o token de uma conexão existente
+   */
+  const handleUpdateToken = async () => {
+    if (!editingConnectionId || !newToken.trim()) {
+      setError('Token é obrigatório');
+      return;
+    }
+
+    // Valida formato do token Meta (deve começar com EAA)
+    if (!newToken.trim().startsWith('EAA')) {
+      setError('Token inválido. Tokens Meta devem começar com "EAA"');
+      return;
+    }
+
+    setUpdatingToken(true);
+    setError('');
+
+    try {
+      logger.info('Atualizando token da conexão', { connectionId: editingConnectionId });
+
+      // Criptografa o novo token
+      const encryptedToken = encryptData(newToken.trim());
+
+      // Atualiza o token no banco
+      const { error: updateError } = await supabase
+        .from('oauth_tokens')
+        .update({
+          access_token: encryptedToken,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('connection_id', editingConnectionId);
+
+      if (updateError) throw updateError;
+
+      logger.info('Token atualizado com sucesso');
+
+      // Fecha modal
+      setShowTokenModal(false);
+      setNewToken('');
+      setEditingConnectionId(null);
+
+      // Recarrega conexões
+      await loadConnections();
+
+      // Mostra mensagem de sucesso
+      alert('Token atualizado com sucesso! Você já pode sincronizar os dados.');
+
+    } catch (err: any) {
+      logger.error('Erro ao atualizar token', err);
+      setError(err.message || 'Erro ao atualizar token');
+    } finally {
+      setUpdatingToken(false);
     }
   };
 
@@ -428,6 +501,16 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                 <Button
                   size="sm"
                   variant="secondary"
+                  onClick={() => handleEditToken(connection.id)}
+                  title="Atualizar token de acesso"
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  Atualizar Token
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="secondary"
                   onClick={() => handleRemove(connection.id)}
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
@@ -448,6 +531,93 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
             <p className="text-red-700 text-sm">{error}</p>
           </div>
         </Card>
+      )}
+
+      {/* Modal de atualização de token */}
+      {showTokenModal && (
+        <Modal
+          isOpen={showTokenModal}
+          onClose={() => {
+            setShowTokenModal(false);
+            setNewToken('');
+            setEditingConnectionId(null);
+            setError('');
+          }}
+          title="Atualizar Token de Acesso"
+        >
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-gray-600 mb-4">
+                Cole o novo token de acesso do Meta Ads. O token deve começar com "EAA".
+              </p>
+
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Token de Acesso
+              </label>
+              <textarea
+                value={newToken}
+                onChange={(e) => setNewToken(e.target.value)}
+                placeholder="EAA..."
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+              />
+
+              <p className="text-xs text-gray-500 mt-2">
+                💡 Dica: Você pode obter um novo token no{' '}
+                <a
+                  href="https://developers.facebook.com/tools/explorer/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  Meta Graph API Explorer
+                </a>
+              </p>
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                  <p className="text-red-700 text-sm">{error}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center space-x-3 pt-4 border-t border-gray-200">
+              <Button
+                onClick={handleUpdateToken}
+                disabled={updatingToken || !newToken.trim()}
+                className="flex-1"
+              >
+                {updatingToken ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Atualizando...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Atualizar Token
+                  </>
+                )}
+              </Button>
+
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowTokenModal(false);
+                  setNewToken('');
+                  setEditingConnectionId(null);
+                  setError('');
+                }}
+                disabled={updatingToken}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
