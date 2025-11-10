@@ -51,20 +51,27 @@ export class DashboardDataService {
 
   /**
    * Busca campanhas do usuário autenticado
-   * Retorna array vazio se não houver dados
+   * Por padrão retorna apenas campanhas ATIVAS
+   * @param includeAll - Se true, retorna campanhas de todos os status
    */
-  async fetchCampaigns(): Promise<Campaign[]> {
+  async fetchCampaigns(includeAll: boolean = false): Promise<Campaign[]> {
     try {
       if (!supabase) return [];
 
       const { data: user } = await supabase.auth.getUser();
       if (!user.user) return [];
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('campaigns')
         .select('*')
-        .eq('user_id', user.user.id)
-        .order('created_at', { ascending: false });
+        .eq('user_id', user.user.id);
+
+      // Por padrão, busca apenas campanhas ativas
+      if (!includeAll) {
+        query = query.eq('status', 'ACTIVE');
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
         console.error('Erro ao buscar campanhas:', error);
@@ -72,12 +79,13 @@ export class DashboardDataService {
       }
 
       // Transforma dados do banco para formato esperado pela aplicação
+      // Garante que o status está em formato consistente
       return (data || []).map(campaign => ({
         id: campaign.id,
         name: campaign.name,
         platform: campaign.platform,
         account_id: campaign.account_id || '',
-        status: campaign.status,
+        status: campaign.status || 'ACTIVE', // Normaliza status
         objective: campaign.objective || '',
         created_date: campaign.created_date || campaign.created_at?.split('T')[0] || '',
         start_date: campaign.start_date || '',

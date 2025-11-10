@@ -26,7 +26,7 @@ interface MetaCampaignDetailsProps {
 }
 
 type ViewLevel = 'campaigns' | 'adsets' | 'ads';
-type StatusFilter = 'all' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+type StatusFilter = 'ACTIVE' | 'all' | 'PAUSED' | 'ARCHIVED';
 
 /**
  * Componente para visualização detalhada de campanhas Meta
@@ -56,8 +56,8 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set());
   const [expandedAdSets, setExpandedAdSets] = useState<Set<string>>(new Set());
 
-  // Estados de filtro
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  // Estados de filtro - Por padrão mostra apenas campanhas ATIVAS
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
 
   /**
@@ -222,9 +222,12 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
 
   /**
    * Filtra campanhas baseado em status e busca
+   * Por padrão mostra apenas campanhas ATIVAS
    */
   const filteredCampaigns = campaigns.filter(campaign => {
-    const matchesStatus = statusFilter === 'all' || campaign.status === statusFilter;
+    // Normaliza o status da campanha para comparar
+    const campaignStatus = campaign.status?.toUpperCase();
+    const matchesStatus = statusFilter === 'all' || campaignStatus === statusFilter;
     const matchesSearch = campaign.name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
   });
@@ -384,14 +387,14 @@ export const MetaCampaignDetails: React.FC<MetaCampaignDetailsProps> = ({
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
 
-          {/* Filtro de status */}
+          {/* Filtro de status - ACTIVE como padrão */}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           >
+            <option value="ACTIVE">Somente Ativos</option>
             <option value="all">Todos os Status</option>
-            <option value="ACTIVE">Ativos</option>
             <option value="PAUSED">Pausados</option>
             <option value="ARCHIVED">Arquivados</option>
           </select>

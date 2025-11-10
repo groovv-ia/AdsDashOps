@@ -236,22 +236,19 @@ export class MetaSyncService {
       const accountId = connection.config?.accountId;
       if (!accountId) throw new Error('Account ID não encontrado');
 
-      // 1. Busca campanhas ativas dos últimos 90 dias
-      this.updateProgress('campaigns', 0, 1, 'Buscando campanhas...');
+      // 1. Busca apenas campanhas ATIVAS
+      this.updateProgress('campaigns', 0, 1, 'Buscando campanhas ativas...');
       logger.info('Buscando campanhas Meta');
       const allCampaigns = await this.fetchCampaigns(accountId);
 
-      // Filtra apenas campanhas ativas ou recentes
-      const recentDate = new Date();
-      recentDate.setDate(recentDate.getDate() - 90); // Últimos 90 dias
-
+      // Filtra apenas campanhas com status ACTIVE
       const campaigns = allCampaigns.filter(campaign => {
-        const createdDate = new Date(campaign.created_time);
-        return campaign.status === 'ACTIVE' || createdDate >= recentDate;
+        return campaign.status === 'ACTIVE';
       });
 
-      logger.info('Campanhas filtradas para sincronização', {
+      logger.info('Campanhas ativas filtradas para sincronização', {
         total: allCampaigns.length,
+        active: campaigns.length,
         filtered: campaigns.length
       });
 
