@@ -18,22 +18,44 @@ export class MetaSyncService {
   /**
    * Valida o token de acesso testando uma chamada simples à API
    */
-  private async validateToken(): Promise<boolean> {
+  private async validateToken(): Promise<{ valid: boolean; error?: string }> {
     try {
+      logger.info('Validando token com API Meta', {
+        tokenPrefix: this.accessToken.substring(0, 20) + '...',
+        tokenLength: this.accessToken.length
+      });
+
       const url = `${this.baseUrl}/me?access_token=${this.accessToken}`;
       const response = await fetch(url);
       const data = await response.json();
 
       if (data.error) {
-        logger.error('Token inválido', data.error);
-        return false;
+        logger.error('Token inválido na API Meta', {
+          errorCode: data.error.code,
+          errorType: data.error.type,
+          errorMessage: data.error.message,
+          errorSubcode: data.error.error_subcode
+        });
+        return {
+          valid: false,
+          error: `${data.error.message} (Code: ${data.error.code})`
+        };
       }
 
-      logger.info('Token validado com sucesso', { userId: data.id });
-      return true;
-    } catch (error) {
-      logger.error('Erro ao validar token', error);
-      return false;
+      logger.info('Token validado com sucesso na API Meta', {
+        userId: data.id,
+        userName: data.name
+      });
+      return { valid: true };
+    } catch (error: any) {
+      logger.error('Erro ao validar token', {
+        error: error.message,
+        stack: error.stack
+      });
+      return {
+        valid: false,
+        error: `Erro de conexão: ${error.message}`
+      };
     }
   }
 
@@ -62,24 +84,51 @@ export class MetaSyncService {
 
       // Busca token OAuth se não foi passado no construtor
       if (!this.accessToken) {
-        const { data: tokenData } = await supabase
+        const { data: tokenData, error: tokenError } = await supabase
           .from('oauth_tokens')
           .select('access_token')
           .eq('connection_id', connectionId)
           .maybeSingle();
 
-        if (tokenData?.access_token) {
+        if (tokenError) {
+          logger.error('Erro ao buscar token no banco', tokenError);
+          throw new Error(`Erro ao buscar token: ${tokenError.message}`);
+        }
+
+        if (!tokenData?.access_token) {
+          logger.error('Token não encontrado no banco', { connectionId });
+          throw new Error('Token de acesso não encontrado no banco de dados');
+        }
+
+        logger.info('Token encontrado no banco', {
+          connectionId,
+          tokenPrefix: tokenData.access_token.substring(0, 20) + '...',
+          tokenLength: tokenData.access_token.length
+        });
+
+        // Verifica se o token parece estar criptografado (tokens Meta começam com EAA)
+        const looksEncrypted = !tokenData.access_token.startsWith('EAA');
+
+        if (looksEncrypted) {
           try {
             // Descriptografa o token antes de usar
-            logger.info('Descriptografando token OAuth');
+            logger.info('Token parece estar criptografado, tentando descriptografar');
             this.accessToken = decryptData(tokenData.access_token).trim();
-            logger.info('Token descriptografado com sucesso', { tokenLength: this.accessToken.length });
-          } catch (decryptError) {
-            logger.error('Erro ao descriptografar token', decryptError);
-            // Se falhar a descriptografia, tenta usar o token direto (caso não esteja criptografado)
-            this.accessToken = tokenData.access_token.trim();
-            logger.warn('Usando token sem descriptografia (fallback)');
+            logger.info('Token descriptografado com sucesso', {
+              tokenLength: this.accessToken.length,
+              tokenPrefix: this.accessToken.substring(0, 20) + '...'
+            });
+          } catch (decryptError: any) {
+            logger.error('Erro ao descriptografar token', {
+              error: decryptError.message,
+              tokenPrefix: tokenData.access_token.substring(0, 20) + '...'
+            });
+            throw new Error(`Falha ao descriptografar token: ${decryptError.message}`);
           }
+        } else {
+          // Token não está criptografado, usa direto
+          logger.info('Token não parece estar criptografado, usando diretamente');
+          this.accessToken = tokenData.access_token.trim();
         }
       }
 
@@ -87,13 +136,17 @@ export class MetaSyncService {
         throw new Error('Token de acesso não encontrado');
       }
 
-      logger.info('Token encontrado', { tokenLength: this.accessToken.length });
+      logger.info('Iniciando validação do token');
 
       // Valida o token antes de prosseguir
-      const tokenValid = await this.validateToken();
-      if (!tokenValid) {
-        throw new Error('Invalid OAuth access token - Cannot parse access token');
+      const validation = await this.validateToken();
+      if (!validation.valid) {
+        const errorMsg = validation.error || 'Token inválido';
+        logger.error('Validação do token falhou', { error: errorMsg });
+        throw new Error(`Validação do token falhou: ${errorMsg}`);
       }
+
+      logger.info('Token validado com sucesso, prosseguindo com sincronização');
 
       const accountId = connection.config?.accountId;
       if (!accountId) throw new Error('Account ID não encontrado');

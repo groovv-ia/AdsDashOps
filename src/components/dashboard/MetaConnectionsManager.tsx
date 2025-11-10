@@ -154,15 +154,34 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
 
       // Descriptografa o token antes de usar
       let accessToken: string;
-      try {
-        logger.info('Descriptografando token para sincronização');
-        accessToken = decryptData(tokenData.access_token).trim();
-        logger.info('Token descriptografado com sucesso');
-      } catch (decryptError) {
-        logger.error('Erro ao descriptografar token', decryptError);
-        // Fallback: tenta usar o token direto
+
+      // Verifica se o token parece estar criptografado (tokens Meta começam com EAA)
+      const looksEncrypted = !tokenData.access_token.startsWith('EAA');
+
+      logger.info('Token recuperado do banco', {
+        tokenLength: tokenData.access_token.length,
+        tokenPrefix: tokenData.access_token.substring(0, 20) + '...',
+        looksEncrypted
+      });
+
+      if (looksEncrypted) {
+        try {
+          logger.info('Token parece estar criptografado, descriptografando');
+          accessToken = decryptData(tokenData.access_token).trim();
+          logger.info('Token descriptografado com sucesso', {
+            tokenLength: accessToken.length,
+            tokenPrefix: accessToken.substring(0, 20) + '...'
+          });
+        } catch (decryptError: any) {
+          logger.error('Erro ao descriptografar token', {
+            error: decryptError.message
+          });
+          throw new Error(`Falha ao descriptografar token: ${decryptError.message}`);
+        }
+      } else {
+        // Token não está criptografado, usa direto
+        logger.info('Token não parece estar criptografado, usando diretamente');
         accessToken = tokenData.access_token.trim();
-        logger.warn('Usando token sem descriptografia (fallback)');
       }
 
       // Cria serviço de sincronização
