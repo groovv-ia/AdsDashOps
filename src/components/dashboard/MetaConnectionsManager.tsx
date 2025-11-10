@@ -52,6 +52,7 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Estados para visualização de campanhas
   const [selectedAccount, setSelectedAccount] = useState<MetaConnection | null>(null);
@@ -282,16 +283,32 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
   };
 
   /**
-   * Remove uma conexão
+   * Remove uma conexão e todos os dados associados
    */
   const handleRemove = async (connectionId: string) => {
-    if (!confirm('Tem certeza que deseja remover esta conexão? Todos os dados serão perdidos.')) {
+    // Busca o nome da conta para exibir na confirmação
+    const connection = connections.find(c => c.id === connectionId);
+    const accountName = connection?.accountName || 'esta conta';
+
+    const confirmMessage = `Tem certeza que deseja remover a conta "${accountName}"?\n\n` +
+      `ATENÇÃO: Esta ação irá:\n` +
+      `• Remover a conexão com a conta Meta\n` +
+      `• Excluir todas as campanhas sincronizadas (${connection?.totalCampaigns || 0})\n` +
+      `• Apagar todos os conjuntos de anúncios e anúncios\n` +
+      `• Remover todas as métricas e históricos\n\n` +
+      `Esta ação NÃO pode ser desfeita!`;
+
+    if (!confirm(confirmMessage)) {
       return;
     }
 
-    try {
-      logger.info('Removendo conexão', { connectionId });
+    setDeletingId(connectionId);
+    setError('');
 
+    try {
+      logger.info('Removendo conexão Meta', { connectionId, accountName });
+
+      // Remove a conexão (as tabelas têm CASCADE, então remove tudo relacionado)
       const { error: deleteError } = await supabase
         .from('data_connections')
         .delete()
@@ -299,14 +316,19 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
 
       if (deleteError) throw deleteError;
 
-      logger.info('Conexão removida', { connectionId });
+      logger.info('Conexão Meta removida com sucesso', { connectionId, accountName });
+
+      // Mostra mensagem de sucesso
+      alert(`Conta "${accountName}" removida com sucesso!`);
 
       // Recarrega lista
       await loadConnections();
 
     } catch (err: any) {
-      logger.error('Erro ao remover conexão', err);
-      setError(err.message || 'Erro ao remover conexão');
+      logger.error('Erro ao remover conexão Meta', err);
+      setError(err.message || 'Erro ao remover conexão. Tente novamente.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -517,10 +539,20 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                   size="sm"
                   variant="secondary"
                   onClick={() => handleRemove(connection.id)}
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  disabled={deletingId === connection.id || syncingId === connection.id}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-50"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Remover
+                  {deletingId === connection.id ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Removendo...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Excluir
+                    </>
+                  )}
                 </Button>
               </div>
             </Card>
