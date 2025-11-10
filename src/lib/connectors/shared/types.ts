@@ -110,18 +110,30 @@ export interface AdMetrics {
   connectionId: string;
   userId: string;
   date: string;
+  // Métricas básicas
   impressions: number;
   clicks: number;
   spend: number;
   conversions: number;
   reach?: number;
   frequency?: number;
+  // Métricas de taxa (valores da API, não recalculados)
   ctr?: number;
   cpc?: number;
+  cpm?: number;
+  cpp?: number;
+  // Conversões - NOVOS CAMPOS
+  conversionValue?: number; // Valor real das conversões (action_values)
   roas?: number;
   costPerResult?: number;
+  // Cliques detalhados - NOVOS CAMPOS
+  inlineLinkClicks?: number;
+  costPerInlineLinkClick?: number;
+  outboundClicks?: number;
+  // Vídeo
   videoViews?: number;
   videoAvgTimeWatched?: number;
+  // Engajamento
   engagementRate?: number;
   qualityScore?: number;
 }

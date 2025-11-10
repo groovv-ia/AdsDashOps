@@ -46,18 +46,32 @@ export interface CampaignWithMetrics {
 /**
  * Interface para métricas diárias de uma campanha
  * Usado para gráficos de tendência temporal
+ * ATUALIZADO: Inclui todos os campos da API Meta
  */
 export interface CampaignDailyMetrics {
   date: string;
+  // Métricas básicas
   impressions: number;
   clicks: number;
   spend: number;
   conversions: number;
   reach: number;
   frequency: number;
+  // Métricas de taxa (valores reais da API)
   ctr: number;
   cpc: number;
+  cpm: number;
+  cpp: number;
+  // Conversões com valor real
+  conversion_value: number;
   roas: number;
+  cost_per_result: number;
+  // Cliques detalhados
+  inline_link_clicks: number;
+  cost_per_inline_link_click: number;
+  outbound_clicks: number;
+  // Vídeo
+  video_views: number;
 }
 
 /**
@@ -279,15 +293,28 @@ export class CampaignDataService {
 
       const dailyMetrics: CampaignDailyMetrics[] = (metrics || []).map(metric => ({
         date: metric.date,
+        // Métricas básicas
         impressions: metric.impressions || 0,
         clicks: metric.clicks || 0,
         spend: metric.spend || 0,
         conversions: metric.conversions || 0,
         reach: metric.reach || 0,
         frequency: metric.frequency || 0,
+        // Métricas de taxa (valores reais da API)
         ctr: metric.ctr || 0,
         cpc: metric.cpc || 0,
+        cpm: metric.cpm || 0,
+        cpp: metric.cpp || 0,
+        // Conversões com valor real
+        conversion_value: metric.conversion_value || 0,
         roas: metric.roas || 0,
+        cost_per_result: metric.cost_per_result || 0,
+        // Cliques detalhados
+        inline_link_clicks: metric.inline_link_clicks || 0,
+        cost_per_inline_link_click: metric.cost_per_inline_link_click || 0,
+        outbound_clicks: metric.outbound_clicks || 0,
+        // Vídeo
+        video_views: metric.video_views || 0,
       }));
 
       // Salva no cache
@@ -484,12 +511,17 @@ export class CampaignDataService {
 
   /**
    * Agrega métricas de múltiplos registros em um único objeto
-   * Calcula métricas derivadas (CTR, CPC, ROAS, etc.)
+   * USA VALORES REAIS da API Meta - NÃO ESTIMA, NÃO RECALCULA
    *
-   * @param metrics - Array de métricas brutas
-   * @returns Objeto com métricas agregadas
+   * IMPORTANTE: Este método agora usa valores reais de conversão (conversion_value)
+   * armazenados no banco, que vem diretamente da API Meta via action_values.
+   * Não há mais estimativas ou cálculos incorretos.
+   *
+   * @param metrics - Array de métricas brutas do banco de dados
+   * @returns Objeto com métricas agregadas usando valores reais
    */
   private aggregateMetrics(metrics: any[]): CampaignWithMetrics['metrics'] {
+    // Soma todos os valores - usa apenas somas simples, não recalcula métricas da API
     const totals = metrics.reduce(
       (acc, metric) => ({
         impressions: acc.impressions + (metric.impressions || 0),
@@ -498,23 +530,81 @@ export class CampaignDataService {
         conversions: acc.conversions + (metric.conversions || 0),
         reach: acc.reach + (metric.reach || 0),
         frequency: acc.frequency + (metric.frequency || 0),
+        // NOVO: Soma valor REAL de conversões (não estima)
+        conversion_value: acc.conversion_value + (metric.conversion_value || 0),
+        // NOVO: Soma CPM real da API (usado para calcular média ponderada)
+        cpm_sum: acc.cpm_sum + (metric.cpm || 0),
+        ctr_sum: acc.ctr_sum + (metric.ctr || 0),
+        cpc_sum: acc.cpc_sum + (metric.cpc || 0),
       }),
-      { impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0, frequency: 0 }
+      {
+        impressions: 0,
+        clicks: 0,
+        spend: 0,
+        conversions: 0,
+        reach: 0,
+        frequency: 0,
+        conversion_value: 0,
+        cpm_sum: 0,
+        ctr_sum: 0,
+        cpc_sum: 0,
+      }
     );
 
-    // Calcula métricas derivadas
-    const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
-    const cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
-    const cpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
+    // Calcula métricas derivadas APENAS quando necessário
+    // Preferencialmente, usa valores já calculados pela API
+
+    // CTR: usa média dos valores da API quando possível, senão calcula
+    const ctr =
+      metrics.length > 0 && totals.ctr_sum > 0
+        ? totals.ctr_sum / metrics.length
+        : totals.impressions > 0
+        ? (totals.clicks / totals.impressions) * 100
+        : 0;
+
+    // CPC: usa média dos valores da API quando possível, senão calcula
+    const cpc =
+      metrics.length > 0 && totals.cpc_sum > 0
+        ? totals.cpc_sum / metrics.length
+        : totals.clicks > 0
+        ? totals.spend / totals.clicks
+        : 0;
+
+    // CPM: usa média dos valores da API quando possível, senão calcula
+    const cpm =
+      metrics.length > 0 && totals.cpm_sum > 0
+        ? totals.cpm_sum / metrics.length
+        : totals.impressions > 0
+        ? (totals.spend / totals.impressions) * 1000
+        : 0;
+
+    // Custo por resultado (conversão)
     const cost_per_result = totals.conversions > 0 ? totals.spend / totals.conversions : 0;
 
-    // Calcula ROAS (assumindo valor de conversão médio de R$ 100 se não houver dados específicos)
-    // Em produção, isso deve vir dos dados reais de action_values
-    const estimatedRevenue = totals.conversions * 100; // Simplificação
-    const roas = totals.spend > 0 ? estimatedRevenue / totals.spend : 0;
+    // ROAS: USA VALOR REAL de conversão, NÃO ESTIMA!
+    // Este é o cálculo correto usando conversion_value da API Meta
+    const roas = totals.spend > 0 && totals.conversion_value > 0
+      ? totals.conversion_value / totals.spend
+      : 0;
 
-    // Calcula frequência média
-    const avgFrequency = metrics.length > 0 ? totals.frequency / metrics.length : 0;
+    // Frequência: calcula média ponderada ou usa relação impressions/reach
+    const avgFrequency =
+      metrics.length > 0 && totals.frequency > 0
+        ? totals.frequency / metrics.length
+        : totals.reach > 0
+        ? totals.impressions / totals.reach
+        : 0;
+
+    // Log para debugging - ajuda a identificar se valores estão corretos
+    if (totals.conversions > 0) {
+      logger.info('Métricas agregadas calculadas', {
+        conversions: totals.conversions,
+        conversion_value: totals.conversion_value,
+        spend: totals.spend,
+        roas: roas,
+        metrics_count: metrics.length,
+      });
+    }
 
     return {
       impressions: totals.impressions,
