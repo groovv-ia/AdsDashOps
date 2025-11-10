@@ -15,6 +15,7 @@ import { Button } from '../ui/Button';
 import { supabase } from '../../lib/supabase';
 import { MetaSyncService } from '../../lib/services/MetaSyncService';
 import { logger } from '../../lib/utils/logger';
+import { decryptData } from '../../lib/utils/encryption';
 import { MetaCampaignDetails } from './MetaCampaignDetails';
 
 interface MetaConnection {
@@ -151,8 +152,21 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
         throw new Error('Token de acesso não encontrado');
       }
 
+      // Descriptografa o token antes de usar
+      let accessToken: string;
+      try {
+        logger.info('Descriptografando token para sincronização');
+        accessToken = decryptData(tokenData.access_token).trim();
+        logger.info('Token descriptografado com sucesso');
+      } catch (decryptError) {
+        logger.error('Erro ao descriptografar token', decryptError);
+        // Fallback: tenta usar o token direto
+        accessToken = tokenData.access_token.trim();
+        logger.warn('Usando token sem descriptografia (fallback)');
+      }
+
       // Cria serviço de sincronização
-      const syncService = new MetaSyncService(tokenData.access_token);
+      const syncService = new MetaSyncService(accessToken);
 
       // Executa sincronização
       await syncService.syncConnection(connectionId);

@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { logger } from '../utils/logger';
+import { decryptData } from '../utils/encryption';
 
 /**
  * Serviço responsável por sincronizar dados da Meta Ads API
@@ -68,8 +69,17 @@ export class MetaSyncService {
           .maybeSingle();
 
         if (tokenData?.access_token) {
-          // Limpa o token removendo espaços extras
-          this.accessToken = tokenData.access_token.trim();
+          try {
+            // Descriptografa o token antes de usar
+            logger.info('Descriptografando token OAuth');
+            this.accessToken = decryptData(tokenData.access_token).trim();
+            logger.info('Token descriptografado com sucesso', { tokenLength: this.accessToken.length });
+          } catch (decryptError) {
+            logger.error('Erro ao descriptografar token', decryptError);
+            // Se falhar a descriptografia, tenta usar o token direto (caso não esteja criptografado)
+            this.accessToken = tokenData.access_token.trim();
+            logger.warn('Usando token sem descriptografia (fallback)');
+          }
         }
       }
 
