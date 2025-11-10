@@ -24,7 +24,6 @@ import { Button } from '../ui/Button';
 import { DataSourceSetup } from './DataSourceSetup';
 import { SimpleMetaConnect } from './SimpleMetaConnect';
 import { MetaAdsSetup } from './MetaAdsSetup';
-import { MetaConnectionsManager } from './MetaConnectionsManager';
 import { supabase } from '../../lib/supabase';
 import { 
   DataSyncService, 
@@ -356,18 +355,7 @@ export const DataSources: React.FC = () => {
         />
       ) : (
         <>
-          {/* Gerenciamento de Conexões Meta */}
-          <MetaConnectionsManager
-            onAddNew={() => {
-              const metaConnector = availableConnectors.find(c => c.id === 'meta-ads');
-              if (metaConnector) {
-                setSelectedConnector(metaConnector);
-                setShowSetupModal(true);
-              }
-            }}
-          />
-
-          {/* Conexão Simplificada Meta - Mantida para compatibilidade */}
+          {/* Conexão Simplificada Meta */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <SimpleMetaConnect />
 
