@@ -2,24 +2,17 @@
  * Serviço para gerenciar dados do dashboard
  *
  * Este serviço centraliza o acesso aos dados de campanhas, métricas e análises.
- * ATUALIZADO: Busca métricas DIRETAMENTE da API Meta em tempo real, sem usar banco de dados.
- * Campanhas e estruturas continuam sendo buscadas do banco para referência.
+ * Busca dados do Supabase quando disponíveis e retorna no formato compatível
+ * com os dados mockados existentes, garantindo compatibilidade total.
  */
 
 import { supabase } from '../supabase';
 import { Campaign, AdMetrics, AdSet, Ad, AdAccount } from '../../types/advertising';
-import { MetaAdsService } from '../connectors/meta/MetaAdsService';
-import { logger } from '../utils/logger';
 
 export class DashboardDataService {
   private static instance: DashboardDataService;
-  private metaService: MetaAdsService;
 
   // Singleton pattern para garantir uma única instância
-  private constructor() {
-    this.metaService = new MetaAdsService();
-  }
-
   static getInstance(): DashboardDataService {
     if (!DashboardDataService.instance) {
       DashboardDataService.instance = new DashboardDataService();
@@ -114,143 +107,71 @@ export class DashboardDataService {
   }
 
   /**
-   * Busca métricas de anúncios DIRETAMENTE DA API META em tempo real
-   * NÃO usa banco de dados como intermediário
+   * Busca métricas de anúncios do usuário
    * Pode filtrar por IDs de campanhas específicas
-   *
-   * @param campaignIds Array opcional de IDs de campanhas para filtrar
-   * @param dateStart Data de início opcional (padrão: 30 dias atrás)
-   * @param dateEnd Data de fim opcional (padrão: hoje)
-   * @param useCache Se true, usa cache em memória (padrão: true)
-   * @returns Array de métricas diretamente da API Meta
+   * ATUALIZADO: Retorna array vazio se não houver métricas (sem erro)
    */
-  async fetchMetrics(
-    campaignIds?: string[],
-    dateStart?: string,
-    dateEnd?: string,
-    useCache: boolean = true
-  ): Promise<AdMetrics[]> {
+  async fetchMetrics(campaignIds?: string[]): Promise<AdMetrics[]> {
     try {
       if (!supabase) {
-        logger.warn('fetchMetrics: Supabase não disponível');
+        console.log('❌ fetchMetrics: Supabase não disponível');
         return [];
       }
 
       const { data: user } = await supabase.auth.getUser();
       if (!user.user) {
-        logger.warn('fetchMetrics: Usuário não autenticado');
+        console.log('❌ fetchMetrics: Usuário não autenticado');
         return [];
       }
 
-      // Define período padrão se não fornecido (últimos 30 dias)
-      const defaultEndDate = new Date();
-      const defaultStartDate = new Date();
-      defaultStartDate.setDate(defaultStartDate.getDate() - 30);
+      console.log('🔍 Buscando métricas do usuário:', user.user.id, campaignIds ? `para ${campaignIds.length} campanhas` : '');
 
-      const startDate = dateStart || defaultStartDate.toISOString().split('T')[0];
-      const endDate = dateEnd || defaultEndDate.toISOString().split('T')[0];
+      let query = supabase
+        .from('ad_metrics')
+        .select('*')
+        .eq('user_id', user.user.id)
+        .order('date', { ascending: false });
 
-      logger.info('Buscando métricas da API Meta (realtime)', {
-        userId: user.user.id,
-        campaignCount: campaignIds?.length || 'todas',
-        period: `${startDate} a ${endDate}`,
-        useCache
-      });
-
-      // Se IDs de campanhas foram fornecidos, busca métricas específicas
+      // Aplica filtro de campanhas se fornecido
       if (campaignIds && campaignIds.length > 0) {
-        // Primeiro, busca informações de conexão das campanhas
-        const { data: campaigns } = await supabase
-          .from('campaigns')
-          .select('id, connection_id, platform')
-          .in('id', campaignIds)
-          .eq('user_id', user.user.id);
-
-        if (!campaigns || campaigns.length === 0) {
-          logger.warn('Nenhuma campanha encontrada para buscar métricas');
-          return [];
-        }
-
-        // Agrupa campanhas por conexão para otimizar chamadas à API
-        const campaignsByConnection = campaigns.reduce((acc, campaign) => {
-          if (!acc[campaign.connection_id]) {
-            acc[campaign.connection_id] = [];
-          }
-          acc[campaign.connection_id].push(campaign.id);
-          return acc;
-        }, {} as Record<string, string[]>);
-
-        // Busca métricas de todas as conexões em paralelo
-        const metricsPromises = Object.entries(campaignsByConnection).map(
-          async ([connectionId, ids]) => {
-            try {
-              return await this.metaService.getMultipleCampaignInsightsRealtime(
-                connectionId,
-                ids,
-                startDate,
-                endDate,
-                useCache
-              );
-            } catch (error) {
-              logger.error('Erro ao buscar métricas da conexão', error, { connectionId });
-              return [];
-            }
-          }
-        );
-
-        const metricsArrays = await Promise.all(metricsPromises);
-        const allMetrics = metricsArrays.flat();
-
-        logger.info(`Métricas recuperadas da API Meta: ${allMetrics.length} registros`);
-        return allMetrics;
+        query = query.in('campaign_id', campaignIds);
       }
 
-      // Se nenhum ID foi fornecido, busca todas as campanhas do usuário
-      const { data: allCampaigns } = await supabase
-        .from('campaigns')
-        .select('id, connection_id, platform')
-        .eq('user_id', user.user.id);
+      const { data, error } = await query;
 
-      if (!allCampaigns || allCampaigns.length === 0) {
-        logger.warn('Usuário não possui campanhas cadastradas');
+      if (error) {
+        console.error('❌ Erro ao buscar métricas:', error);
         return [];
       }
 
-      // Agrupa por conexão
-      const campaignsByConnection = allCampaigns.reduce((acc, campaign) => {
-        if (!acc[campaign.connection_id]) {
-          acc[campaign.connection_id] = [];
-        }
-        acc[campaign.connection_id].push(campaign.id);
-        return acc;
-      }, {} as Record<string, string[]>);
+      console.log(`✅ ${data?.length || 0} métricas encontradas`);
 
-      // Busca métricas de todas as conexões
-      const metricsPromises = Object.entries(campaignsByConnection).map(
-        async ([connectionId, ids]) => {
-          try {
-            return await this.metaService.getMultipleCampaignInsightsRealtime(
-              connectionId,
-              ids,
-              startDate,
-              endDate,
-              useCache
-            );
-          } catch (error) {
-            logger.error('Erro ao buscar métricas da conexão', error, { connectionId });
-            return [];
-          }
-        }
-      );
+      // Se não há métricas, retorna array vazio (não é erro)
+      if (!data || data.length === 0) {
+        console.log('⚠️ Nenhuma métrica encontrada - campanhas sem dados de performance');
+        return [];
+      }
 
-      const metricsArrays = await Promise.all(metricsPromises);
-      const allMetrics = metricsArrays.flat();
-
-      logger.info(`Métricas totais recuperadas da API Meta: ${allMetrics.length} registros`);
-      return allMetrics;
-
+      // Transforma dados do banco para formato esperado
+      return (data || []).map(metric => ({
+        id: metric.id,
+        campaign_id: metric.campaign_id,
+        ad_set_id: metric.ad_set_id,
+        ad_id: metric.ad_id,
+        date: metric.date,
+        impressions: metric.impressions || 0,
+        clicks: metric.clicks || 0,
+        spend: parseFloat(metric.spend || '0'),
+        conversions: metric.conversions || 0,
+        reach: metric.reach || 0,
+        frequency: parseFloat(metric.frequency || '0'),
+        ctr: parseFloat(metric.ctr || '0'),
+        cpc: parseFloat(metric.cpc || '0'),
+        roas: parseFloat(metric.roas || '0'),
+        cost_per_result: parseFloat(metric.cost_per_result || '0')
+      }));
     } catch (error) {
-      logger.error('Erro ao buscar métricas da API Meta', error);
+      console.error('❌ Erro ao buscar métricas:', error);
       return [];
     }
   }
@@ -365,19 +286,9 @@ export class DashboardDataService {
 
   /**
    * Busca todos os dados necessários para o dashboard de uma vez
-   * ATUALIZADO: Métricas vem DIRETAMENTE DA API META em tempo real
-   * Campanhas, ad sets e ads continuam vindo do banco para referência
-   *
-   * @param dateStart Data de início opcional para métricas
-   * @param dateEnd Data de fim opcional para métricas
-   * @param useCache Se true, usa cache para métricas (padrão: true)
-   * @returns Objeto com todas as entidades do dashboard
+   * Retorna objeto com todas as entidades
    */
-  async fetchAllDashboardData(
-    dateStart?: string,
-    dateEnd?: string,
-    useCache: boolean = true
-  ): Promise<{
+  async fetchAllDashboardData(): Promise<{
     campaigns: Campaign[];
     metrics: AdMetrics[];
     adSets: AdSet[];
@@ -386,28 +297,15 @@ export class DashboardDataService {
     hasRealData: boolean;
   }> {
     try {
-      // Busca campanhas primeiro para saber quais métricas buscar
-      const [campaigns, adSets, ads, adAccounts, hasData] = await Promise.all([
+      // Executa todas as buscas em paralelo para melhor performance
+      const [campaigns, metrics, adSets, ads, adAccounts, hasData] = await Promise.all([
         this.fetchCampaigns(),
+        this.fetchMetrics(),
         this.fetchAdSets(),
         this.fetchAds(),
         this.fetchAdAccounts(),
         this.hasRealData()
       ]);
-
-      // Busca métricas DIRETAMENTE DA API META para as campanhas encontradas
-      const campaignIds = campaigns.map(c => c.id);
-      const metrics = campaignIds.length > 0
-        ? await this.fetchMetrics(campaignIds, dateStart, dateEnd, useCache)
-        : [];
-
-      logger.info('Dashboard data loaded', {
-        campaigns: campaigns.length,
-        metrics: metrics.length,
-        adSets: adSets.length,
-        ads: ads.length,
-        source: 'API Meta (realtime)'
-      });
 
       return {
         campaigns,
@@ -418,7 +316,7 @@ export class DashboardDataService {
         hasRealData: hasData
       };
     } catch (error) {
-      logger.error('Erro ao buscar dados do dashboard', error);
+      console.error('Erro ao buscar dados do dashboard:', error);
       return {
         campaigns: [],
         metrics: [],
@@ -431,33 +329,55 @@ export class DashboardDataService {
   }
 
   /**
-   * Limpa o cache de métricas do serviço Meta
-   * Útil quando o usuário quer forçar atualização dos dados
+   * Busca métricas agregadas para um período específico
+   * Útil para análises e relatórios
    */
-  clearMetricsCache(): void {
-    this.metaService.clearCache();
-    logger.info('Cache de métricas limpo');
-  }
+  async fetchMetricsForPeriod(startDate: Date, endDate: Date, campaignIds?: string[]): Promise<AdMetrics[]> {
+    try {
+      if (!supabase) return [];
 
-  /**
-   * Busca métricas agregadas para um período específico DIRETAMENTE DA API META
-   * Útil para análises e relatórios em tempo real
-   *
-   * @param startDate Data de início do período
-   * @param endDate Data de fim do período
-   * @param campaignIds Array opcional de IDs de campanhas para filtrar
-   * @param useCache Se true, usa cache em memória (padrão: true)
-   * @returns Array de métricas do período diretamente da API
-   */
-  async fetchMetricsForPeriod(
-    startDate: Date,
-    endDate: Date,
-    campaignIds?: string[],
-    useCache: boolean = true
-  ): Promise<AdMetrics[]> {
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) return [];
 
-    return this.fetchMetrics(campaignIds, startDateStr, endDateStr, useCache);
+      let query = supabase
+        .from('ad_metrics')
+        .select('*')
+        .eq('user_id', user.user.id)
+        .gte('date', startDate.toISOString().split('T')[0])
+        .lte('date', endDate.toISOString().split('T')[0])
+        .order('date', { ascending: false });
+
+      if (campaignIds && campaignIds.length > 0) {
+        query = query.in('campaign_id', campaignIds);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Erro ao buscar métricas do período:', error);
+        return [];
+      }
+
+      return (data || []).map(metric => ({
+        id: metric.id,
+        campaign_id: metric.campaign_id,
+        ad_set_id: metric.ad_set_id,
+        ad_id: metric.ad_id,
+        date: metric.date,
+        impressions: metric.impressions || 0,
+        clicks: metric.clicks || 0,
+        spend: parseFloat(metric.spend || '0'),
+        conversions: metric.conversions || 0,
+        reach: metric.reach || 0,
+        frequency: parseFloat(metric.frequency || '0'),
+        ctr: parseFloat(metric.ctr || '0'),
+        cpc: parseFloat(metric.cpc || '0'),
+        roas: parseFloat(metric.roas || '0'),
+        cost_per_result: parseFloat(metric.cost_per_result || '0')
+      }));
+    } catch (error) {
+      console.error('Erro ao buscar métricas do período:', error);
+      return [];
+    }
   }
 }

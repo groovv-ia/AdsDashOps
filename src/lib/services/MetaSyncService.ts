@@ -1,7 +1,6 @@
 import { supabase } from '../supabase';
 import { logger } from '../utils/logger';
 import { decryptData } from '../utils/encryption';
-import { extractMetricsFromInsight, validateExtractedMetrics, MetaInsightsRaw } from '../utils/metaMetricsExtractor';
 
 /**
  * Interface para callback de progresso da sincronização
@@ -617,20 +616,56 @@ export class MetaSyncService {
 
   /**
    * Salva métricas no banco de dados
-   * Usa o helper compartilhado para extração consistente de métricas
+   * Extrai e armazena TODOS os campos retornados pela API Meta, incluindo JSONs brutos para auditoria
    */
-  private async saveMetrics(connectionId: string, campaignId: string, insight: MetaInsightsRaw): Promise<void> {
+  private async saveMetrics(connectionId: string, campaignId: string, insight: any): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
-    // Extrai todas as métricas usando helper compartilhado
-    const extractedMetrics = extractMetricsFromInsight(insight);
+    // Extrai conversões das actions - verifica múltiplos tipos de conversão
+    const actions = insight.actions || [];
+    const conversions = this.extractActionValue(actions, [
+      'offsite_conversion.fb_pixel_purchase',
+      'purchase',
+      'omni_purchase',
+      'app_custom_event.fb_mobile_purchase'
+    ]);
 
-    // Valida métricas antes de salvar
-    const warnings = validateExtractedMetrics(extractedMetrics);
-    if (warnings.length > 0) {
-      logger.warn('Avisos ao validar métricas da campanha', { campaignId, warnings });
-    }
+    // Extrai valor REAL das conversões (não estimar!)
+    const actionValues = insight.action_values || [];
+    const conversionValue = this.extractActionValue(actionValues, [
+      'offsite_conversion.fb_pixel_purchase',
+      'purchase',
+      'omni_purchase',
+      'app_custom_event.fb_mobile_purchase'
+    ]);
+
+    // Extrai visualizações de vídeo
+    const videoViews = this.extractActionValue(actions, ['video_view']);
+
+    // Extrai cliques em links inline
+    const inlineLinkClicks = parseInt(insight.inline_link_clicks || '0');
+
+    // Extrai cliques outbound
+    const outboundClicks = parseInt(insight.outbound_clicks || '0');
+
+    const spend = parseFloat(insight.spend || '0');
+
+    // Calcula ROAS usando valor REAL de conversão (não estimativa)
+    const roas = conversionValue > 0 && spend > 0 ? conversionValue / spend : 0;
+
+    // Log para debugging e auditoria
+    logger.info('Salvando métricas com valores reais', {
+      campaignId,
+      date: insight.date_start,
+      conversions,
+      conversionValue,
+      spend,
+      roas,
+      cpm: insight.cpm,
+      hasActions: actions.length > 0,
+      hasActionValues: actionValues.length > 0
+    });
 
     // Verifica se a métrica já existe (usando a unique constraint)
     const { data: existing } = await supabase
@@ -642,11 +677,45 @@ export class MetaSyncService {
       .is('ad_id', null)
       .maybeSingle();
 
+    // Prepara dados para salvar - usa valores REAIS da API, não recalcula
+    const metricsData = {
+      // Métricas básicas
+      impressions: parseInt(insight.impressions || '0'),
+      clicks: parseInt(insight.clicks || '0'),
+      spend: spend,
+      reach: parseInt(insight.reach || '0'),
+      frequency: parseFloat(insight.frequency || '0'),
+
+      // Métricas de taxa - USA VALORES DA API, NÃO RECALCULA
+      ctr: parseFloat(insight.ctr || '0'),
+      cpc: parseFloat(insight.cpc || '0'),
+      cpm: parseFloat(insight.cpm || '0'),
+      cpp: parseFloat(insight.cpp || '0'),
+
+      // Conversões - USA VALOR REAL, NÃO ESTIMA
+      conversions: parseFloat(conversions),
+      conversion_value: parseFloat(conversionValue),
+      roas: roas,
+      cost_per_result: conversions > 0 ? spend / conversions : 0,
+
+      // Cliques detalhados
+      inline_link_clicks: inlineLinkClicks,
+      cost_per_inline_link_click: parseFloat(insight.cost_per_inline_link_click || '0'),
+      outbound_clicks: outboundClicks,
+
+      // Vídeo
+      video_views: videoViews,
+
+      // JSONs brutos para auditoria e recálculo futuro
+      actions_raw: actions.length > 0 ? actions : null,
+      action_values_raw: actionValues.length > 0 ? actionValues : null,
+    };
+
     if (existing) {
       // Atualiza métrica existente
       const { error } = await supabase
         .from('ad_metrics')
-        .update(extractedMetrics)
+        .update(metricsData)
         .eq('id', existing.id);
       if (error) throw error;
     } else {
@@ -658,9 +727,31 @@ export class MetaSyncService {
           user_id: user.id,
           campaign_id: campaignId,
           date: insight.date_start,
-          ...extractedMetrics,
+          ...metricsData,
         });
       if (error) throw error;
     }
+  }
+
+  /**
+   * Extrai valor de uma ação específica do array actions ou action_values
+   * Suporta múltiplos tipos de ação (ex: purchase, omni_purchase, etc)
+   *
+   * @param actionsArray - Array de actions ou action_values da API Meta
+   * @param actionTypes - Array de tipos de ação para buscar (em ordem de prioridade)
+   * @returns Valor numérico da ação encontrada, ou 0 se não encontrar
+   */
+  private extractActionValue(actionsArray: any[], actionTypes: string[]): number {
+    if (!actionsArray || actionsArray.length === 0) return 0;
+
+    // Percorre tipos de ação em ordem de prioridade
+    for (const actionType of actionTypes) {
+      const action = actionsArray.find((a: any) => a.action_type === actionType);
+      if (action && action.value) {
+        return parseFloat(action.value);
+      }
+    }
+
+    return 0;
   }
 }
