@@ -119,8 +119,8 @@ export class DataSyncService {
           connectionId,
           adSet.id,
           'adset',
-          this.getDateRange(30).start,
-          this.getDateRange(30).end
+          this.getDateRange(90).start,
+          this.getDateRange(90).end
         );
         metricsCount += adSetMetrics.length;
 
@@ -140,8 +140,8 @@ export class DataSyncService {
         connectionId,
         campaign.id,
         'campaign',
-        this.getDateRange(30).start,
-        this.getDateRange(30).end
+        this.getDateRange(90).start,
+        this.getDateRange(90).end
       );
       metricsCount += campaignMetrics.length;
 
@@ -199,8 +199,8 @@ export class DataSyncService {
           customerId,
           adGroup.id,
           'ad_group',
-          this.getDateRange(30).start,
-          this.getDateRange(30).end
+          this.getDateRange(90).start,
+          this.getDateRange(90).end
         );
         metricsCount += adGroupMetrics.length;
 
@@ -221,8 +221,8 @@ export class DataSyncService {
         customerId,
         campaign.id,
         'campaign',
-        this.getDateRange(30).start,
-        this.getDateRange(30).end
+        this.getDateRange(90).start,
+        this.getDateRange(90).end
       );
       metricsCount += campaignMetrics.length;
 
@@ -308,15 +308,27 @@ export class DataSyncService {
     await supabase.from('data_connections').update(updateData).eq('id', connectionId);
   }
 
-  private getDateRange(days: number): { start: string; end: string } {
+  /**
+   * Calcula intervalo de datas para busca de métricas
+   * @param days Número de dias retroativos (padrão: 90)
+   */
+  private getDateRange(days: number = 90): { start: string; end: string } {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - days);
 
-    return {
+    const dateRange = {
       start: start.toISOString().split('T')[0],
       end: end.toISOString().split('T')[0],
     };
+
+    logger.info('Calculando intervalo de datas para métricas', {
+      days,
+      start: dateRange.start,
+      end: dateRange.end
+    });
+
+    return dateRange;
   }
 
   async getSyncHistory(connectionId: string, limit: number = 10): Promise<SyncJob[]> {
