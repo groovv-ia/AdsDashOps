@@ -7,13 +7,51 @@ As métricas das campanhas não estavam sendo importadas corretamente durante a 
 ## Causas Raiz Identificadas
 
 1. **Período de busca muito curto**: O sistema buscava métricas apenas dos últimos 7 dias, insuficiente para campanhas com histórico mais longo
-2. **Falta de logs detalhados**: Dificulta identificar onde exatamente a importação estava falhando
-3. **Erros silenciosos**: Falhas em campanhas individuais não eram tratadas adequadamente
-4. **Falta de validação**: Não havia confirmação se as métricas foram realmente salvas no banco de dados
+2. **Datas incorretas/futuras**: Requisições à API Meta com datas no futuro (2025 ao invés de 2024) causavam erro 400
+3. **Falta de logs detalhados**: Dificulta identificar onde exatamente a importação estava falhando
+4. **Erros silenciosos**: Falhas em campanhas individuais não eram tratadas adequadamente
+5. **Falta de validação**: Não havia confirmação se as métricas foram realmente salvas no banco de dados
 
 ## Correções Implementadas
 
-### 1. Aumento do Período de Busca de Métricas
+### 1. Correção do Cálculo de Datas
+
+**Arquivo**: `src/lib/services/MetaSyncService.ts`
+
+**Problema**: As datas estavam sendo geradas no futuro (ano 2025) causando erro 400 da API Meta:
+```
+Error 400: time_range={"since":"2025-09-12","until":"2025-12-11"}
+```
+
+**Solução**: Recalculo das datas usando construtores explícitos de Date para evitar problemas de timezone:
+
+```typescript
+// Linhas 346-353
+const now = new Date();
+const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+const startDate = new Date(endDate);
+startDate.setDate(startDate.getDate() - 90);
+
+const dateEnd = endDate.toISOString().split('T')[0];
+const dateStart = startDate.toISOString().split('T')[0];
+```
+
+**Validação Adicional**: Adicionada verificação para garantir que datas não estejam no futuro:
+
+```typescript
+// Linhas 532-545 (método fetchInsights)
+const now = new Date();
+const currentDateStr = now.toISOString().split('T')[0];
+const endDateObj = new Date(dateEnd);
+
+// Ajusta dateEnd se estiver no futuro
+if (endDateObj > now) {
+  dateEnd = currentDateStr;
+  logger.warn('Data final ajustada para hoje (estava no futuro)');
+}
+```
+
+### 2. Aumento do Período de Busca de Métricas
 
 **Arquivo**: `src/lib/services/MetaSyncService.ts`
 
@@ -21,13 +59,7 @@ As métricas das campanhas não estavam sendo importadas corretamente durante a 
 - **Depois**: Busca métricas dos últimos 90 dias (3 meses)
 - **Impacto**: Garante captura completa do histórico de campanhas ativas
 
-```typescript
-// Linha 343-346
-const dateEnd = new Date().toISOString().split('T')[0];
-const dateStart = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-```
-
-### 2. Adição de Logs Detalhados
+### 3. Adição de Logs Detalhados
 
 **Locais de logging implementados**:
 
@@ -63,7 +95,7 @@ logger.info('Preparando para salvar métricas', {
 });
 ```
 
-### 3. Tratamento Robusto de Erros
+### 4. Tratamento Robusto de Erros
 
 **Melhorias implementadas**:
 
@@ -101,7 +133,7 @@ catch (error: any) {
 }
 ```
 
-### 4. Validação de Dados Salvos
+### 5. Validação de Dados Salvos
 
 **Verificações implementadas**:
 
@@ -152,7 +184,29 @@ logger.info('Sincronização Meta concluída com sucesso', {
 });
 ```
 
-### 5. Melhorias no DataSyncService
+### 6. Melhorias no DataSyncService
+
+**Melhorias adicionadas ao tratamento de erros HTTP**:
+
+Adicionado log detalhado de erros da API Meta incluindo:
+- Código do erro
+- Mensagem descritiva
+- Tipo de erro
+- Subcode (quando disponível)
+- Trace ID do Facebook para debugging
+
+```typescript
+// Linhas 85-93 (método fetchWithRetry)
+logger.error('Erro retornado pela API Meta', {
+  errorCode: data.error.code,
+  errorMessage: data.error.message,
+  errorType: data.error.type,
+  errorSubcode: data.error.error_subcode,
+  fbtrace_id: data.error.fbtrace_id
+});
+```
+
+### 7. Melhorias no DataSyncService
 
 **Arquivo**: `src/lib/services/DataSyncService.ts`
 
@@ -201,27 +255,56 @@ Todos os logs seguem estrutura consistente com:
 ## Como Testar
 
 1. Execute uma nova sincronização de conta Meta
-2. Observe os logs no console do navegador
-3. Verifique se aparecem logs de:
+2. Observe os logs no console do navegador (F12 → Console)
+3. **Verifique as datas nos logs**:
+   - Confirme que `currentDate` está correto (2024, não 2025)
+   - Confirme que `dateStart` e `dateEnd` estão no passado
+   - Exemplo esperado: `dateStart: "2024-09-12", dateEnd: "2024-12-11", currentDate: "2024-12-11"`
+4. Verifique se aparecem logs de:
    - Busca de métricas com período de 90 dias
+   - Requisições à API Meta sem erro 400
    - Salvamento individual de cada métrica
    - Contagem final de métricas no banco
-4. Acesse a página de Campanhas
-5. Confirme que as métricas aparecem corretamente
+5. Acesse a página de Campanhas
+6. Confirme que as métricas aparecem com valores reais (não zero)
 
 ## Logs Esperados
 
 Durante sincronização bem-sucedida, você verá:
 
 ```
-✅ Buscando métricas do período: {campaignId: "xxx", totalDays: 90}
-✅ Métricas encontradas da API Meta: {count: 90, hasData: true}
-✅ Preparando para salvar métricas: {date: "2024-01-01", metrics: {...}}
+✅ Buscando métricas do período: {
+  campaignId: "xxx",
+  dateStart: "2024-09-12",
+  dateEnd: "2024-12-11",
+  totalDays: 90,
+  currentDate: "2024-12-11"
+}
+✅ Requisitando insights da API Meta: {
+  campaignId: "xxx",
+  dateStart: "2024-09-12",
+  dateEnd: "2024-12-11",
+  currentDate: "2024-12-11",
+  fieldsCount: 19
+}
+✅ Insights recebidos da API Meta: {count: 90, hasData: true, firstDate: "2024-09-12"}
+✅ Preparando para salvar métricas: {date: "2024-09-12", metrics: {...}}
 ✅ Métrica inserida com sucesso: {metricId: "uuid", spend: 100, impressions: 5000}
 ✅ Resumo do salvamento de métricas: {total: 90, saved: 90, errors: 0}
 ✅ Verificando métricas salvas no banco: {totalMetricsInDatabase: 270}
 ✅ Sincronização Meta concluída com sucesso
 ```
+
+**Se você ver erro 400**:
+```
+❌ Erro HTTP na requisição à API Meta: {status: 400, statusText: "Bad Request"}
+❌ Erro retornado pela API Meta: {errorCode: 100, errorMessage: "Invalid time range"}
+```
+
+Isso indica que as datas ainda estão incorretas. Verifique:
+1. A data do sistema operacional está correta?
+2. O timezone do navegador está configurado corretamente?
+3. Há algum problema de cache? (Ctrl+Shift+R para hard refresh)
 
 ## Próximos Passos
 

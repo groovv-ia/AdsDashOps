@@ -69,10 +69,29 @@ export class MetaSyncService {
       await this.sleep(this.REQUEST_DELAY_MS);
 
       const response = await fetch(url);
+
+      // Log do status da resposta
+      if (!response.ok) {
+        logger.error('Erro HTTP na requisição à API Meta', {
+          status: response.status,
+          statusText: response.statusText,
+          url: url.replace(this.accessToken, 'TOKEN_HIDDEN')
+        });
+      }
+
       const data = await response.json();
 
       // Verifica se há erro na resposta
       if (data.error) {
+        // Log detalhado do erro
+        logger.error('Erro retornado pela API Meta', {
+          errorCode: data.error.code,
+          errorMessage: data.error.message,
+          errorType: data.error.type,
+          errorSubcode: data.error.error_subcode,
+          fbtrace_id: data.error.fbtrace_id
+        });
+
         // Se for rate limit, aguarda mais tempo e tenta novamente
         if (data.error.code === 4 || data.error.code === 17 || data.error.message.includes('rate limit')) {
           if (retryCount < this.MAX_RETRIES) {
@@ -342,15 +361,23 @@ export class MetaSyncService {
 
             // 7. Busca métricas da campanha (últimos 90 dias para garantir histórico completo)
             this.updateProgress('metrics', 0, 1, `Buscando métricas da campanha "${campaign.name}"...`);
-            const dateEnd = new Date().toISOString().split('T')[0];
-            const dateStart = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+            // Calcula datas usando UTC para evitar problemas de timezone
+            const now = new Date();
+            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startDate = new Date(endDate);
+            startDate.setDate(startDate.getDate() - 90);
+
+            const dateEnd = endDate.toISOString().split('T')[0];
+            const dateStart = startDate.toISOString().split('T')[0];
 
             logger.info('Buscando métricas do período', {
               campaignId: campaign.id,
               campaignName: campaign.name,
               dateStart,
               dateEnd,
-              totalDays: 90
+              totalDays: 90,
+              currentDate: now.toISOString().split('T')[0]
             });
 
             const insights = await this.fetchInsights(campaign.id, dateStart, dateEnd);
@@ -521,6 +548,30 @@ export class MetaSyncService {
    */
   private async fetchInsights(campaignId: string, dateStart: string, dateEnd: string): Promise<any[]> {
     try {
+      // Valida datas antes de fazer requisição
+      const now = new Date();
+      const currentDateStr = now.toISOString().split('T')[0];
+      const startDateObj = new Date(dateStart);
+      const endDateObj = new Date(dateEnd);
+
+      // Ajusta dateEnd se estiver no futuro
+      if (endDateObj > now) {
+        dateEnd = currentDateStr;
+        logger.warn('Data final ajustada para hoje (estava no futuro)', {
+          originalDateEnd: dateEnd,
+          adjustedDateEnd: currentDateStr
+        });
+      }
+
+      // Valida se dateStart não é posterior a dateEnd
+      if (startDateObj > endDateObj) {
+        logger.error('Data inicial posterior à data final', {
+          dateStart,
+          dateEnd
+        });
+        return [];
+      }
+
       // Lista completa de campos da Meta Ads API para insights
       const fields = [
         // Métricas básicas
@@ -543,6 +594,7 @@ export class MetaSyncService {
         campaignId,
         dateStart,
         dateEnd,
+        currentDate: currentDateStr,
         fieldsCount: fields.split(',').length
       });
 
