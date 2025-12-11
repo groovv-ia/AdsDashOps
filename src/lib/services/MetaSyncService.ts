@@ -164,60 +164,63 @@ export class MetaSyncService {
   }
 
   /**
-   * Sincroniza todos os dados de uma conexão Meta com rate limiting inteligente
-   * @param connectionId ID da conexão no banco de dados
+   * Sincroniza todos os dados de uma conta Meta específica com rate limiting inteligente
+   * @param oauthTokenId ID do oauth_token no banco de dados
    */
-  async syncConnection(connectionId: string): Promise<void> {
+  async syncAccount(oauthTokenId: string): Promise<void> {
     try {
-      logger.info('Iniciando sincronização Meta', { connectionId });
+      logger.info('Iniciando sincronização Meta', { oauthTokenId });
 
-      // Atualiza status para sincronizando
-      await supabase
-        .from('data_connections')
-        .update({ status: 'syncing' })
-        .eq('id', connectionId);
-
-      // Busca dados da conexão
-      const { data: connection } = await supabase
-        .from('data_connections')
+      // Busca dados do oauth_token
+      const { data: tokenRecord, error: tokenError } = await supabase
+        .from('oauth_tokens')
         .select('*')
-        .eq('id', connectionId)
+        .eq('id', oauthTokenId)
         .single();
 
-      if (!connection) throw new Error('Conexão não encontrada');
+      if (tokenError || !tokenRecord) {
+        throw new Error('OAuth token não encontrado');
+      }
+
+      const clientId = tokenRecord.client_id;
+      const accountId = tokenRecord.account_id;
+
+      if (!clientId) {
+        throw new Error('client_id não encontrado no oauth_token');
+      }
+
+      if (!accountId) {
+        throw new Error('account_id não encontrado no oauth_token');
+      }
+
+      logger.info('Dados do token recuperados', {
+        oauthTokenId,
+        clientId,
+        accountId,
+        accountName: tokenRecord.account_name
+      });
 
       // Busca token OAuth se não foi passado no construtor
       if (!this.accessToken) {
-        const { data: tokenData, error: tokenError } = await supabase
-          .from('oauth_tokens')
-          .select('access_token')
-          .eq('connection_id', connectionId)
-          .maybeSingle();
-
-        if (tokenError) {
-          logger.error('Erro ao buscar token no banco', tokenError);
-          throw new Error(`Erro ao buscar token: ${tokenError.message}`);
-        }
-
-        if (!tokenData?.access_token) {
-          logger.error('Token não encontrado no banco', { connectionId });
+        if (!tokenRecord.access_token) {
+          logger.error('Token de acesso não encontrado', { oauthTokenId });
           throw new Error('Token de acesso não encontrado no banco de dados');
         }
 
         logger.info('Token encontrado no banco', {
-          connectionId,
-          tokenPrefix: tokenData.access_token.substring(0, 20) + '...',
-          tokenLength: tokenData.access_token.length
+          oauthTokenId,
+          tokenPrefix: tokenRecord.access_token.substring(0, 20) + '...',
+          tokenLength: tokenRecord.access_token.length
         });
 
         // Verifica se o token parece estar criptografado (tokens Meta começam com EAA)
-        const looksEncrypted = !tokenData.access_token.startsWith('EAA');
+        const looksEncrypted = !tokenRecord.access_token.startsWith('EAA');
 
         if (looksEncrypted) {
           try {
             // Descriptografa o token antes de usar
             logger.info('Token parece estar criptografado, tentando descriptografar');
-            this.accessToken = decryptData(tokenData.access_token).trim();
+            this.accessToken = decryptData(tokenRecord.access_token).trim();
             logger.info('Token descriptografado com sucesso', {
               tokenLength: this.accessToken.length,
               tokenPrefix: this.accessToken.substring(0, 20) + '...'
@@ -225,14 +228,14 @@ export class MetaSyncService {
           } catch (decryptError: any) {
             logger.error('Erro ao descriptografar token', {
               error: decryptError.message,
-              tokenPrefix: tokenData.access_token.substring(0, 20) + '...'
+              tokenPrefix: tokenRecord.access_token.substring(0, 20) + '...'
             });
             throw new Error(`Falha ao descriptografar token: ${decryptError.message}`);
           }
         } else {
           // Token não está criptografado, usa direto
           logger.info('Token não parece estar criptografado, usando diretamente');
-          this.accessToken = tokenData.access_token.trim();
+          this.accessToken = tokenRecord.access_token.trim();
         }
       }
 
@@ -247,17 +250,21 @@ export class MetaSyncService {
       if (!validation.valid) {
         const errorMsg = validation.error || 'Token inválido';
         logger.error('Validação do token falhou', { error: errorMsg });
+
+        // Marca token como inativo se for erro de autenticação
+        await supabase
+          .from('oauth_tokens')
+          .update({ is_active: false })
+          .eq('id', oauthTokenId);
+
         throw new Error(`Validação do token falhou: ${errorMsg}`);
       }
 
       logger.info('Token validado com sucesso, prosseguindo com sincronização');
 
-      const accountId = connection.config?.accountId;
-      if (!accountId) throw new Error('Account ID não encontrado');
-
       // 1. Busca campanhas ativas dos últimos 90 dias
       this.updateProgress('campaigns', 0, 1, 'Buscando campanhas...');
-      logger.info('Buscando campanhas Meta');
+      logger.info('Buscando campanhas Meta', { accountId });
       const allCampaigns = await this.fetchCampaigns(accountId);
 
       // Filtra apenas campanhas ativas ou recentes
@@ -277,13 +284,11 @@ export class MetaSyncService {
       if (campaigns.length === 0) {
         this.updateProgress('complete', 1, 1, 'Nenhuma campanha ativa encontrada');
 
+        // Atualiza last_sync_at do token
         await supabase
-          .from('data_connections')
-          .update({
-            status: 'connected',
-            last_sync: new Date().toISOString()
-          })
-          .eq('id', connectionId);
+          .from('oauth_tokens')
+          .update({ last_sync_at: new Date().toISOString() })
+          .eq('id', oauthTokenId);
 
         return;
       }

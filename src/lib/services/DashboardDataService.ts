@@ -23,9 +23,9 @@ export class DashboardDataService {
   /**
    * Verifica se o usuário tem dados reais no banco
    * Retorna true se existem campanhas salvas
-   * ATUALIZADO: Agora verifica apenas campanhas, métricas são opcionais
+   * @param clientId - ID do cliente para filtrar (opcional)
    */
-  async hasRealData(): Promise<boolean> {
+  async hasRealData(clientId?: string | null): Promise<boolean> {
     try {
       if (!supabase) return false;
 
@@ -35,10 +35,17 @@ export class DashboardDataService {
         return false;
       }
 
-      const { count, error } = await supabase
+      let query = supabase
         .from('campaigns')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.user.id);
+
+      // Filtra por cliente se fornecido
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      }
+
+      const { count, error } = await query;
 
       if (error) {
         console.error('❌ Erro ao verificar dados reais:', error);
@@ -46,7 +53,7 @@ export class DashboardDataService {
       }
 
       const hasData = (count ?? 0) > 0;
-      console.log(`✅ hasRealData: ${hasData} (${count} campanhas encontradas)`);
+      console.log(`✅ hasRealData: ${hasData} (${count} campanhas encontradas${clientId ? ' para cliente ' + clientId : ''})`);
 
       return hasData;
     } catch (error) {
@@ -57,10 +64,9 @@ export class DashboardDataService {
 
   /**
    * Busca campanhas do usuário autenticado
-   * Retorna array vazio se não houver dados
-   * CORRIGIDO: Usa order by created_date ao invés de created_at
+   * @param clientId - ID do cliente para filtrar (opcional). Se null, busca de todos os clientes
    */
-  async fetchCampaigns(): Promise<Campaign[]> {
+  async fetchCampaigns(clientId?: string | null): Promise<Campaign[]> {
     try {
       if (!supabase) {
         console.log('❌ fetchCampaigns: Supabase não disponível');
@@ -73,13 +79,19 @@ export class DashboardDataService {
         return [];
       }
 
-      console.log('🔍 Buscando campanhas do usuário:', user.user.id);
+      console.log('🔍 Buscando campanhas do usuário:', user.user.id, clientId ? `(cliente: ${clientId})` : '(todos os clientes)');
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('campaigns')
         .select('*')
-        .eq('user_id', user.user.id)
-        .order('created_date', { ascending: false });
+        .eq('user_id', user.user.id);
+
+      // Filtra por cliente se fornecido
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      }
+
+      const { data, error } = await query.order('created_date', { ascending: false });
 
       if (error) {
         console.error('❌ Erro ao buscar campanhas:', error);
@@ -108,10 +120,10 @@ export class DashboardDataService {
 
   /**
    * Busca métricas de anúncios do usuário
-   * Pode filtrar por IDs de campanhas específicas
-   * ATUALIZADO: Retorna array vazio se não houver métricas (sem erro)
+   * @param clientId - ID do cliente para filtrar (opcional)
+   * @param campaignIds - IDs de campanhas específicas para filtrar (opcional)
    */
-  async fetchMetrics(campaignIds?: string[]): Promise<AdMetrics[]> {
+  async fetchMetrics(clientId?: string | null, campaignIds?: string[]): Promise<AdMetrics[]> {
     try {
       if (!supabase) {
         console.log('❌ fetchMetrics: Supabase não disponível');
@@ -124,18 +136,24 @@ export class DashboardDataService {
         return [];
       }
 
-      console.log('🔍 Buscando métricas do usuário:', user.user.id, campaignIds ? `para ${campaignIds.length} campanhas` : '');
+      console.log('🔍 Buscando métricas do usuário:', user.user.id, clientId ? `(cliente: ${clientId})` : '', campaignIds ? `(${campaignIds.length} campanhas)` : '');
 
       let query = supabase
         .from('ad_metrics')
         .select('*')
-        .eq('user_id', user.user.id)
-        .order('date', { ascending: false });
+        .eq('user_id', user.user.id);
+
+      // Filtra por cliente se fornecido
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      }
 
       // Aplica filtro de campanhas se fornecido
       if (campaignIds && campaignIds.length > 0) {
         query = query.in('campaign_id', campaignIds);
       }
+
+      query = query.order('date', { ascending: false });
 
       const { data, error } = await query;
 
@@ -178,19 +196,26 @@ export class DashboardDataService {
 
   /**
    * Busca conjuntos de anúncios (ad sets)
+   * @param clientId - ID do cliente para filtrar (opcional)
    */
-  async fetchAdSets(): Promise<AdSet[]> {
+  async fetchAdSets(clientId?: string | null): Promise<AdSet[]> {
     try {
       if (!supabase) return [];
 
       const { data: user } = await supabase.auth.getUser();
       if (!user.user) return [];
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('ad_sets')
         .select('*')
-        .eq('user_id', user.user.id)
-        .order('created_at', { ascending: false });
+        .eq('user_id', user.user.id);
+
+      // Filtra por cliente se fornecido
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
         console.error('Erro ao buscar ad sets:', error);
@@ -214,19 +239,26 @@ export class DashboardDataService {
 
   /**
    * Busca anúncios individuais
+   * @param clientId - ID do cliente para filtrar (opcional)
    */
-  async fetchAds(): Promise<Ad[]> {
+  async fetchAds(clientId?: string | null): Promise<Ad[]> {
     try {
       if (!supabase) return [];
 
       const { data: user } = await supabase.auth.getUser();
       if (!user.user) return [];
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('ads')
         .select('*')
-        .eq('user_id', user.user.id)
-        .order('created_at', { ascending: false });
+        .eq('user_id', user.user.id);
+
+      // Filtra por cliente se fornecido
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
         console.error('Erro ao buscar ads:', error);
@@ -250,33 +282,42 @@ export class DashboardDataService {
 
   /**
    * Busca contas de anúncios conectadas
+   * @param clientId - ID do cliente para filtrar (opcional)
    */
-  async fetchAdAccounts(): Promise<AdAccount[]> {
+  async fetchAdAccounts(clientId?: string | null): Promise<AdAccount[]> {
     try {
       if (!supabase) return [];
 
       const { data: user } = await supabase.auth.getUser();
       if (!user.user) return [];
 
-      const { data, error } = await supabase
-        .from('data_connections')
+      // NOTA: Agora buscamos de oauth_tokens ao invés de data_connections
+      let query = supabase
+        .from('oauth_tokens')
         .select('*')
         .eq('user_id', user.user.id)
-        .eq('type', 'advertising')
-        .eq('status', 'connected');
+        .eq('platform', 'meta')
+        .eq('is_active', true);
+
+      // Filtra por cliente se fornecido
+      if (clientId) {
+        query = query.eq('client_id', clientId);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('Erro ao buscar ad accounts:', error);
         return [];
       }
 
-      // Transforma conexões em contas de anúncios
-      return (data || []).map(connection => ({
-        id: connection.id,
-        name: connection.name,
-        platform: connection.platform,
-        account_id: connection.config?.accountId || connection.id,
-        is_active: connection.status === 'connected'
+      // Transforma oauth_tokens em contas de anúncios
+      return (data || []).map(token => ({
+        id: token.id,
+        name: token.account_name || `Meta Account ${token.account_id}`,
+        platform: 'Meta',
+        account_id: token.account_id || token.id,
+        is_active: token.is_active
       }));
     } catch (error) {
       console.error('Erro ao buscar ad accounts:', error);
@@ -286,9 +327,9 @@ export class DashboardDataService {
 
   /**
    * Busca todos os dados necessários para o dashboard de uma vez
-   * Retorna objeto com todas as entidades
+   * @param clientId - ID do cliente para filtrar (opcional). Se null, busca de todos os clientes
    */
-  async fetchAllDashboardData(): Promise<{
+  async fetchAllDashboardData(clientId?: string | null): Promise<{
     campaigns: Campaign[];
     metrics: AdMetrics[];
     adSets: AdSet[];
@@ -299,12 +340,12 @@ export class DashboardDataService {
     try {
       // Executa todas as buscas em paralelo para melhor performance
       const [campaigns, metrics, adSets, ads, adAccounts, hasData] = await Promise.all([
-        this.fetchCampaigns(),
-        this.fetchMetrics(),
-        this.fetchAdSets(),
-        this.fetchAds(),
-        this.fetchAdAccounts(),
-        this.hasRealData()
+        this.fetchCampaigns(clientId),
+        this.fetchMetrics(clientId),
+        this.fetchAdSets(clientId),
+        this.fetchAds(clientId),
+        this.fetchAdAccounts(clientId),
+        this.hasRealData(clientId)
       ]);
 
       return {
