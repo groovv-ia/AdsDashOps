@@ -24,6 +24,8 @@ import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { ClientsPage } from './components/clients/ClientsPage';
 import { DataExtractorPage } from './components/extraction/DataExtractorPage';
+import { SavedDashboardsPage } from './components/dashboard/SavedDashboardsPage';
+import { DashboardViewPage } from './components/dashboard/DashboardViewPage';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -55,6 +57,8 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [selectedDashboardId, setSelectedDashboardId] = useState<string | null>(null);
+  const [selectedDataSetId, setSelectedDataSetId] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     platforms: [] as string[],
     campaigns: [] as string[],
@@ -329,6 +333,33 @@ function AppContent() {
         );
       case 'data-extractor':
         return <DataExtractorPage />;
+      case 'saved-dashboards':
+        return (
+          <SavedDashboardsPage
+            onViewDashboard={(dashboardId, dataSetId) => {
+              setSelectedDashboardId(dashboardId);
+              setSelectedDataSetId(dataSetId);
+              setCurrentPage('view-dashboard');
+            }}
+            onCreateNew={() => setCurrentPage('data-extractor')}
+          />
+        );
+      case 'view-dashboard':
+        if (!selectedDashboardId || !selectedDataSetId) {
+          setCurrentPage('saved-dashboards');
+          return null;
+        }
+        return (
+          <DashboardViewPage
+            dashboardId={selectedDashboardId}
+            dataSetId={selectedDataSetId}
+            onBack={() => {
+              setSelectedDashboardId(null);
+              setSelectedDataSetId(null);
+              setCurrentPage('saved-dashboards');
+            }}
+          />
+        );
       case 'settings':
         return <SettingsPage />;
       case 'ai-insights':

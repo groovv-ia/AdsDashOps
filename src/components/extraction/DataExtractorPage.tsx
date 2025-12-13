@@ -28,14 +28,21 @@ import {
   Link,
   Trash2,
   Zap,
+  LayoutDashboard,
+  Eye,
+  X,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { Modal } from '../ui/Modal';
 import { FieldSelector } from './FieldSelector';
 import { BreakdownPicker } from './BreakdownPicker';
 import { SimpleMetaConnect } from '../dashboard/SimpleMetaConnect';
+import { DynamicDashboard } from '../dynamic-dashboard';
 import { supabase } from '../../lib/supabase';
 import { ConfigurableExtractService } from '../../lib/services/ConfigurableExtractService';
+import { dataSetService } from '../../lib/services/DataSetService';
+import { autoDashboardService } from '../../lib/services/AutoDashboardService';
 import { DATE_PRESETS, DEFAULT_TEMPLATES } from '../../constants/fieldCatalog';
 import type {
   ReportLevel,
@@ -114,6 +121,15 @@ export const DataExtractorPage: React.FC = () => {
     dateRange: true,
     templates: false,
   });
+
+  // Estados para salvar e gerar dashboard
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showDashboardPreview, setShowDashboardPreview] = useState(false);
+  const [dataSetName, setDataSetName] = useState('');
+  const [dataSetDescription, setDataSetDescription] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedDashboardId, setSavedDashboardId] = useState<string | null>(null);
+  const [generatedWidgets, setGeneratedWidgets] = useState<any[]>([]);
 
   // Carregar conexoes ao montar
   useEffect(() => {
@@ -469,6 +485,142 @@ export const DataExtractorPage: React.FC = () => {
 
   // Verifica se tem conexao Meta ativa
   const hasMetaConnection = connections.length > 0;
+
+  // Gerar preview do dashboard (sem salvar)
+  const handlePreviewDashboard = () => {
+    if (!extractionResult || !extractionResult.success) return;
+
+    // Analisa dados e gera widgets para preview
+    const mockDataSet = {
+      id: 'preview',
+      user_id: '',
+      client_id: null,
+      connection_id: null,
+      name: 'Preview',
+      description: null,
+      platform: 'meta',
+      extraction_config: {} as ExtractionConfig,
+      data: extractionResult.data,
+      columns_meta: extractionResult.columns,
+      date_range_start: extractionResult.dateRange.start,
+      date_range_end: extractionResult.dateRange.end,
+      record_count: extractionResult.data.length,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Gerar widgets usando o mesmo algoritmo do serviço
+    const metrics = extractionResult.columns
+      .filter(c => ['number', 'currency', 'percentage'].includes(c.dataType))
+      .map(c => c.field);
+
+    const widgets = [
+      // KPIs para primeiras 4 métricas
+      ...metrics.slice(0, 4).map((metric, idx) => ({
+        id: `kpi-${idx}`,
+        type: 'kpi' as const,
+        title: extractionResult.columns.find(c => c.field === metric)?.displayName || metric,
+        size: 'small' as const,
+        position: { row: 0, col: idx },
+        config: {
+          metric,
+          aggregation: 'sum',
+          format: metric.includes('spend') || metric.includes('cost') ? 'currency' : 'number',
+          chartColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'][idx],
+          showTrend: true,
+        },
+      })),
+      // Tabela de dados
+      {
+        id: 'table-1',
+        type: 'data_table' as const,
+        title: 'Dados Extraídos',
+        size: 'full' as const,
+        position: { row: 1, col: 0 },
+        config: {
+          metrics: extractionResult.columns.map(c => c.field).slice(0, 10),
+          sortOrder: 'desc',
+          limit: 20,
+        },
+      },
+    ];
+
+    setGeneratedWidgets(widgets);
+    setShowDashboardPreview(true);
+  };
+
+  // Salvar dados e gerar dashboard
+  const handleSaveAndGenerateDashboard = async () => {
+    if (!extractionResult || !extractionResult.success) return;
+    if (!dataSetName.trim()) {
+      setError('Informe um nome para o conjunto de dados');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      // 1. Criar configuração de extração para salvar
+      const extractionConfig: ExtractionConfig = {
+        connectionId: selectedConnection,
+        accountId,
+        level,
+        selectedFields,
+        breakdowns: selectedBreakdowns,
+        conversions: [],
+        dateRange: {
+          preset: datePreset,
+          startDate: datePreset === 'custom' ? customStartDate : undefined,
+          endDate: datePreset === 'custom' ? customEndDate : undefined,
+          includeToday,
+        },
+      };
+
+      // 2. Salvar data set
+      const saveResult = await dataSetService.createFromExtraction(
+        dataSetName,
+        dataSetDescription || undefined,
+        extractionResult,
+        extractionConfig
+      );
+
+      if (!saveResult.success || !saveResult.dataSet) {
+        throw new Error(saveResult.error || 'Erro ao salvar dados');
+      }
+
+      // 3. Gerar dashboard automaticamente
+      const dashboardResult = await autoDashboardService.generateFromDataSet(
+        saveResult.dataSet,
+        `Dashboard - ${dataSetName}`
+      );
+
+      if (!dashboardResult.success) {
+        throw new Error(dashboardResult.error || 'Erro ao gerar dashboard');
+      }
+
+      // 4. Salvar ID do dashboard e fechar modal
+      setSavedDashboardId(dashboardResult.dashboard?.id || null);
+      setShowSaveModal(false);
+      setDataSetName('');
+      setDataSetDescription('');
+
+      // 5. Disparar evento para navegação (opcional)
+      window.dispatchEvent(new CustomEvent('dashboardCreated', {
+        detail: {
+          dashboardId: dashboardResult.dashboard?.id,
+          dataSetId: saveResult.dataSet.id,
+        }
+      }));
+
+      // Mostrar sucesso
+      alert(`Dashboard "${dataSetName}" criado com sucesso! Você pode acessá-lo em "Meus Dashboards".`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1051,9 +1203,27 @@ export const DataExtractorPage: React.FC = () => {
                     Periodo: {extractionResult.dateRange.start} ate {extractionResult.dateRange.end}
                   </div>
 
-                  <Button onClick={exportToCSV} icon={Download} className="w-full">
-                    Exportar CSV
-                  </Button>
+                  <div className="space-y-2">
+                    <Button onClick={exportToCSV} icon={Download} className="w-full">
+                      Exportar CSV
+                    </Button>
+                    <Button
+                      onClick={handlePreviewDashboard}
+                      icon={Eye}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      Visualizar Dashboard
+                    </Button>
+                    <Button
+                      onClick={() => setShowSaveModal(true)}
+                      icon={LayoutDashboard}
+                      variant="primary"
+                      className="w-full"
+                    >
+                      Salvar e Gerar Dashboard
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="text-sm text-red-600">
@@ -1100,6 +1270,130 @@ export const DataExtractorPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Modal para salvar e gerar dashboard */}
+      <Modal
+        isOpen={showSaveModal}
+        onClose={() => setShowSaveModal(false)}
+        title="Salvar Dados e Gerar Dashboard"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Os dados extraídos serão salvos permanentemente e um dashboard será
+            gerado automaticamente com visualizações baseadas nos campos selecionados.
+          </p>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nome do conjunto de dados *
+            </label>
+            <input
+              type="text"
+              value={dataSetName}
+              onChange={e => setDataSetName(e.target.value)}
+              placeholder="Ex: Campanhas Janeiro 2024"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Descrição (opcional)
+            </label>
+            <textarea
+              value={dataSetDescription}
+              onChange={e => setDataSetDescription(e.target.value)}
+              placeholder="Descreva o propósito deste conjunto de dados..."
+              rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          {extractionResult && (
+            <div className="bg-gray-50 rounded-lg p-3 text-sm">
+              <div className="flex justify-between text-gray-600">
+                <span>Registros:</span>
+                <span className="font-medium">{extractionResult.totalRecords.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Período:</span>
+                <span className="font-medium">
+                  {extractionResult.dateRange.start} a {extractionResult.dateRange.end}
+                </span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Campos:</span>
+                <span className="font-medium">{extractionResult.columns.length}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowSaveModal(false)}
+              disabled={isSaving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSaveAndGenerateDashboard}
+              loading={isSaving}
+              disabled={isSaving || !dataSetName.trim()}
+              icon={LayoutDashboard}
+            >
+              {isSaving ? 'Salvando...' : 'Salvar e Gerar Dashboard'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal de preview do dashboard */}
+      {showDashboardPreview && extractionResult && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header do modal */}
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Preview do Dashboard</h2>
+                <p className="text-sm text-gray-500">
+                  Visualização prévia dos dados extraídos (não salvo)
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={() => {
+                    setShowDashboardPreview(false);
+                    setShowSaveModal(true);
+                  }}
+                  icon={Save}
+                >
+                  Salvar Dashboard
+                </Button>
+                <button
+                  onClick={() => setShowDashboardPreview(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Conteúdo do dashboard */}
+            <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+              <DynamicDashboard
+                name="Preview - Dados Extraídos"
+                description={`${extractionResult.totalRecords} registros extraídos`}
+                data={extractionResult.data}
+                columns={extractionResult.columns}
+                widgets={generatedWidgets}
+                dateRangeStart={extractionResult.dateRange.start}
+                dateRangeEnd={extractionResult.dateRange.end}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
