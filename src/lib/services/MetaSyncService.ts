@@ -471,7 +471,9 @@ export class MetaSyncService {
       'video_p75_watched_actions', 'video_p100_watched_actions'
     ].join(',');
 
-    const url = `${this.baseUrl}/${campaignId}/insights?fields=${fields}&time_range={"since":"${dateStart}","until":"${dateEnd}"}&time_increment=1&access_token=${this.accessToken}`;
+    // Codifica o time_range como JSON válido para URL (necessário para evitar erro 400 Bad Request)
+    const timeRange = encodeURIComponent(JSON.stringify({ since: dateStart, until: dateEnd }));
+    const url = `${this.baseUrl}/${campaignId}/insights?fields=${fields}&time_range=${timeRange}&time_increment=1&access_token=${this.accessToken}`;
     const data = await this.fetchWithRetry(url);
     return data.data || [];
   }

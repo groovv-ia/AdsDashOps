@@ -386,9 +386,10 @@ export class DataSyncService {
         'video_p75_watched_actions', 'video_p100_watched_actions'
       ].join(',');
 
-      // Monta URL da API Meta
+      // Monta URL da API Meta com time_range corretamente codificado
       const baseUrl = 'https://graph.facebook.com/v19.0';
-      const url = `${baseUrl}/${objectId}/insights?fields=${fields}&time_range={"since":"${dateStart}","until":"${dateEnd}"}&time_increment=1&level=${objectType}&access_token=${accessToken}`;
+      const timeRange = encodeURIComponent(JSON.stringify({ since: dateStart, until: dateEnd }));
+      const url = `${baseUrl}/${objectId}/insights?fields=${fields}&time_range=${timeRange}&time_increment=1&level=${objectType}&access_token=${accessToken}`;
 
       logger.info('Buscando insights da API Meta', { objectId, objectType, dateStart, dateEnd });
 
