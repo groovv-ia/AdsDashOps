@@ -279,16 +279,18 @@ export const FieldSelector: React.FC<FieldSelectorProps> = ({
                 key={category}
                 className="border border-gray-200 rounded-lg overflow-hidden"
               >
-                {/* Header da categoria */}
-                <button
-                  type="button"
-                  onClick={() => toggleCategory(category)}
+                {/* Header da categoria - Corrigido para evitar button dentro de button */}
+                <div
                   className={`
                     w-full flex items-center justify-between px-4 py-2.5
-                    ${colors.bg} hover:brightness-95 transition-all
+                    ${colors.bg} hover:brightness-95 transition-all cursor-pointer
                   `}
                 >
-                  <div className="flex items-center gap-2">
+                  {/* Área clicável para expandir/recolher */}
+                  <div
+                    onClick={() => toggleCategory(category)}
+                    className="flex items-center gap-2 flex-1"
+                  >
                     <span className={`font-medium ${colors.text}`}>
                       {CATEGORY_LABELS[category]}
                     </span>
@@ -296,6 +298,8 @@ export const FieldSelector: React.FC<FieldSelectorProps> = ({
                       ({selectedInCategory}/{categoryFields.length})
                     </span>
                   </div>
+
+                  {/* Botões de ação e indicador de estado */}
                   <div className="flex items-center gap-2">
                     {isExpanded && (
                       <div className="flex items-center gap-1">
@@ -321,13 +325,19 @@ export const FieldSelector: React.FC<FieldSelectorProps> = ({
                         </button>
                       </div>
                     )}
-                    {isExpanded ? (
-                      <ChevronUp className="w-4 h-4 text-gray-500" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-gray-500" />
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleCategory(category)}
+                      className="p-0.5 hover:bg-black/5 rounded"
+                    >
+                      {isExpanded ? (
+                        <ChevronUp className="w-4 h-4 text-gray-500" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                      )}
+                    </button>
                   </div>
-                </button>
+                </div>
 
                 {/* Campos da categoria */}
                 {isExpanded && (

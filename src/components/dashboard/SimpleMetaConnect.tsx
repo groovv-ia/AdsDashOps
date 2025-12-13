@@ -148,7 +148,8 @@ export const SimpleMetaConnect: React.FC = () => {
    * Mais confiável que popup pois não é bloqueado pelos navegadores
    */
   const handleConnect = () => {
-    console.log('🚀 [Meta Connect] Iniciando processo de conexão OAuth com redirecionamento');
+    console.log('🚀 [Meta Connect] ========================================');
+    console.log('🚀 [Meta Connect] Iniciando processo de conexão OAuth');
 
     setLoading(true);
     setError(null);
@@ -165,10 +166,20 @@ export const SimpleMetaConnect: React.FC = () => {
     console.log('  - Redirect URI:', redirectUri);
     console.log('  - Scope:', scope);
     console.log('  - State:', state);
+    console.log('  - Current Origin:', window.location.origin);
 
+    // Validação: Client ID obrigatório
     if (!clientId) {
       console.error('❌ [Meta Connect] VITE_META_APP_ID não está configurado no .env');
       setError('App ID do Meta não configurado. Verifique o arquivo .env');
+      setLoading(false);
+      return;
+    }
+
+    // Validação: Formato do Client ID
+    if (!/^\d+$/.test(clientId)) {
+      console.error('❌ [Meta Connect] VITE_META_APP_ID tem formato inválido:', clientId);
+      setError('App ID do Meta está no formato incorreto. Deve conter apenas números.');
       setLoading(false);
       return;
     }
@@ -180,11 +191,47 @@ export const SimpleMetaConnect: React.FC = () => {
     // Constrói URL de autorização do Facebook
     const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${state}`;
 
-    console.log('🚀 [Meta Connect] URL de autorização:', authUrl);
-    console.log('🚀 [Meta Connect] Redirecionando para autorização do Meta...');
+    console.log('🚀 [Meta Connect] URL de autorização construída');
+    console.log('🚀 [Meta Connect] Tentando redirecionar para:', authUrl.substring(0, 100) + '...');
 
-    // Redireciona diretamente para a página de autorização
-    window.location.href = authUrl;
+    // Instruções em caso de erro
+    console.log('');
+    console.log('⚠️ [Meta Connect] SE RECEBER ERRO 400 (Bad Request):');
+    console.log('');
+    console.log('   CAUSA MAIS COMUM: URL de redirecionamento não autorizada');
+    console.log('');
+    console.log('   SOLUÇÃO PASSO A PASSO:');
+    console.log('   1. Acesse: https://developers.facebook.com/apps/' + clientId);
+    console.log('   2. Vá em: Use cases → Customize → Add');
+    console.log('   3. Selecione: "Other" → "Business Management"');
+    console.log('   4. Volte e vá em: Settings → Basic');
+    console.log('   5. Em "App Domains", adicione: adsops.bolt.host');
+    console.log('   6. Clique em "Add Platform" → "Website"');
+    console.log('   7. Em "Site URL", adicione: ' + redirectUri);
+    console.log('   8. Salve as alterações');
+    console.log('   9. Vá em: App Review → Permissions and Features');
+    console.log('   10. Certifique-se que estas permissões estão ativas:');
+    console.log('       - ads_management');
+    console.log('       - ads_read');
+    console.log('       - business_management');
+    console.log('');
+    console.log('   IMPORTANTE: O App precisa estar em modo "Development"');
+    console.log('   ou as permissões precisam estar aprovadas pelo Facebook.');
+    console.log('');
+
+    try {
+      // Tenta redirecionar
+      console.log('🚀 [Meta Connect] Executando redirecionamento...');
+      window.location.href = authUrl;
+
+      // Se chegou aqui, o redirecionamento está em andamento
+      console.log('✅ [Meta Connect] Redirecionamento iniciado');
+    } catch (err: any) {
+      console.error('❌ [Meta Connect] Erro ao tentar redirecionar:', err);
+      setError(`Erro ao iniciar autorização: ${err.message}`);
+      setLoading(false);
+      localStorage.removeItem('meta_oauth_flow');
+    }
   };
 
   /**
@@ -550,7 +597,9 @@ export const SimpleMetaConnect: React.FC = () => {
             <XCircle className="w-5 h-5 text-red-600 mr-3 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <h4 className="text-sm font-semibold text-red-900 mb-1">Erro na Conexão</h4>
-              <p className="text-sm text-red-800">{error}</p>
+              <p className="text-sm text-red-800 mb-2">{error}</p>
+
+              {/* Instruções para erro de redirect_uri */}
               {error.includes('redirect_uri') && (
                 <div className="mt-2 p-2 bg-red-100 rounded text-xs text-red-900">
                   <strong>Como corrigir:</strong>
@@ -563,10 +612,32 @@ export const SimpleMetaConnect: React.FC = () => {
                   </ol>
                 </div>
               )}
+
+              {/* Instruções para ERRO 400 - Caso mais comum */}
+              {!error.includes('redirect_uri') && !error.includes('cancelada') && (
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
+                  <strong className="text-yellow-900 block mb-2">💡 Se você viu um erro 400 (Bad Request):</strong>
+                  <div className="text-yellow-800 space-y-1">
+                    <p className="font-medium">A causa mais comum é a URL de redirecionamento não autorizada.</p>
+                    <p className="mt-2 font-medium">Configure no Facebook:</p>
+                    <ol className="list-decimal ml-4 mt-1 space-y-0.5">
+                      <li>Acesse: <a href={`https://developers.facebook.com/apps/${import.meta.env.VITE_META_APP_ID}`} target="_blank" rel="noopener noreferrer" className="underline">Facebook App</a></li>
+                      <li>Use cases → Customize → Add → "Business Management"</li>
+                      <li>Settings → Basic → App Domains → Adicione: <code className="bg-white px-1 rounded">adsops.bolt.host</code></li>
+                      <li>Add Platform → Website → Site URL: <code className="bg-white px-1 rounded">{import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`}</code></li>
+                      <li>Salve todas as alterações</li>
+                      <li>App Review → Permissions → Verifique: ads_read, ads_management, business_management</li>
+                    </ol>
+                    <p className="mt-2 text-yellow-700">
+                      ⚠️ Importante: O App deve estar em modo "Development" ou as permissões aprovadas.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
             <button
               onClick={() => setError(null)}
-              className="ml-2 text-red-600 hover:text-red-800"
+              className="ml-2 text-red-600 hover:text-red-800 text-xl leading-none"
             >
               ×
             </button>
