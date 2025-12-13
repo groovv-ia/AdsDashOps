@@ -28,6 +28,44 @@ export const SimpleMetaConnect: React.FC = () => {
     checkExistingConnection();
   }, []);
 
+  // Processa callback OAuth quando usuário retorna do fluxo de autorização
+  useEffect(() => {
+    const processOAuthReturn = async () => {
+      // Verifica se há um código de autorização aguardando processamento
+      const code = localStorage.getItem('meta_oauth_code');
+      const platform = localStorage.getItem('meta_oauth_platform');
+      const error = localStorage.getItem('meta_oauth_error');
+
+      if (error) {
+        console.error('❌ [Meta Connect] Erro no OAuth:', error);
+        setError(error);
+        setStatus('disconnected');
+        setLoading(false);
+
+        // Limpa localStorage
+        localStorage.removeItem('meta_oauth_error');
+        localStorage.removeItem('meta_oauth_flow');
+        return;
+      }
+
+      if (code && platform === 'meta') {
+        console.log('🔄 [Meta Connect] Código OAuth detectado, processando...');
+        setStatus('connecting');
+        setLoading(true);
+
+        // Limpa localStorage
+        localStorage.removeItem('meta_oauth_code');
+        localStorage.removeItem('meta_oauth_platform');
+        localStorage.removeItem('meta_oauth_flow');
+
+        // Processa o código
+        await exchangeCodeForToken(code);
+      }
+    };
+
+    processOAuthReturn();
+  }, []);
+
   /**
    * Verifica se já existe uma conexão Meta ativa para este usuário
    */
@@ -79,15 +117,14 @@ export const SimpleMetaConnect: React.FC = () => {
   };
 
   /**
-   * Inicia o fluxo OAuth do Meta
-   * Abre popup com tela de autorização do Facebook
+   * Inicia o fluxo OAuth do Meta usando redirecionamento direto
+   * Mais confiável que popup pois não é bloqueado pelos navegadores
    */
   const handleConnect = () => {
-    console.log('🚀 [Meta Connect] Iniciando processo de conexão OAuth');
+    console.log('🚀 [Meta Connect] Iniciando processo de conexão OAuth com redirecionamento');
 
     setLoading(true);
     setError(null);
-    setStatus('connecting');
 
     // Configurações do OAuth
     const clientId = import.meta.env.VITE_META_APP_ID;
@@ -105,126 +142,22 @@ export const SimpleMetaConnect: React.FC = () => {
     if (!clientId) {
       console.error('❌ [Meta Connect] VITE_META_APP_ID não está configurado no .env');
       setError('App ID do Meta não configurado. Verifique o arquivo .env');
-      setStatus('disconnected');
       setLoading(false);
       return;
     }
+
+    // Salva estado no localStorage para retomar após o callback
+    localStorage.setItem('meta_oauth_state', state);
+    localStorage.setItem('meta_oauth_flow', 'connecting');
 
     // Constrói URL de autorização do Facebook
     const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${state}`;
 
     console.log('🚀 [Meta Connect] URL de autorização:', authUrl);
-    console.log('🚀 [Meta Connect] Abrindo popup de autorização...');
+    console.log('🚀 [Meta Connect] Redirecionando para autorização do Meta...');
 
-    // Abre popup para autorização
-    const popup = window.open(authUrl, 'meta-oauth', 'width=600,height=700');
-
-    if (!popup) {
-      console.error('❌ [Meta Connect] Falha ao abrir popup. Verifique se popups estão bloqueados');
-      setError('Não foi possível abrir a janela de autorização. Permita popups para este site.');
-      setStatus('disconnected');
-      setLoading(false);
-      return;
-    }
-
-    console.log('✅ [Meta Connect] Popup aberto com sucesso');
-
-    // Timeout de 60 segundos para receber o callback
-    const callbackTimeout = setTimeout(() => {
-      console.warn('⏱️ [Meta Connect] Timeout: Callback não recebido em 60 segundos');
-      if (!popup.closed) {
-        popup.close();
-      }
-      window.removeEventListener('message', handleMessage);
-      clearInterval(checkPopupClosed);
-      if (status === 'connecting') {
-        setError('Tempo esgotado aguardando autorização. Tente novamente.');
-        setStatus('disconnected');
-        setLoading(false);
-      }
-    }, 60000); // 60 segundos
-
-    // Listener para receber mensagem do popup após autorização
-    const handleMessage = async (event: MessageEvent) => {
-      console.log('💬 [Meta Connect] Mensagem recebida:', {
-        origin: event.origin,
-        expectedOrigin: window.location.origin,
-        type: event.data.type,
-        platform: event.data.platform,
-      });
-
-      // Verifica origem por segurança
-      if (event.origin !== window.location.origin) {
-        console.warn('⚠️ [Meta Connect] Origem da mensagem não confiável:', event.origin);
-        return;
-      }
-
-      if (event.data.type === 'oauth-success' && event.data.platform === 'meta') {
-        console.log('✅ [Meta Connect] Autorização bem-sucedida recebida!');
-        clearTimeout(callbackTimeout);
-        clearInterval(checkPopupClosed);
-        window.removeEventListener('message', handleMessage);
-
-        const { code, accessToken } = event.data;
-
-        console.log('💬 [Meta Connect] Dados recebidos:', {
-          hasCode: !!code,
-          hasAccessToken: !!accessToken,
-          codePreview: code ? `${code.substring(0, 20)}...` : null,
-        });
-
-        // Se já recebeu o access token, busca contas
-        if (accessToken) {
-          console.log('🔑 [Meta Connect] Access token já recebido, buscando contas...');
-          await fetchAccounts(accessToken);
-        } else if (code) {
-          console.log('🔄 [Meta Connect] Código recebido, iniciando troca por token...');
-          // Se recebeu apenas o código, precisa trocar por token
-          await exchangeCodeForToken(code);
-        } else {
-          console.error('❌ [Meta Connect] Nenhum código ou token recebido');
-          setError('Erro: Nenhum código de autorização recebido');
-          setStatus('disconnected');
-          setLoading(false);
-        }
-
-        if (popup && !popup.closed) {
-          console.log('🔒 [Meta Connect] Fechando popup');
-          popup.close();
-        }
-      } else if (event.data.type === 'oauth-error') {
-        console.error('❌ [Meta Connect] Erro recebido do callback:', event.data.error);
-        clearTimeout(callbackTimeout);
-        clearInterval(checkPopupClosed);
-        window.removeEventListener('message', handleMessage);
-        setError(event.data.error || 'Erro ao autorizar com Meta');
-        setStatus('disconnected');
-        setLoading(false);
-
-        if (popup && !popup.closed) {
-          popup.close();
-        }
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    console.log('👂 [Meta Connect] Listener de mensagens registrado');
-
-    // Verifica se popup foi fechado manualmente
-    const checkPopupClosed = setInterval(() => {
-      if (popup?.closed) {
-        console.log('🔒 [Meta Connect] Popup foi fechado');
-        clearTimeout(callbackTimeout);
-        clearInterval(checkPopupClosed);
-        window.removeEventListener('message', handleMessage);
-        if (status === 'connecting') {
-          console.warn('⚠️ [Meta Connect] Popup fechado antes de completar autorização');
-          setStatus('disconnected');
-          setLoading(false);
-          setError('Autorização cancelada pelo usuário');
-        }
-      }
-    }, 1000);
+    // Redireciona diretamente para a página de autorização
+    window.location.href = authUrl;
   };
 
   /**

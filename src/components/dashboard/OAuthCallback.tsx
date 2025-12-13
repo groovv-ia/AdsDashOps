@@ -16,7 +16,7 @@ export const OAuthCallback: React.FC = () => {
 
   /**
    * Processa o callback OAuth extraindo parâmetros da URL
-   * e enviando mensagem para a janela pai (opener)
+   * e redirecionando de volta para o dashboard com os dados
    */
   const processCallback = () => {
     try {
@@ -48,7 +48,6 @@ export const OAuthCallback: React.FC = () => {
       }
 
       console.log('📨 [OAuth Callback] Plataforma identificada:', platform);
-      console.log('📨 [OAuth Callback] Window opener existe?', !!window.opener);
 
       // Verifica se houve erro na autorização
       if (error) {
@@ -56,24 +55,15 @@ export const OAuthCallback: React.FC = () => {
         setStatus('error');
         setMessage(errorDescription || error);
 
-        // Envia erro para janela pai
-        if (window.opener) {
-          console.log('📨 [OAuth Callback] Enviando mensagem de erro para janela pai');
-          window.opener.postMessage({
-            type: 'oauth-error',
-            platform,
-            error: errorDescription || error,
-          }, window.location.origin);
-          console.log('✅ [OAuth Callback] Mensagem de erro enviada');
-        } else {
-          console.warn('⚠️ [OAuth Callback] Sem window.opener para enviar erro');
-        }
+        // Salva erro no localStorage para exibir na página principal
+        localStorage.setItem('meta_oauth_error', errorDescription || error);
+        localStorage.removeItem('meta_oauth_flow');
 
-        // Fecha janela após 3 segundos
+        // Redireciona de volta para o dashboard após 2 segundos
         setTimeout(() => {
-          console.log('📨 [OAuth Callback] Fechando janela após erro');
-          window.close();
-        }, 3000);
+          console.log('📨 [OAuth Callback] Redirecionando de volta após erro');
+          window.location.href = '/';
+        }, 2000);
         return;
       }
 
@@ -84,47 +74,31 @@ export const OAuthCallback: React.FC = () => {
 
       console.log('✅ [OAuth Callback] Código de autorização recebido com sucesso');
       setStatus('success');
-      setMessage('Autorização concluída! Fechando...');
+      setMessage('Autorização concluída! Redirecionando...');
 
-      // Envia código para janela pai processar
-      if (window.opener) {
-        console.log('📨 [OAuth Callback] Enviando código para janela pai');
-        const message = {
-          type: 'oauth-success',
-          platform,
-          code,
-        };
-        console.log('📨 [OAuth Callback] Mensagem a enviar:', message);
-        window.opener.postMessage(message, window.location.origin);
-        console.log('✅ [OAuth Callback] Mensagem enviada com sucesso');
-      } else {
-        console.error('❌ [OAuth Callback] Window.opener não existe! Não é possível enviar mensagem');
-      }
+      // Salva código no localStorage para ser processado na página principal
+      localStorage.setItem('meta_oauth_code', code);
+      localStorage.setItem('meta_oauth_platform', platform);
 
-      // Fecha janela automaticamente após 2 segundos (aumentado de 1s para dar mais tempo)
+      // Redireciona de volta para o dashboard
+      console.log('📨 [OAuth Callback] Redirecionando de volta para o dashboard');
       setTimeout(() => {
-        console.log('📨 [OAuth Callback] Fechando janela após sucesso');
-        window.close();
-      }, 2000);
+        window.location.href = '/';
+      }, 1000);
     } catch (err: any) {
       console.error('❌ [OAuth Callback] Erro ao processar callback:', err);
       setStatus('error');
       setMessage(err.message || 'Erro ao processar autorização');
 
-      // Envia erro para janela pai
-      if (window.opener) {
-        console.log('📨 [OAuth Callback] Enviando erro para janela pai');
-        window.opener.postMessage({
-          type: 'oauth-error',
-          error: err.message || 'Erro desconhecido',
-        }, window.location.origin);
-      }
+      // Salva erro no localStorage
+      localStorage.setItem('meta_oauth_error', err.message || 'Erro desconhecido');
+      localStorage.removeItem('meta_oauth_flow');
 
-      // Fecha janela após 3 segundos
+      // Redireciona de volta após 2 segundos
       setTimeout(() => {
-        console.log('📨 [OAuth Callback] Fechando janela após exceção');
-        window.close();
-      }, 3000);
+        console.log('📨 [OAuth Callback] Redirecionando de volta após exceção');
+        window.location.href = '/';
+      }, 2000);
     }
   };
 
