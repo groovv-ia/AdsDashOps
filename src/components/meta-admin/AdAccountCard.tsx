@@ -2,7 +2,13 @@
  * AdAccountCard
  *
  * Card visual para exibir uma conta de anuncios do Meta Ads.
- * Mostra nome, ID, status, metricas resumidas e acoes de sincronizacao.
+ * Design inspirado no CampaignCard para consistencia visual.
+ *
+ * Features:
+ * - Indicador lateral de status colorido
+ * - Metricas com fundo gradiente e cores por categoria
+ * - Metricas secundarias em linha
+ * - Info adicional e botao de acao
  */
 
 import React from 'react';
@@ -11,6 +17,7 @@ import {
   RefreshCw,
   ChevronRight,
   TrendingUp,
+  TrendingDown,
   DollarSign,
   Eye,
   MousePointer,
@@ -18,7 +25,12 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Users,
+  BarChart3,
+  Globe,
 } from 'lucide-react';
+import { Card } from '../ui/Card';
+import { Badge } from '../ui/Badge';
 
 // Interface para os dados da conta de anuncios
 export interface AdAccountData {
@@ -35,6 +47,9 @@ export interface AdAccountData {
     impressions: number;
     clicks: number;
     ctr: number;
+    reach?: number;
+    cpc?: number;
+    cpm?: number;
   };
 }
 
@@ -58,12 +73,11 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
     }).format(value);
   };
 
-  // Formata numeros grandes de forma compacta
+  // Formata numeros grandes de forma compacta (ex: 1.5K, 2.3M)
   const formatCompact = (value: number) => {
     if (value >= 1000000) {
       return `${(value / 1000000).toFixed(1)}M`;
@@ -74,53 +88,82 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     return value.toLocaleString('pt-BR');
   };
 
+  // Retorna cor da borda lateral baseado no status e metricas
+  const getPerformanceColor = (): string => {
+    if (!account.metrics) return 'border-l-4 border-l-gray-300';
+
+    const hasMetrics = account.metrics.impressions > 0 || account.metrics.spend > 0;
+    if (!hasMetrics) return 'border-l-4 border-l-gray-300';
+
+    // Baseado no CTR para indicar performance
+    const ctr = account.metrics.ctr;
+    if (ctr >= 2) return 'border-l-4 border-l-green-500';
+    if (ctr >= 1) return 'border-l-4 border-l-yellow-500';
+    if (ctr > 0) return 'border-l-4 border-l-orange-500';
+    return 'border-l-4 border-l-gray-300';
+  };
+
   // Retorna a cor e icone baseado no status de sincronizacao
   const getSyncStatusInfo = () => {
     switch (account.syncStatus) {
       case 'synced':
         return {
-          color: 'text-green-600 bg-green-50',
+          color: 'text-green-600 bg-green-50 border-green-200',
           icon: <CheckCircle2 className="w-3.5 h-3.5" />,
           label: 'Sincronizado',
         };
       case 'syncing':
         return {
-          color: 'text-blue-600 bg-blue-50',
+          color: 'text-blue-600 bg-blue-50 border-blue-200',
           icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
           label: 'Sincronizando',
         };
       case 'stale':
         return {
-          color: 'text-amber-600 bg-amber-50',
+          color: 'text-amber-600 bg-amber-50 border-amber-200',
           icon: <Clock className="w-3.5 h-3.5" />,
           label: 'Desatualizado',
         };
       case 'error':
         return {
-          color: 'text-red-600 bg-red-50',
+          color: 'text-red-600 bg-red-50 border-red-200',
           icon: <AlertCircle className="w-3.5 h-3.5" />,
           label: 'Erro',
         };
       default:
         return {
-          color: 'text-gray-500 bg-gray-50',
+          color: 'text-gray-500 bg-gray-50 border-gray-200',
           icon: <Clock className="w-3.5 h-3.5" />,
           label: 'Nunca sincronizado',
         };
     }
   };
 
-  // Retorna cor do status da conta (ACTIVE, PAUSED, etc)
-  const getAccountStatusColor = () => {
+  // Retorna variante do badge de status
+  const getStatusVariant = (): 'success' | 'warning' | 'error' | 'info' => {
     switch (account.status) {
       case 'ACTIVE':
-        return 'bg-green-100 text-green-700';
-      case 'DISABLED':
-        return 'bg-red-100 text-red-700';
+        return 'success';
       case 'PAUSED':
-        return 'bg-amber-100 text-amber-700';
+        return 'warning';
+      case 'DISABLED':
+        return 'error';
       default:
-        return 'bg-gray-100 text-gray-700';
+        return 'info';
+    }
+  };
+
+  // Retorna texto traduzido do status
+  const getStatusText = (): string => {
+    switch (account.status) {
+      case 'ACTIVE':
+        return 'Ativa';
+      case 'PAUSED':
+        return 'Pausada';
+      case 'DISABLED':
+        return 'Desativada';
+      default:
+        return account.status;
     }
   };
 
@@ -133,10 +176,12 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     const date = new Date(account.lastSyncAt);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
 
-    if (diffHours < 1) return 'Ha poucos minutos';
+    if (diffMins < 1) return 'Agora mesmo';
+    if (diffMins < 60) return `Ha ${diffMins} min`;
     if (diffHours < 24) return `Ha ${diffHours}h`;
     if (diffDays === 1) return 'Ontem';
     if (diffDays < 7) return `Ha ${diffDays} dias`;
@@ -144,158 +189,214 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
   };
 
+  // Calcula CPC e CPM se nao estiver presente
+  const cpc = account.metrics?.cpc ?? (account.metrics?.clicks ? account.metrics.spend / account.metrics.clicks : 0);
+  const cpm = account.metrics?.cpm ?? (account.metrics?.impressions ? (account.metrics.spend / account.metrics.impressions) * 1000 : 0);
+
+  // Verifica se a conta tem metricas
+  const hasMetrics = account.metrics && (account.metrics.impressions > 0 || account.metrics.spend > 0);
+
   return (
-    <div
+    <Card
       className={`
-        relative bg-white rounded-xl border-2 transition-all duration-200 cursor-pointer
-        hover:shadow-lg hover:border-blue-300
-        ${isSelected ? 'border-blue-500 shadow-lg ring-2 ring-blue-100' : 'border-gray-200'}
+        hover:shadow-xl transition-all duration-300 ${getPerformanceColor()} overflow-hidden cursor-pointer
+        ${isSelected ? 'ring-2 ring-blue-400 shadow-lg' : ''}
       `}
       onClick={() => onSelect(account.id)}
     >
-      {/* Header do Card com gradiente */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-t-xl px-4 py-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-white/20 rounded-lg">
-              <Building2 className="w-5 h-5 text-white" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="font-semibold text-white truncate" title={account.name}>
-                {account.name}
-              </h3>
-              <p className="text-xs text-blue-100 font-mono">
-                {account.metaId}
-              </p>
-            </div>
-          </div>
-
-          {/* Badge de status da conta */}
-          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getAccountStatusColor()}`}>
-            {account.status}
+      {/* Banner de aviso se nao tiver metricas */}
+      {!hasMetrics && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 flex items-center space-x-2">
+          <AlertCircle className="h-4 w-4 text-yellow-600 flex-shrink-0" />
+          <span className="text-xs text-yellow-800">
+            Sem metricas - Clique em sincronizar
           </span>
+        </div>
+      )}
+
+      {/* Header do card */}
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center space-x-2 mb-2">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Building2 className="w-5 h-5 text-blue-600" />
+            </div>
+            <h3 className="font-bold text-lg text-gray-900 truncate" title={account.name}>
+              {account.name}
+            </h3>
+          </div>
+          <div className="flex items-center space-x-2 flex-wrap gap-2">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-blue-100 text-blue-700 border-blue-300">
+              Meta
+            </span>
+            <Badge variant={getStatusVariant()}>
+              {getStatusText()}
+            </Badge>
+            <span className="text-xs text-gray-500 font-mono">{account.metaId}</span>
+          </div>
         </div>
       </div>
 
-      {/* Corpo do Card */}
-      <div className="p-4">
-        {/* Info de sincronizacao */}
-        <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center space-x-1.5 px-2 py-1 rounded-full text-xs font-medium ${syncInfo.color}`}>
-            {syncInfo.icon}
-            <span>{syncInfo.label}</span>
+      {/* Secao de metricas principais - Grid 2x2 com gradientes */}
+      {account.metrics && (
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {/* Gasto */}
+          <div className="bg-gradient-to-br from-green-50 to-green-100/50 rounded-lg p-3 border border-green-200">
+            <div className="flex items-center space-x-2 mb-1">
+              <DollarSign className="h-4 w-4 text-green-600" />
+              <span className="text-xs font-medium text-green-700">Gasto</span>
+            </div>
+            <p className="text-xl font-bold text-green-900">
+              {formatCurrency(account.metrics.spend, account.currency)}
+            </p>
           </div>
-          <span className="text-xs text-gray-500">
-            {formatLastSync()}
-          </span>
+
+          {/* Impressoes */}
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg p-3 border border-blue-200">
+            <div className="flex items-center space-x-2 mb-1">
+              <Eye className="h-4 w-4 text-blue-600" />
+              <span className="text-xs font-medium text-blue-700">Impressoes</span>
+            </div>
+            <p className="text-xl font-bold text-blue-900">
+              {formatCompact(account.metrics.impressions)}
+            </p>
+          </div>
+
+          {/* Cliques */}
+          <div className="bg-gradient-to-br from-orange-50 to-orange-100/50 rounded-lg p-3 border border-orange-200">
+            <div className="flex items-center space-x-2 mb-1">
+              <MousePointer className="h-4 w-4 text-orange-600" />
+              <span className="text-xs font-medium text-orange-700">Cliques</span>
+            </div>
+            <p className="text-xl font-bold text-orange-900">
+              {formatCompact(account.metrics.clicks)}
+            </p>
+          </div>
+
+          {/* Alcance */}
+          <div className="bg-gradient-to-br from-teal-50 to-teal-100/50 rounded-lg p-3 border border-teal-200">
+            <div className="flex items-center space-x-2 mb-1">
+              <Users className="h-4 w-4 text-teal-600" />
+              <span className="text-xs font-medium text-teal-700">Alcance</span>
+            </div>
+            <p className="text-xl font-bold text-teal-900">
+              {formatCompact(account.metrics.reach || 0)}
+            </p>
+          </div>
         </div>
+      )}
 
-        {/* Metricas em Grid */}
-        {account.metrics ? (
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            {/* Gasto */}
-            <div className="bg-gray-50 rounded-lg p-2.5">
-              <div className="flex items-center space-x-1.5 text-gray-500 mb-1">
-                <DollarSign className="w-3.5 h-3.5" />
-                <span className="text-xs">Gasto</span>
-              </div>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatCurrency(account.metrics.spend, account.currency)}
-              </p>
-            </div>
-
-            {/* Impressoes */}
-            <div className="bg-gray-50 rounded-lg p-2.5">
-              <div className="flex items-center space-x-1.5 text-gray-500 mb-1">
-                <Eye className="w-3.5 h-3.5" />
-                <span className="text-xs">Impressoes</span>
-              </div>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatCompact(account.metrics.impressions)}
-              </p>
-            </div>
-
-            {/* Cliques */}
-            <div className="bg-gray-50 rounded-lg p-2.5">
-              <div className="flex items-center space-x-1.5 text-gray-500 mb-1">
-                <MousePointer className="w-3.5 h-3.5" />
-                <span className="text-xs">Cliques</span>
-              </div>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatCompact(account.metrics.clicks)}
-              </p>
-            </div>
-
-            {/* CTR */}
-            <div className="bg-gray-50 rounded-lg p-2.5">
-              <div className="flex items-center space-x-1.5 text-gray-500 mb-1">
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span className="text-xs">CTR</span>
-              </div>
+      {/* Secao de metricas calculadas - linha horizontal */}
+      {account.metrics && (
+        <div className="grid grid-cols-3 gap-2 mb-4 pb-4 border-b border-gray-200">
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">CTR</p>
+            <div className="flex items-center justify-center space-x-1">
               <p className="text-sm font-semibold text-gray-900">
                 {account.metrics.ctr.toFixed(2)}%
               </p>
+              {account.metrics.ctr >= 2 ? (
+                <TrendingUp className="h-3 w-3 text-green-600" />
+              ) : account.metrics.ctr >= 1 ? (
+                <TrendingUp className="h-3 w-3 text-yellow-600" />
+              ) : account.metrics.ctr > 0 ? (
+                <TrendingDown className="h-3 w-3 text-red-600" />
+              ) : null}
             </div>
           </div>
-        ) : (
-          <div className="bg-gray-50 rounded-lg p-4 mb-4 text-center">
-            <p className="text-sm text-gray-500">
-              Sincronize para ver metricas
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">CPC</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {formatCurrency(cpc, account.currency)}
             </p>
           </div>
-        )}
-
-        {/* Acoes */}
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onSync(account.id);
-            }}
-            disabled={isSyncing}
-            className={`
-              flex-1 flex items-center justify-center space-x-2 px-3 py-2 rounded-lg
-              text-sm font-medium transition-colors
-              ${isSyncing
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}
-            `}
-          >
-            {isSyncing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Sincronizando...</span>
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4" />
-                <span>Sincronizar</span>
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={() => onSelect(account.id)}
-            className="flex items-center justify-center p-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-            title="Ver detalhes"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">CPM</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {formatCurrency(cpm, account.currency)}
+            </p>
+          </div>
         </div>
+      )}
 
-        {/* Info adicional */}
-        <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+      {/* Estado sem metricas */}
+      {!account.metrics && (
+        <div className="bg-gray-50 rounded-lg p-6 mb-4 text-center">
+          <BarChart3 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">
+            Sincronize para ver metricas
+          </p>
+        </div>
+      )}
+
+      {/* Info de sincronizacao */}
+      <div className="flex items-center justify-between mb-4">
+        <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${syncInfo.color}`}>
+          {syncInfo.icon}
+          <span>{syncInfo.label}</span>
+        </div>
+        <div className="flex items-center space-x-1 text-xs text-gray-500">
+          <Clock className="w-3 h-3" />
+          <span>{formatLastSync()}</span>
+        </div>
+      </div>
+
+      {/* Acoes */}
+      <div className="flex items-center space-x-2">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSync(account.id);
+          }}
+          disabled={isSyncing}
+          className={`
+            flex-1 flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg
+            text-sm font-medium transition-all duration-200
+            ${isSyncing
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow'}
+          `}
+        >
+          {isSyncing ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Sincronizando...</span>
+            </>
+          ) : (
+            <>
+              <RefreshCw className="w-4 h-4" />
+              <span>Sincronizar</span>
+            </>
+          )}
+        </button>
+
+        <button
+          onClick={() => onSelect(account.id)}
+          className="flex items-center justify-center p-2.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+          title="Ver detalhes"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Info adicional */}
+      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+        <div className="flex items-center space-x-1">
+          <DollarSign className="w-3 h-3" />
           <span>{account.currency}</span>
+        </div>
+        <div className="flex items-center space-x-1">
+          <Globe className="w-3 h-3" />
           <span>{account.timezone}</span>
         </div>
       </div>
 
       {/* Indicador de selecao */}
       {isSelected && (
-        <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-          <CheckCircle2 className="w-3 h-3 text-white" />
+        <div className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center shadow-lg">
+          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
         </div>
       )}
-    </div>
+    </Card>
   );
 };
