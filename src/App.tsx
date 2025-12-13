@@ -24,6 +24,7 @@ import { ClientProvider } from './contexts/ClientContext';
 import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { ClientsPage } from './components/clients/ClientsPage';
+import { DataExtractorPage } from './components/extraction/DataExtractorPage';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -329,6 +330,8 @@ function AppContent() {
         );
       case 'data-sources':
         return <DataSources />;
+      case 'data-extractor':
+        return <DataExtractorPage />;
       case 'settings':
         return <SettingsPage />;
       case 'ai-insights':
