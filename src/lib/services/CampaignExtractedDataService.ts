@@ -1,33 +1,27 @@
 /**
- * CampaignExtractedDataService - Servico de Integracao de Campanhas Extraidas
+ * CampaignExtractedDataService - Servico de Visualizacao de Dados de Campanhas
  *
- * Gerencia a visualizacao de dados extraidos organizados por campanha,
- * permitindo ver conjuntos de anuncios e anuncios individuais, alem de
- * comparar performance entre diferentes periodos.
+ * Gerencia a visualizacao de dados de campanhas sincronizados,
+ * permitindo ver conjuntos de anuncios, anuncios individuais e metricas.
  */
 
 import { supabase } from '../supabase';
 import { logger } from '../utils/logger';
-import type { SavedDataSet } from './DataSetService';
 
 // ============================================
 // Tipos e Interfaces
 // ============================================
 
-/** Representa uma campanha encontrada nos dados extraidos */
+/** Representa uma campanha com informacoes basicas */
 export interface ExtractedCampaign {
   campaign_id: string;
   campaign_name: string;
   platform: string;
-  data_set_ids: string[];
-  total_records: number;
-  date_ranges: Array<{
-    data_set_id: string;
-    data_set_name: string;
-    start: string | null;
-    end: string | null;
-    record_count: number;
-  }>;
+  status: string;
+  objective: string | null;
+  created_date: string | null;
+  ad_sets_count: number;
+  ads_count: number;
 }
 
 /** Metricas agregadas de uma campanha */
@@ -49,6 +43,7 @@ export interface AdSetData {
   adset_id: string;
   adset_name: string;
   status: string;
+  campaign_id: string;
   impressions: number;
   clicks: number;
   spend: number;
@@ -59,6 +54,7 @@ export interface AdSetData {
   roas: number;
   reach: number;
   frequency: number;
+  ads_count: number;
 }
 
 /** Dados de um anuncio individual */
@@ -67,6 +63,7 @@ export interface AdData {
   ad_name: string;
   adset_id: string;
   adset_name: string;
+  campaign_id: string;
   status: string;
   impressions: number;
   clicks: number;
@@ -121,19 +118,6 @@ export interface TrendDataPoint {
 // ============================================
 
 /**
- * Extrai valor numerico de um campo, tratando diferentes formatos
- */
-function extractNumericValue(value: any): number {
-  if (value === null || value === undefined) return 0;
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') {
-    const cleaned = value.replace(/[^\d.,\-]/g, '').replace(',', '.');
-    return parseFloat(cleaned) || 0;
-  }
-  return 0;
-}
-
-/**
  * Calcula metricas derivadas a partir de metricas basicas
  */
 function calculateDerivedMetrics(metrics: Partial<CampaignMetrics>): CampaignMetrics {
@@ -171,7 +155,7 @@ function calculateVariation(current: number, previous: number): number {
 
 export class CampaignExtractedDataService {
   /**
-   * Lista todas as campanhas encontradas nos dados extraidos do usuario
+   * Lista todas as campanhas sincronizadas do usuario
    */
   async getCampaignsFromDataSets(): Promise<{
     success: boolean;
@@ -184,93 +168,54 @@ export class CampaignExtractedDataService {
         return { success: false, error: 'Usuario nao autenticado' };
       }
 
-      // Buscar todos os data sets do usuario
-      const { data: dataSets, error } = await supabase
-        .from('saved_data_sets')
-        .select('id, name, platform, data, date_range_start, date_range_end, record_count')
+      // Buscar campanhas do usuario
+      const { data: campaigns, error } = await supabase
+        .from('campaigns')
+        .select(`
+          id,
+          name,
+          platform,
+          status,
+          objective,
+          created_date,
+          ad_sets!ad_sets_campaign_id_fkey(id),
+          ads!ads_campaign_id_fkey(id)
+        `)
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('created_date', { ascending: false });
 
       if (error) {
-        logger.error('Erro ao buscar data sets', { error });
+        logger.error('Erro ao buscar campanhas', { error });
         return { success: false, error: error.message };
       }
 
-      // Mapa para agregar campanhas
-      const campaignsMap = new Map<string, ExtractedCampaign>();
+      // Mapear para o formato de saida
+      const mappedCampaigns: ExtractedCampaign[] = (campaigns || []).map((c: any) => ({
+        campaign_id: c.id,
+        campaign_name: c.name,
+        platform: c.platform,
+        status: c.status || 'UNKNOWN',
+        objective: c.objective,
+        created_date: c.created_date,
+        ad_sets_count: Array.isArray(c.ad_sets) ? c.ad_sets.length : 0,
+        ads_count: Array.isArray(c.ads) ? c.ads.length : 0,
+      }));
 
-      // Iterar pelos data sets e extrair campanhas
-      for (const ds of dataSets || []) {
-        const records = ds.data as Record<string, any>[];
-        if (!Array.isArray(records)) continue;
+      logger.info('Campanhas listadas', { count: mappedCampaigns.length });
 
-        // Identificar campanhas unicas neste data set
-        const campaignsInDataSet = new Set<string>();
-
-        for (const record of records) {
-          // Tentar encontrar ID e nome da campanha
-          const campaignId = record.campaign_id || record.campaignId || record.campaign;
-          const campaignName = record.campaign_name || record.campaignName || record.campaign_name || `Campanha ${campaignId}`;
-
-          if (!campaignId) continue;
-
-          const key = String(campaignId);
-
-          if (!campaignsMap.has(key)) {
-            campaignsMap.set(key, {
-              campaign_id: key,
-              campaign_name: campaignName,
-              platform: ds.platform,
-              data_set_ids: [],
-              total_records: 0,
-              date_ranges: [],
-            });
-          }
-
-          campaignsInDataSet.add(key);
-        }
-
-        // Adicionar info do data set as campanhas encontradas
-        for (const campaignId of campaignsInDataSet) {
-          const campaign = campaignsMap.get(campaignId)!;
-
-          if (!campaign.data_set_ids.includes(ds.id)) {
-            campaign.data_set_ids.push(ds.id);
-            campaign.date_ranges.push({
-              data_set_id: ds.id,
-              data_set_name: ds.name,
-              start: ds.date_range_start,
-              end: ds.date_range_end,
-              record_count: records.filter(r =>
-                (r.campaign_id || r.campaignId || r.campaign) === campaignId
-              ).length,
-            });
-          }
-
-          campaign.total_records = campaign.date_ranges.reduce(
-            (sum, dr) => sum + dr.record_count,
-            0
-          );
-        }
-      }
-
-      const campaigns = Array.from(campaignsMap.values());
-
-      logger.info('Campanhas extraidas listadas', { count: campaigns.length });
-
-      return { success: true, campaigns };
+      return { success: true, campaigns: mappedCampaigns };
     } catch (error: any) {
-      logger.error('Erro ao listar campanhas extraidas', { error: error.message });
+      logger.error('Erro ao listar campanhas', { error: error.message });
       return { success: false, error: error.message };
     }
   }
 
   /**
-   * Busca os conjuntos de anuncios (adsets) de uma campanha em um data set
+   * Busca os conjuntos de anuncios (adsets) de uma campanha
    */
   async getAdSetsFromExtractedData(
     campaignId: string,
-    dataSetId: string
+    _dataSetId?: string
   ): Promise<{
     success: boolean;
     adSets?: AdSetData[];
@@ -282,94 +227,90 @@ export class CampaignExtractedDataService {
         return { success: false, error: 'Usuario nao autenticado' };
       }
 
-      // Buscar data set
-      const { data: dataSet, error } = await supabase
-        .from('saved_data_sets')
-        .select('data')
-        .eq('id', dataSetId)
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Buscar adsets da campanha
+      const { data: adSets, error } = await supabase
+        .from('ad_sets')
+        .select(`
+          id,
+          name,
+          status,
+          campaign_id,
+          daily_budget,
+          lifetime_budget,
+          ads!ads_ad_set_id_fkey(id)
+        `)
+        .eq('campaign_id', campaignId)
+        .eq('user_id', user.id);
 
       if (error) {
-        logger.error('Erro ao buscar data set', { error, dataSetId });
+        logger.error('Erro ao buscar ad sets', { error, campaignId });
         return { success: false, error: error.message };
       }
 
-      if (!dataSet) {
-        return { success: false, error: 'Conjunto de dados nao encontrado' };
-      }
+      // Buscar metricas agregadas por adset
+      const { data: metrics, error: metricsError } = await supabase
+        .from('ad_metrics')
+        .select('ad_set_id, impressions, clicks, spend, conversions, reach')
+        .eq('campaign_id', campaignId)
+        .eq('user_id', user.id);
 
-      const records = dataSet.data as Record<string, any>[];
-      if (!Array.isArray(records)) {
-        return { success: true, adSets: [] };
-      }
+      // Agregar metricas por adset
+      const metricsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number; reach: number }>();
 
-      // Filtrar registros da campanha e agrupar por adset
-      const adSetMap = new Map<string, AdSetData>();
+      if (metrics && !metricsError) {
+        for (const m of metrics) {
+          if (!m.ad_set_id) continue;
 
-      for (const record of records) {
-        const recordCampaignId = record.campaign_id || record.campaignId || record.campaign;
-        if (String(recordCampaignId) !== campaignId) continue;
+          const existing = metricsMap.get(m.ad_set_id) || {
+            impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0
+          };
 
-        const adSetId = record.adset_id || record.adsetId || record.ad_set_id;
-        if (!adSetId) continue;
+          existing.impressions += Number(m.impressions) || 0;
+          existing.clicks += Number(m.clicks) || 0;
+          existing.spend += Number(m.spend) || 0;
+          existing.conversions += Number(m.conversions) || 0;
+          existing.reach += Number(m.reach) || 0;
 
-        const key = String(adSetId);
-
-        if (!adSetMap.has(key)) {
-          adSetMap.set(key, {
-            adset_id: key,
-            adset_name: record.adset_name || record.adsetName || record.ad_set_name || `Conjunto ${adSetId}`,
-            status: record.adset_status || record.status || 'UNKNOWN',
-            impressions: 0,
-            clicks: 0,
-            spend: 0,
-            conversions: 0,
-            ctr: 0,
-            cpc: 0,
-            cpm: 0,
-            roas: 0,
-            reach: 0,
-            frequency: 0,
-          });
+          metricsMap.set(m.ad_set_id, existing);
         }
-
-        const adSet = adSetMap.get(key)!;
-
-        // Acumular metricas
-        adSet.impressions += extractNumericValue(record.impressions);
-        adSet.clicks += extractNumericValue(record.clicks);
-        adSet.spend += extractNumericValue(record.spend || record.amount_spent);
-        adSet.conversions += extractNumericValue(record.conversions || record.results);
-        adSet.reach += extractNumericValue(record.reach);
       }
 
-      // Calcular metricas derivadas
-      const adSets = Array.from(adSetMap.values()).map(adSet =>
-        calculateDerivedMetrics(adSet) as AdSetData
-      ).map((metrics, index) => ({
-        ...Array.from(adSetMap.values())[index],
-        ...metrics,
-      }));
+      // Mapear para o formato de saida
+      const mappedAdSets: AdSetData[] = (adSets || []).map((as: any) => {
+        const asMetrics = metricsMap.get(as.id) || {
+          impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0
+        };
+
+        const derived = calculateDerivedMetrics(asMetrics);
+
+        return {
+          adset_id: as.id,
+          adset_name: as.name,
+          status: as.status || 'UNKNOWN',
+          campaign_id: as.campaign_id,
+          ads_count: Array.isArray(as.ads) ? as.ads.length : 0,
+          ...derived,
+        };
+      });
 
       // Ordenar por gastos (maior primeiro)
-      adSets.sort((a, b) => b.spend - a.spend);
+      mappedAdSets.sort((a, b) => b.spend - a.spend);
 
-      logger.info('AdSets extraidos', { campaignId, count: adSets.length });
+      logger.info('AdSets carregados', { campaignId, count: mappedAdSets.length });
 
-      return { success: true, adSets };
+      return { success: true, adSets: mappedAdSets };
     } catch (error: any) {
-      logger.error('Erro ao buscar adsets extraidos', { error: error.message });
+      logger.error('Erro ao buscar adsets', { error: error.message });
       return { success: false, error: error.message };
     }
   }
 
   /**
-   * Busca os anuncios individuais de uma campanha em um data set
+   * Busca os anuncios individuais de uma campanha
    */
   async getAdsFromExtractedData(
     campaignId: string,
-    dataSetId: string,
+    _dataSetId?: string,
     adSetId?: string
   ): Promise<{
     success: boolean;
@@ -382,104 +323,105 @@ export class CampaignExtractedDataService {
         return { success: false, error: 'Usuario nao autenticado' };
       }
 
-      // Buscar data set
-      const { data: dataSet, error } = await supabase
-        .from('saved_data_sets')
-        .select('data')
-        .eq('id', dataSetId)
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Query base para anuncios
+      let query = supabase
+        .from('ads')
+        .select(`
+          id,
+          name,
+          status,
+          campaign_id,
+          ad_set_id,
+          thumbnail_url,
+          ad_sets!ads_ad_set_id_fkey(name)
+        `)
+        .eq('campaign_id', campaignId)
+        .eq('user_id', user.id);
+
+      // Filtrar por adset se especificado
+      if (adSetId) {
+        query = query.eq('ad_set_id', adSetId);
+      }
+
+      const { data: ads, error } = await query;
 
       if (error) {
-        logger.error('Erro ao buscar data set', { error, dataSetId });
+        logger.error('Erro ao buscar anuncios', { error, campaignId });
         return { success: false, error: error.message };
       }
 
-      if (!dataSet) {
-        return { success: false, error: 'Conjunto de dados nao encontrado' };
+      // Buscar metricas agregadas por anuncio
+      let metricsQuery = supabase
+        .from('ad_metrics')
+        .select('ad_id, impressions, clicks, spend, conversions, reach')
+        .eq('campaign_id', campaignId)
+        .eq('user_id', user.id);
+
+      if (adSetId) {
+        metricsQuery = metricsQuery.eq('ad_set_id', adSetId);
       }
 
-      const records = dataSet.data as Record<string, any>[];
-      if (!Array.isArray(records)) {
-        return { success: true, ads: [] };
-      }
+      const { data: metrics, error: metricsError } = await metricsQuery;
 
-      // Filtrar registros da campanha e agrupar por anuncio
-      const adMap = new Map<string, AdData>();
+      // Agregar metricas por anuncio
+      const metricsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number; reach: number }>();
 
-      for (const record of records) {
-        const recordCampaignId = record.campaign_id || record.campaignId || record.campaign;
-        if (String(recordCampaignId) !== campaignId) continue;
+      if (metrics && !metricsError) {
+        for (const m of metrics) {
+          if (!m.ad_id) continue;
 
-        // Filtrar por adset se especificado
-        if (adSetId) {
-          const recordAdSetId = record.adset_id || record.adsetId || record.ad_set_id;
-          if (String(recordAdSetId) !== adSetId) continue;
+          const existing = metricsMap.get(m.ad_id) || {
+            impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0
+          };
+
+          existing.impressions += Number(m.impressions) || 0;
+          existing.clicks += Number(m.clicks) || 0;
+          existing.spend += Number(m.spend) || 0;
+          existing.conversions += Number(m.conversions) || 0;
+          existing.reach += Number(m.reach) || 0;
+
+          metricsMap.set(m.ad_id, existing);
         }
-
-        const adId = record.ad_id || record.adId;
-        if (!adId) continue;
-
-        const key = String(adId);
-
-        if (!adMap.has(key)) {
-          adMap.set(key, {
-            ad_id: key,
-            ad_name: record.ad_name || record.adName || `Anuncio ${adId}`,
-            adset_id: record.adset_id || record.adsetId || record.ad_set_id || '',
-            adset_name: record.adset_name || record.adsetName || record.ad_set_name || '',
-            status: record.ad_status || record.status || 'UNKNOWN',
-            impressions: 0,
-            clicks: 0,
-            spend: 0,
-            conversions: 0,
-            ctr: 0,
-            cpc: 0,
-            cpm: 0,
-            roas: 0,
-            reach: 0,
-            frequency: 0,
-            thumbnail_url: record.thumbnail_url || record.image_url,
-          });
-        }
-
-        const ad = adMap.get(key)!;
-
-        // Acumular metricas
-        ad.impressions += extractNumericValue(record.impressions);
-        ad.clicks += extractNumericValue(record.clicks);
-        ad.spend += extractNumericValue(record.spend || record.amount_spent);
-        ad.conversions += extractNumericValue(record.conversions || record.results);
-        ad.reach += extractNumericValue(record.reach);
       }
 
-      // Calcular metricas derivadas
-      const ads = Array.from(adMap.values()).map(ad => {
-        const metrics = calculateDerivedMetrics(ad);
+      // Mapear para o formato de saida
+      const mappedAds: AdData[] = (ads || []).map((ad: any) => {
+        const adMetrics = metricsMap.get(ad.id) || {
+          impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0
+        };
+
+        const derived = calculateDerivedMetrics(adMetrics);
+
         return {
-          ...ad,
-          ...metrics,
+          ad_id: ad.id,
+          ad_name: ad.name,
+          adset_id: ad.ad_set_id || '',
+          adset_name: ad.ad_sets?.name || '',
+          campaign_id: ad.campaign_id,
+          status: ad.status || 'UNKNOWN',
+          thumbnail_url: ad.thumbnail_url,
+          ...derived,
         };
       });
 
       // Ordenar por gastos (maior primeiro)
-      ads.sort((a, b) => b.spend - a.spend);
+      mappedAds.sort((a, b) => b.spend - a.spend);
 
-      logger.info('Ads extraidos', { campaignId, count: ads.length });
+      logger.info('Anuncios carregados', { campaignId, count: mappedAds.length });
 
-      return { success: true, ads };
+      return { success: true, ads: mappedAds };
     } catch (error: any) {
-      logger.error('Erro ao buscar ads extraidos', { error: error.message });
+      logger.error('Erro ao buscar anuncios', { error: error.message });
       return { success: false, error: error.message };
     }
   }
 
   /**
-   * Calcula metricas agregadas de uma campanha em um data set
+   * Calcula metricas agregadas de uma campanha
    */
   async getCampaignMetrics(
     campaignId: string,
-    dataSetId: string
+    _dataSetId?: string
   ): Promise<{
     success: boolean;
     metrics?: CampaignMetrics;
@@ -491,47 +433,34 @@ export class CampaignExtractedDataService {
         return { success: false, error: 'Usuario nao autenticado' };
       }
 
-      // Buscar data set
-      const { data: dataSet, error } = await supabase
-        .from('saved_data_sets')
-        .select('data')
-        .eq('id', dataSetId)
-        .eq('user_id', user.id)
-        .maybeSingle();
+      // Buscar metricas da campanha
+      const { data: metrics, error } = await supabase
+        .from('ad_metrics')
+        .select('impressions, clicks, spend, conversions, reach')
+        .eq('campaign_id', campaignId)
+        .eq('user_id', user.id);
 
       if (error) {
-        logger.error('Erro ao buscar data set', { error, dataSetId });
+        logger.error('Erro ao buscar metricas', { error, campaignId });
         return { success: false, error: error.message };
       }
 
-      if (!dataSet) {
-        return { success: false, error: 'Conjunto de dados nao encontrado' };
-      }
-
-      const records = dataSet.data as Record<string, any>[];
-      if (!Array.isArray(records)) {
-        return { success: true, metrics: calculateDerivedMetrics({}) };
-      }
-
-      // Acumular metricas da campanha
+      // Agregar metricas
       let totalImpressions = 0;
       let totalClicks = 0;
       let totalSpend = 0;
       let totalConversions = 0;
       let totalReach = 0;
 
-      for (const record of records) {
-        const recordCampaignId = record.campaign_id || record.campaignId || record.campaign;
-        if (String(recordCampaignId) !== campaignId) continue;
-
-        totalImpressions += extractNumericValue(record.impressions);
-        totalClicks += extractNumericValue(record.clicks);
-        totalSpend += extractNumericValue(record.spend || record.amount_spent);
-        totalConversions += extractNumericValue(record.conversions || record.results);
-        totalReach += extractNumericValue(record.reach);
+      for (const m of metrics || []) {
+        totalImpressions += Number(m.impressions) || 0;
+        totalClicks += Number(m.clicks) || 0;
+        totalSpend += Number(m.spend) || 0;
+        totalConversions += Number(m.conversions) || 0;
+        totalReach += Number(m.reach) || 0;
       }
 
-      const metrics = calculateDerivedMetrics({
+      const calculatedMetrics = calculateDerivedMetrics({
         impressions: totalImpressions,
         clicks: totalClicks,
         spend: totalSpend,
@@ -539,7 +468,7 @@ export class CampaignExtractedDataService {
         reach: totalReach,
       });
 
-      return { success: true, metrics };
+      return { success: true, metrics: calculatedMetrics };
     } catch (error: any) {
       logger.error('Erro ao calcular metricas', { error: error.message });
       return { success: false, error: error.message };
@@ -547,12 +476,14 @@ export class CampaignExtractedDataService {
   }
 
   /**
-   * Compara metricas de uma campanha entre dois periodos/data sets
+   * Compara metricas de uma campanha entre dois periodos
    */
   async comparePeriods(
     campaignId: string,
-    dataSetId1: string,
-    dataSetId2: string
+    dateFrom1: string,
+    dateTo1: string,
+    dateFrom2: string,
+    dateTo2: string
   ): Promise<{
     success: boolean;
     comparison?: PeriodComparison;
@@ -564,48 +495,55 @@ export class CampaignExtractedDataService {
         return { success: false, error: 'Usuario nao autenticado' };
       }
 
-      // Buscar ambos os data sets
-      const { data: dataSets, error } = await supabase
-        .from('saved_data_sets')
-        .select('id, name, date_range_start, date_range_end, data')
-        .in('id', [dataSetId1, dataSetId2])
-        .eq('user_id', user.id);
+      // Buscar metricas do periodo 1
+      const { data: metrics1, error: error1 } = await supabase
+        .from('ad_metrics')
+        .select('impressions, clicks, spend, conversions, reach')
+        .eq('campaign_id', campaignId)
+        .eq('user_id', user.id)
+        .gte('date', dateFrom1)
+        .lte('date', dateTo1);
 
-      if (error) {
-        logger.error('Erro ao buscar data sets para comparacao', { error });
-        return { success: false, error: error.message };
+      // Buscar metricas do periodo 2
+      const { data: metrics2, error: error2 } = await supabase
+        .from('ad_metrics')
+        .select('impressions, clicks, spend, conversions, reach')
+        .eq('campaign_id', campaignId)
+        .eq('user_id', user.id)
+        .gte('date', dateFrom2)
+        .lte('date', dateTo2);
+
+      if (error1 || error2) {
+        return { success: false, error: 'Erro ao buscar metricas para comparacao' };
       }
 
-      if (!dataSets || dataSets.length < 2) {
-        return { success: false, error: 'Data sets nao encontrados' };
-      }
+      // Agregar metricas de cada periodo
+      const aggregate = (data: any[]) => {
+        let imp = 0, cli = 0, spe = 0, con = 0, rea = 0;
+        for (const m of data || []) {
+          imp += Number(m.impressions) || 0;
+          cli += Number(m.clicks) || 0;
+          spe += Number(m.spend) || 0;
+          con += Number(m.conversions) || 0;
+          rea += Number(m.reach) || 0;
+        }
+        return calculateDerivedMetrics({ impressions: imp, clicks: cli, spend: spe, conversions: con, reach: rea });
+      };
 
-      const ds1 = dataSets.find(ds => ds.id === dataSetId1)!;
-      const ds2 = dataSets.find(ds => ds.id === dataSetId2)!;
+      const m1 = aggregate(metrics1 || []);
+      const m2 = aggregate(metrics2 || []);
 
-      // Calcular metricas de cada periodo
-      const metrics1Result = await this.getCampaignMetrics(campaignId, dataSetId1);
-      const metrics2Result = await this.getCampaignMetrics(campaignId, dataSetId2);
-
-      if (!metrics1Result.success || !metrics2Result.success) {
-        return { success: false, error: 'Erro ao calcular metricas' };
-      }
-
-      const m1 = metrics1Result.metrics!;
-      const m2 = metrics2Result.metrics!;
-
-      // Calcular variacoes (periodo 2 comparado ao periodo 1)
       const comparison: PeriodComparison = {
         period1: {
-          name: ds1.name,
-          start: ds1.date_range_start,
-          end: ds1.date_range_end,
+          name: `${dateFrom1} - ${dateTo1}`,
+          start: dateFrom1,
+          end: dateTo1,
           metrics: m1,
         },
         period2: {
-          name: ds2.name,
-          start: ds2.date_range_start,
-          end: ds2.date_range_end,
+          name: `${dateFrom2} - ${dateTo2}`,
+          start: dateFrom2,
+          end: dateTo2,
           metrics: m2,
         },
         variations: {
@@ -620,8 +558,6 @@ export class CampaignExtractedDataService {
         },
       };
 
-      logger.info('Comparacao de periodos calculada', { campaignId });
-
       return { success: true, comparison };
     } catch (error: any) {
       logger.error('Erro ao comparar periodos', { error: error.message });
@@ -634,7 +570,7 @@ export class CampaignExtractedDataService {
    */
   async getTrendData(
     campaignId: string,
-    dataSetId: string
+    _dataSetId?: string
   ): Promise<{
     success: boolean;
     trendData?: TrendDataPoint[];
@@ -646,39 +582,24 @@ export class CampaignExtractedDataService {
         return { success: false, error: 'Usuario nao autenticado' };
       }
 
-      // Buscar data set
-      const { data: dataSet, error } = await supabase
-        .from('saved_data_sets')
-        .select('data')
-        .eq('id', dataSetId)
+      // Buscar metricas agrupadas por data
+      const { data: metrics, error } = await supabase
+        .from('ad_metrics')
+        .select('date, impressions, clicks, spend, conversions')
+        .eq('campaign_id', campaignId)
         .eq('user_id', user.id)
-        .maybeSingle();
+        .order('date', { ascending: true });
 
       if (error) {
-        logger.error('Erro ao buscar data set', { error, dataSetId });
+        logger.error('Erro ao buscar tendencia', { error, campaignId });
         return { success: false, error: error.message };
-      }
-
-      if (!dataSet) {
-        return { success: false, error: 'Conjunto de dados nao encontrado' };
-      }
-
-      const records = dataSet.data as Record<string, any>[];
-      if (!Array.isArray(records)) {
-        return { success: true, trendData: [] };
       }
 
       // Agrupar por data
       const dateMap = new Map<string, TrendDataPoint>();
 
-      for (const record of records) {
-        const recordCampaignId = record.campaign_id || record.campaignId || record.campaign;
-        if (String(recordCampaignId) !== campaignId) continue;
-
-        const date = record.date || record.date_start || record.day;
-        if (!date) continue;
-
-        const dateKey = String(date).substring(0, 10);
+      for (const m of metrics || []) {
+        const dateKey = String(m.date);
 
         if (!dateMap.has(dateKey)) {
           dateMap.set(dateKey, {
@@ -691,57 +612,17 @@ export class CampaignExtractedDataService {
         }
 
         const point = dateMap.get(dateKey)!;
-        point.impressions += extractNumericValue(record.impressions);
-        point.clicks += extractNumericValue(record.clicks);
-        point.spend += extractNumericValue(record.spend || record.amount_spent);
-        point.conversions += extractNumericValue(record.conversions || record.results);
+        point.impressions += Number(m.impressions) || 0;
+        point.clicks += Number(m.clicks) || 0;
+        point.spend += Number(m.spend) || 0;
+        point.conversions += Number(m.conversions) || 0;
       }
 
-      // Ordenar por data
-      const trendData = Array.from(dateMap.values()).sort(
-        (a, b) => a.date.localeCompare(b.date)
-      );
+      const trendData = Array.from(dateMap.values());
 
       return { success: true, trendData };
     } catch (error: any) {
-      logger.error('Erro ao buscar dados de tendencia', { error: error.message });
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Busca detalhes de um data set especifico
-   */
-  async getDataSetDetails(dataSetId: string): Promise<{
-    success: boolean;
-    dataSet?: SavedDataSet;
-    error?: string;
-  }> {
-    try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        return { success: false, error: 'Usuario nao autenticado' };
-      }
-
-      const { data, error } = await supabase
-        .from('saved_data_sets')
-        .select('*')
-        .eq('id', dataSetId)
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (error) {
-        logger.error('Erro ao buscar data set', { error, dataSetId });
-        return { success: false, error: error.message };
-      }
-
-      if (!data) {
-        return { success: false, error: 'Conjunto de dados nao encontrado' };
-      }
-
-      return { success: true, dataSet: data as SavedDataSet };
-    } catch (error: any) {
-      logger.error('Erro ao buscar data set', { error: error.message });
+      logger.error('Erro ao buscar tendencia', { error: error.message });
       return { success: false, error: error.message };
     }
   }

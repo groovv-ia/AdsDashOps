@@ -1,12 +1,12 @@
 /**
- * ExtractedCampaignSelector - Seletor de Campanhas dos Dados Extraidos
+ * ExtractedCampaignSelector - Seletor de Campanhas Sincronizadas
  *
- * Componente que lista todas as campanhas encontradas nos data sets salvos,
- * permitindo ao usuario selecionar uma campanha para visualizar seus dados.
+ * Componente que lista todas as campanhas sincronizadas do usuario,
+ * permitindo selecionar uma campanha para visualizar seus dados.
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Database, Calendar, ChevronRight, Layers } from 'lucide-react';
+import { Search, Target, ChevronRight, Layers, Image } from 'lucide-react';
 import { campaignExtractedDataService, type ExtractedCampaign } from '../../lib/services/CampaignExtractedDataService';
 import { Loading } from '../ui/Loading';
 
@@ -17,6 +17,28 @@ import { Loading } from '../ui/Loading';
 interface ExtractedCampaignSelectorProps {
   onSelectCampaign: (campaign: ExtractedCampaign) => void;
   selectedCampaignId?: string;
+}
+
+// ============================================
+// Funcoes Auxiliares
+// ============================================
+
+/**
+ * Retorna cor e label do status
+ */
+function getStatusInfo(status: string): { color: string; label: string } {
+  const normalizedStatus = status.toUpperCase();
+  switch (normalizedStatus) {
+    case 'ACTIVE':
+      return { color: 'bg-green-100 text-green-700', label: 'Ativa' };
+    case 'PAUSED':
+      return { color: 'bg-yellow-100 text-yellow-700', label: 'Pausada' };
+    case 'DELETED':
+    case 'ARCHIVED':
+      return { color: 'bg-red-100 text-red-700', label: 'Arquivada' };
+    default:
+      return { color: 'bg-gray-100 text-gray-700', label: status };
+  }
 }
 
 // ============================================
@@ -39,7 +61,7 @@ export function ExtractedCampaignSelector({
   }, []);
 
   /**
-   * Carrega lista de campanhas dos data sets
+   * Carrega lista de campanhas
    */
   async function loadCampaigns() {
     setLoading(true);
@@ -67,28 +89,6 @@ export function ExtractedCampaignSelector({
         c.campaign_id.toLowerCase().includes(term)
     );
   }, [campaigns, searchTerm]);
-
-  /**
-   * Formata o periodo de datas para exibicao
-   */
-  function formatDateRange(start: string | null, end: string | null): string {
-    if (!start && !end) return 'Sem periodo definido';
-    if (!start) return `Ate ${formatDate(end!)}`;
-    if (!end) return `A partir de ${formatDate(start)}`;
-    return `${formatDate(start)} - ${formatDate(end)}`;
-  }
-
-  /**
-   * Formata uma data individual
-   */
-  function formatDate(dateStr: string): string {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  }
 
   // Renderizar loading
   if (loading) {
@@ -119,12 +119,12 @@ export function ExtractedCampaignSelector({
   if (campaigns.length === 0) {
     return (
       <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center">
-        <Database className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+        <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <h3 className="text-lg font-medium text-gray-900 mb-2">
           Nenhuma campanha encontrada
         </h3>
         <p className="text-gray-500">
-          Extraia dados das suas campanhas para visualiza-los aqui.
+          Sincronize suas campanhas do Meta Ads para visualiza-las aqui.
         </p>
       </div>
     );
@@ -153,6 +153,7 @@ export function ExtractedCampaignSelector({
       <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
         {filteredCampaigns.map(campaign => {
           const isSelected = selectedCampaignId === campaign.campaign_id;
+          const statusInfo = getStatusInfo(campaign.status);
 
           return (
             <button
@@ -183,49 +184,39 @@ export function ExtractedCampaignSelector({
                     {/* Plataforma */}
                     <span className={`
                       inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium
-                      ${campaign.platform === 'meta'
+                      ${campaign.platform.toLowerCase() === 'meta'
                         ? 'bg-blue-100 text-blue-700'
-                        : campaign.platform === 'google'
+                        : campaign.platform.toLowerCase() === 'google'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-gray-100 text-gray-700'
                       }
                     `}>
-                      {campaign.platform === 'meta' ? 'Meta Ads' : campaign.platform}
+                      {campaign.platform === 'Meta' ? 'Meta Ads' : campaign.platform}
                     </span>
 
-                    {/* Total de registros */}
+                    {/* Status */}
+                    <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium ${statusInfo.color}`}>
+                      {statusInfo.label}
+                    </span>
+
+                    {/* Conjuntos de anuncios */}
                     <span className="inline-flex items-center text-xs text-gray-500">
                       <Layers className="w-3.5 h-3.5 mr-1" />
-                      {campaign.total_records.toLocaleString('pt-BR')} registros
+                      {campaign.ad_sets_count} conjunto(s)
                     </span>
 
-                    {/* Numero de extracoes */}
+                    {/* Anuncios */}
                     <span className="inline-flex items-center text-xs text-gray-500">
-                      <Database className="w-3.5 h-3.5 mr-1" />
-                      {campaign.data_set_ids.length} extracao(oes)
+                      <Image className="w-3.5 h-3.5 mr-1" />
+                      {campaign.ads_count} anuncio(s)
                     </span>
                   </div>
 
-                  {/* Periodos disponiveis */}
-                  {campaign.date_ranges.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {campaign.date_ranges.slice(0, 2).map(range => (
-                        <div
-                          key={range.data_set_id}
-                          className="flex items-center text-xs text-gray-500"
-                        >
-                          <Calendar className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
-                          <span className="truncate">
-                            {range.data_set_name}: {formatDateRange(range.start, range.end)}
-                          </span>
-                        </div>
-                      ))}
-                      {campaign.date_ranges.length > 2 && (
-                        <p className="text-xs text-gray-400 italic">
-                          +{campaign.date_ranges.length - 2} periodo(s) adicional(is)
-                        </p>
-                      )}
-                    </div>
+                  {/* Objetivo */}
+                  {campaign.objective && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      Objetivo: {campaign.objective}
+                    </p>
                   )}
                 </div>
 

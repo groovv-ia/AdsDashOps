@@ -1,21 +1,18 @@
 /**
- * CampaignExtractedDataPage - Pagina de Dados Extraidos de Campanha
+ * CampaignExtractedDataPage - Pagina de Dados de Campanha
  *
- * Pagina principal que integra a visualizacao de dados extraidos de uma campanha,
- * incluindo conjuntos de anuncios, anuncios individuais, comparacao de periodos
- * e graficos de tendencia.
+ * Pagina principal que integra a visualizacao de dados de campanhas sincronizadas,
+ * incluindo conjuntos de anuncios, anuncios individuais e graficos de tendencia.
  */
 
 import { useState, useEffect } from 'react';
 import {
   ArrowLeft,
-  Database,
   Layers,
   Image as ImageIcon,
   TrendingUp,
-  Calendar,
   RefreshCw,
-  ChevronDown,
+  Target,
 } from 'lucide-react';
 import {
   campaignExtractedDataService,
@@ -27,7 +24,6 @@ import {
 import { ExtractedCampaignSelector } from './ExtractedCampaignSelector';
 import { CampaignAdSetsTable } from './CampaignAdSetsTable';
 import { CampaignAdsTable } from './CampaignAdsTable';
-import { PeriodComparisonCard } from './PeriodComparisonCard';
 import { CampaignTrendCharts } from './CampaignTrendCharts';
 import { Loading } from '../ui/Loading';
 import { Card } from '../ui/Card';
@@ -41,7 +37,7 @@ interface CampaignExtractedDataPageProps {
   initialCampaignId?: string;
 }
 
-type TabType = 'adsets' | 'ads' | 'comparison' | 'charts';
+type TabType = 'adsets' | 'ads' | 'charts';
 
 // ============================================
 // Funcoes Auxiliares
@@ -112,7 +108,6 @@ export function CampaignExtractedDataPage({
 }: CampaignExtractedDataPageProps) {
   // Estados principais
   const [selectedCampaign, setSelectedCampaign] = useState<ExtractedCampaign | null>(null);
-  const [selectedDataSetId, setSelectedDataSetId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<TabType>('adsets');
 
   // Estados de dados
@@ -124,35 +119,26 @@ export function CampaignExtractedDataPage({
   const [loadingData, setLoadingData] = useState(false);
   const [selectedAdSetId, setSelectedAdSetId] = useState<string | undefined>(undefined);
 
-  // Carregar dados quando campanha ou data set mudar
+  // Carregar dados quando campanha mudar
   useEffect(() => {
-    if (selectedCampaign && selectedDataSetId) {
+    if (selectedCampaign) {
       loadCampaignData();
     }
-  }, [selectedCampaign, selectedDataSetId]);
+  }, [selectedCampaign]);
 
   /**
    * Carrega todos os dados da campanha selecionada
    */
   async function loadCampaignData() {
-    if (!selectedCampaign || !selectedDataSetId) return;
+    if (!selectedCampaign) return;
 
     setLoadingData(true);
 
     // Carregar adsets, ads e metricas em paralelo
     const [adSetsResult, adsResult, metricsResult] = await Promise.all([
-      campaignExtractedDataService.getAdSetsFromExtractedData(
-        selectedCampaign.campaign_id,
-        selectedDataSetId
-      ),
-      campaignExtractedDataService.getAdsFromExtractedData(
-        selectedCampaign.campaign_id,
-        selectedDataSetId
-      ),
-      campaignExtractedDataService.getCampaignMetrics(
-        selectedCampaign.campaign_id,
-        selectedDataSetId
-      ),
+      campaignExtractedDataService.getAdSetsFromExtractedData(selectedCampaign.campaign_id),
+      campaignExtractedDataService.getAdsFromExtractedData(selectedCampaign.campaign_id),
+      campaignExtractedDataService.getCampaignMetrics(selectedCampaign.campaign_id),
     ]);
 
     if (adSetsResult.success) setAdSets(adSetsResult.adSets || []);
@@ -168,11 +154,6 @@ export function CampaignExtractedDataPage({
   function handleSelectCampaign(campaign: ExtractedCampaign) {
     setSelectedCampaign(campaign);
     setSelectedAdSetId(undefined);
-
-    // Selecionar primeiro data set disponivel
-    if (campaign.date_ranges.length > 0) {
-      setSelectedDataSetId(campaign.date_ranges[0].data_set_id);
-    }
   }
 
   /**
@@ -192,6 +173,21 @@ export function CampaignExtractedDataPage({
     ? ads.filter(ad => ad.adset_id === selectedAdSetId)
     : ads;
 
+  /**
+   * Retorna cor e label do status
+   */
+  function getStatusInfo(status: string): { color: string; label: string } {
+    const normalizedStatus = status.toUpperCase();
+    switch (normalizedStatus) {
+      case 'ACTIVE':
+        return { color: 'bg-green-100 text-green-700', label: 'Ativa' };
+      case 'PAUSED':
+        return { color: 'bg-yellow-100 text-yellow-700', label: 'Pausada' };
+      default:
+        return { color: 'bg-gray-100 text-gray-700', label: status };
+    }
+  }
+
   // Renderizar tela de selecao de campanha
   if (!selectedCampaign) {
     return (
@@ -204,13 +200,18 @@ export function CampaignExtractedDataPage({
           >
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              Dados Extraidos de Campanhas
-            </h1>
-            <p className="text-gray-500 mt-1">
-              Selecione uma campanha para visualizar seus dados detalhados
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg">
+              <Target className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Dados de Campanhas
+              </h1>
+              <p className="text-gray-500 mt-1">
+                Selecione uma campanha para visualizar seus dados detalhados
+              </p>
+            </div>
           </div>
         </div>
 
@@ -225,6 +226,8 @@ export function CampaignExtractedDataPage({
     );
   }
 
+  const statusInfo = getStatusInfo(selectedCampaign.status);
+
   // Renderizar pagina principal com dados da campanha
   return (
     <div className="space-y-6">
@@ -238,18 +241,21 @@ export function CampaignExtractedDataPage({
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold text-gray-900">
                 {selectedCampaign.campaign_name}
               </h1>
               <span className={`
                 inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium
-                ${selectedCampaign.platform === 'meta'
+                ${selectedCampaign.platform.toLowerCase() === 'meta'
                   ? 'bg-blue-100 text-blue-700'
                   : 'bg-gray-100 text-gray-700'
                 }
               `}>
-                {selectedCampaign.platform === 'meta' ? 'Meta Ads' : selectedCampaign.platform}
+                {selectedCampaign.platform === 'Meta' ? 'Meta Ads' : selectedCampaign.platform}
+              </span>
+              <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium ${statusInfo.color}`}>
+                {statusInfo.label}
               </span>
             </div>
             <p className="text-sm text-gray-500 mt-1">
@@ -258,34 +264,15 @@ export function CampaignExtractedDataPage({
           </div>
         </div>
 
-        {/* Controles */}
-        <div className="flex items-center gap-3">
-          {/* Seletor de Data Set */}
-          <div className="relative">
-            <select
-              value={selectedDataSetId}
-              onChange={e => setSelectedDataSetId(e.target.value)}
-              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white text-sm"
-            >
-              {selectedCampaign.date_ranges.map(range => (
-                <option key={range.data_set_id} value={range.data_set_id}>
-                  {range.data_set_name}
-                </option>
-              ))}
-            </select>
-            <Database className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          </div>
-
-          {/* Botao de atualizar */}
-          <button
-            onClick={loadCampaignData}
-            disabled={loadingData}
-            className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-5 h-5 text-gray-600 ${loadingData ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
+        {/* Botao de atualizar */}
+        <button
+          onClick={loadCampaignData}
+          disabled={loadingData}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 text-gray-600 ${loadingData ? 'animate-spin' : ''}`} />
+          <span className="text-sm font-medium text-gray-700">Atualizar</span>
+        </button>
       </div>
 
       {/* KPIs */}
@@ -313,7 +300,7 @@ export function CampaignExtractedDataPage({
             label="Conversoes"
             value={formatNumber(metrics.conversions)}
             icon={TrendingUp}
-            color="bg-purple-500"
+            color="bg-emerald-500"
           />
           <KPICard
             label="CTR"
@@ -331,7 +318,7 @@ export function CampaignExtractedDataPage({
             label="ROAS"
             value={`${metrics.roas.toFixed(2)}x`}
             icon={TrendingUp}
-            color="bg-emerald-500"
+            color="bg-teal-500"
           />
         </div>
       )}
@@ -374,19 +361,6 @@ export function CampaignExtractedDataPage({
                 {selectedAdSetId ? filteredAds.length : ads.length}
               </span>
             )}
-          </button>
-          <button
-            onClick={() => setActiveTab('comparison')}
-            className={`
-              flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors
-              ${activeTab === 'comparison'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }
-            `}
-          >
-            <Calendar className="w-4 h-4" />
-            Comparar Periodos
           </button>
           <button
             onClick={() => setActiveTab('charts')}
@@ -455,19 +429,11 @@ export function CampaignExtractedDataPage({
               </Card>
             )}
 
-            {/* Tab: Comparacao de Periodos */}
-            {activeTab === 'comparison' && (
-              <PeriodComparisonCard
-                campaignId={selectedCampaign.campaign_id}
-                availablePeriods={selectedCampaign.date_ranges}
-              />
-            )}
-
             {/* Tab: Graficos */}
             {activeTab === 'charts' && (
               <CampaignTrendCharts
                 campaignId={selectedCampaign.campaign_id}
-                dataSetId={selectedDataSetId}
+                dataSetId=""
                 adSets={adSets}
               />
             )}
