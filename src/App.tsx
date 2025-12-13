@@ -9,7 +9,6 @@ import { MetricsOverview } from './components/dashboard/MetricsOverview';
 import { PerformanceChart } from './components/dashboard/PerformanceChart';
 import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
-import { MetricsUpdateInfo } from './components/dashboard/MetricsUpdateInfo';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { SupportPage } from './components/support/SupportPage';
@@ -39,19 +38,15 @@ function AppContent() {
   const { notifications, unreadCount } = useNotifications();
   const { settings: systemSettings } = useSystemSettings();
 
-  // Hook para gerenciar dados do dashboard (métricas em tempo real da API Meta)
+  // Hook para gerenciar dados do dashboard (reais ou mocks)
   const {
     campaigns: mockCampaigns,
     metrics: mockMetrics,
     adSets: mockAdSets,
     ads: mockAds,
     isUsingRealData,
-    isUsingRealtimeMetrics,
-    lastMetricsUpdate,
     loading: dataLoading,
-    refresh: refreshData,
-    refreshMetrics,
-    clearCache
+    refresh: refreshData
   } = useDashboardData();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -400,16 +395,7 @@ function AppContent() {
               onExport={handleExport}
               onRefresh={handleRefresh}
             />
-
-            {/* Informações sobre atualização de métricas em tempo real */}
-            <MetricsUpdateInfo
-              isUsingRealtimeMetrics={isUsingRealtimeMetrics}
-              lastUpdate={lastMetricsUpdate}
-              onRefresh={refreshMetrics}
-              onClearCache={clearCache}
-              loading={dataLoading}
-            />
-
+            
             <MetricsOverview
               metrics={summaryMetrics}
               loading={dashboardLoading}
