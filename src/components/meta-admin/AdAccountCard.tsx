@@ -204,16 +204,6 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
       `}
       onClick={() => onSelect(account.id)}
     >
-      {/* Banner de aviso se nao tiver metricas */}
-      {!hasMetrics && (
-        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 flex items-center space-x-2">
-          <AlertCircle className="h-4 w-4 text-yellow-600 flex-shrink-0" />
-          <span className="text-xs text-yellow-800">
-            Sem metricas - Clique em sincronizar
-          </span>
-        </div>
-      )}
-
       {/* Header do card */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0">

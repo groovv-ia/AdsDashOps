@@ -23,7 +23,6 @@ import {
   Clock,
   BarChart3,
   ExternalLink,
-  AlertCircle,
   Percent,
   Users,
 } from 'lucide-react';
@@ -158,16 +157,6 @@ export const CampaignCard: React.FC<CampaignCardProps> = ({ campaign, onViewAnal
     <Card
       className={`hover:shadow-xl transition-all duration-300 ${getPerformanceColor()} overflow-hidden`}
     >
-      {/* Banner de aviso se nao tiver metricas */}
-      {!hasMetrics && (
-        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 flex items-center space-x-2">
-          <AlertCircle className="h-4 w-4 text-yellow-600 flex-shrink-0" />
-          <span className="text-xs text-yellow-800">
-            Sem metricas - Execute uma nova sincronizacao
-          </span>
-        </div>
-      )}
-
       {/* Header do card */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0">
