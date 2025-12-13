@@ -413,21 +413,24 @@ export async function getInsightsFromDatabase(options: {
 
 /**
  * Busca IDs de anuncios que pertencem a um adset especifico
- * Utiliza a tabela meta_entities_cache para fazer o mapeamento
+ * Utiliza a tabela meta_insights_raw onde o adset_id esta no payload JSONB
  */
 export async function getAdIdsByAdset(adsetId: string): Promise<string[]> {
+  // Busca ads distintos que pertencem ao adset usando o payload JSONB
   const { data, error } = await supabase
-    .from('meta_entities_cache')
+    .from('meta_insights_raw')
     .select('entity_id')
-    .eq('entity_type', 'ad')
-    .eq('adset_id', adsetId);
+    .eq('level', 'ad')
+    .filter('payload->>adset_id', 'eq', adsetId);
 
   if (error || !data) {
     console.error('Erro ao buscar ads por adset:', error);
     return [];
   }
 
-  return data.map((row) => row.entity_id);
+  // Remove duplicatas (pode haver multiplas datas para o mesmo ad)
+  const uniqueAdIds = [...new Set(data.map((row) => row.entity_id))];
+  return uniqueAdIds;
 }
 
 /**
