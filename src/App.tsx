@@ -331,7 +331,11 @@ function AppContent() {
       case 'data-sources':
         return <DataSources />;
       case 'data-extractor':
-        return <DataExtractorPage />;
+        return (
+          <DataExtractorPage
+            onNavigateToDataSources={() => setCurrentPage('data-sources')}
+          />
+        );
       case 'settings':
         return <SettingsPage />;
       case 'ai-insights':

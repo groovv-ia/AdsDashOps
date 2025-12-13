@@ -44,10 +44,20 @@ import type {
 } from '../../types/extraction';
 
 // ============================================
+// Props do componente
+// ============================================
+
+interface DataExtractorPageProps {
+  onNavigateToDataSources?: () => void;
+}
+
+// ============================================
 // Componente Principal
 // ============================================
 
-export const DataExtractorPage: React.FC = () => {
+export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
+  onNavigateToDataSources,
+}) => {
   // Estados de conexão
   const [connections, setConnections] = useState<any[]>([]);
   const [selectedConnection, setSelectedConnection] = useState<string>('');
@@ -404,12 +414,29 @@ export const DataExtractorPage: React.FC = () => {
                       Carregando...
                     </div>
                   ) : connections.length === 0 ? (
-                    <p className="text-sm text-gray-500">
-                      Nenhuma conta Meta conectada.{' '}
-                      <a href="/dashboard/data-sources" className="text-blue-600 hover:underline">
-                        Conectar conta
-                      </a>
-                    </p>
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-500">
+                        Nenhuma conta Meta conectada. Conecte sua conta para extrair dados.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={onNavigateToDataSources}
+                        className="
+                          inline-flex items-center gap-2 px-6 py-3
+                          bg-gradient-to-r from-blue-600 to-blue-700
+                          text-white font-semibold text-sm
+                          rounded-lg shadow-lg shadow-blue-500/30
+                          hover:from-blue-700 hover:to-blue-800
+                          hover:shadow-xl hover:shadow-blue-500/40
+                          transform hover:-translate-y-0.5
+                          transition-all duration-200
+                          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                        "
+                      >
+                        <Database className="w-5 h-5" />
+                        Conectar Conta Meta
+                      </button>
+                    </div>
                   ) : (
                     <select
                       value={selectedConnection}
