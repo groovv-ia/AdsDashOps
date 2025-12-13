@@ -751,7 +751,7 @@ export const MetaAdsSyncPage: React.FC = () => {
       </div>
 
       {/* Filtros */}
-      <Card>
+      <Card className="relative z-20">
         <div className="flex flex-wrap items-center gap-4">
           {/* Periodo */}
           <div className="flex-1 min-w-[200px]">
