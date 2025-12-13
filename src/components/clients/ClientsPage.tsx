@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Users, TrendingUp, AlertCircle, CheckCircle, UserPlus, Mail } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
 import { useClient, Client } from '../../contexts/ClientContext';
 import { ClientForm } from './ClientForm';
-import { InviteClientUserModal } from './InviteClientUserModal';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -32,7 +31,6 @@ export function ClientsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
-  const [invitingClient, setInvitingClient] = useState<Client | null>(null);
   const [clientStats, setClientStats] = useState<Record<string, ClientStats>>({});
   const [loadingStats, setLoadingStats] = useState(true);
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
@@ -246,18 +244,8 @@ export function ClientsPage() {
                       )}
                     </div>
 
-                    {/* Botoes de acao */}
-                    <div className="flex gap-1 ml-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setInvitingClient(client);
-                        }}
-                        className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                        title="Convidar usuario"
-                      >
-                        <UserPlus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                      </button>
+                    {/* Botões de ação */}
+                    <div className="flex gap-2 ml-2">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -370,7 +358,7 @@ export function ClientsPage() {
         </Modal>
       )}
 
-      {/* Modal de confirmacao de exclusao */}
+      {/* Modal de confirmação de exclusão */}
       {deletingClient && (
         <Modal
           isOpen={!!deletingClient}
@@ -381,10 +369,10 @@ export function ClientsPage() {
             <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
               <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-amber-800 dark:text-amber-300">
-                <p className="font-semibold mb-1">Atencao!</p>
+                <p className="font-semibold mb-1">Atenção!</p>
                 <p>
-                  Voce esta prestes a excluir o cliente <strong>{deletingClient.name}</strong>.
-                  As campanhas e dados associados nao serao excluidos, mas precisarao ser reatribuidos a outro cliente.
+                  Você está prestes a excluir o cliente <strong>{deletingClient.name}</strong>.
+                  As campanhas e dados associados não serão excluídos, mas precisarão ser reatribuídos a outro cliente.
                 </p>
               </div>
             </div>
@@ -408,18 +396,6 @@ export function ClientsPage() {
             </div>
           </div>
         </Modal>
-      )}
-
-      {/* Modal de convite de usuario */}
-      {invitingClient && (
-        <InviteClientUserModal
-          isOpen={!!invitingClient}
-          onClose={() => setInvitingClient(null)}
-          client={invitingClient}
-          onInviteSent={() => {
-            showNotification('success', 'Convite enviado com sucesso!');
-          }}
-        />
       )}
     </div>
   );
