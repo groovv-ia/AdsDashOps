@@ -178,6 +178,22 @@ export interface AdBenchmarkComparison {
   difference_percent: number;
 }
 
+// Interface para dados de insights pre-carregados (do banco de dados)
+export interface PreloadedInsightRow {
+  id: string;
+  level: string;
+  entity_id: string;
+  entity_name: string;
+  date: string;
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+}
+
 // Interface para estado do modal de detalhes
 export interface AdDetailModalState {
   isOpen: boolean;
@@ -185,6 +201,7 @@ export interface AdDetailModalState {
     ad_id: string;
     entity_name: string;
     meta_ad_account_id: string;
+    meta_ad_account_internal_id?: string;
     status?: string;
     campaign_name?: string;
     adset_name?: string;

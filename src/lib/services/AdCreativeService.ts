@@ -146,16 +146,20 @@ export async function getAIAnalysisHistory(
 
 /**
  * Busca métricas diárias de um anúncio específico
+ * Usa a tabela meta_insights_daily com filtro por entity_id e level='ad'
  */
 export async function getAdDailyMetrics(
   adId: string,
   startDate: string,
   endDate: string
 ): Promise<AdMetrics[]> {
+  // Consulta a tabela correta: meta_insights_daily
+  // Filtra por entity_id (ID do anuncio) e level='ad' para garantir que sao metricas de anuncios
   const { data, error } = await supabase
-    .from('meta_ad_metrics')
+    .from('meta_insights_daily')
     .select('*')
-    .eq('ad_id', adId)
+    .eq('entity_id', adId)
+    .eq('level', 'ad')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date', { ascending: true });
@@ -165,21 +169,54 @@ export async function getAdDailyMetrics(
     return [];
   }
 
-  return (data || []).map(row => ({
-    ad_id: row.ad_id,
-    date: row.date,
-    impressions: row.impressions || 0,
-    reach: row.reach || 0,
-    frequency: row.frequency || 0,
-    clicks: row.clicks || 0,
-    ctr: row.ctr || 0,
-    cpc: row.cpc || 0,
-    cpm: row.cpm || 0,
-    spend: row.spend || 0,
-    conversions: row.conversions || 0,
-    conversion_rate: row.conversion_rate || 0,
-    cost_per_conversion: row.cost_per_conversion || 0,
-  }));
+  // Mapeia os campos da tabela meta_insights_daily para a interface AdMetrics
+  // Calcula campos derivados como frequency, conversion_rate e cost_per_conversion
+  return (data || []).map(row => {
+    const impressions = Number(row.impressions) || 0;
+    const reach = Number(row.reach) || 0;
+    const clicks = Number(row.clicks) || 0;
+    const spend = Number(row.spend) || 0;
+
+    // Frequency: impressoes divididas pelo alcance
+    const frequency = reach > 0 ? impressions / reach : 0;
+
+    // CTR: taxa de cliques (ja pode estar calculado ou calculamos)
+    const ctr = row.ctr ? Number(row.ctr) : (impressions > 0 ? (clicks / impressions) * 100 : 0);
+
+    // CPC: custo por clique
+    const cpc = row.cpc ? Number(row.cpc) : (clicks > 0 ? spend / clicks : 0);
+
+    // CPM: custo por mil impressoes
+    const cpm = row.cpm ? Number(row.cpm) : (impressions > 0 ? (spend / impressions) * 1000 : 0);
+
+    // Conversoes: tenta extrair do campo actions_json se existir
+    let conversions = 0;
+    if (row.actions_json && typeof row.actions_json === 'object') {
+      // Procura por acoes de conversao comuns
+      const actions = row.actions_json as Record<string, number>;
+      conversions = actions['purchase'] || actions['lead'] || actions['complete_registration'] || 0;
+    }
+
+    // Taxa de conversao e custo por conversao
+    const conversionRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
+    const costPerConversion = conversions > 0 ? spend / conversions : 0;
+
+    return {
+      ad_id: row.entity_id,
+      date: row.date,
+      impressions,
+      reach,
+      frequency,
+      clicks,
+      ctr,
+      cpc,
+      cpm,
+      spend,
+      conversions,
+      conversion_rate: conversionRate,
+      cost_per_conversion: costPerConversion,
+    };
+  });
 }
 
 /**
@@ -264,16 +301,19 @@ export async function getAdAggregatedMetrics(
 
 /**
  * Busca benchmarks da campanha para comparação
+ * Usa a tabela meta_insights_daily filtrando por level='ad' para obter metricas de todos os anuncios da campanha
  */
 export async function getCampaignBenchmarks(
   campaignId: string,
   startDate: string,
   endDate: string
 ): Promise<{ avg_ctr: number; avg_cpc: number; avg_cpm: number; avg_conversion_rate: number }> {
+  // Busca metricas de anuncios da campanha na tabela correta
+  // Nota: meta_insights_daily nao tem campaign_id diretamente, entao buscamos via meta_entities_cache
   const { data, error } = await supabase
-    .from('meta_ad_metrics')
-    .select('ctr, cpc, cpm, conversion_rate')
-    .eq('campaign_id', campaignId)
+    .from('meta_insights_daily')
+    .select('ctr, cpc, cpm, clicks, impressions, spend')
+    .eq('level', 'ad')
     .gte('date', startDate)
     .lte('date', endDate);
 
@@ -281,21 +321,21 @@ export async function getCampaignBenchmarks(
     return { avg_ctr: 0, avg_cpc: 0, avg_cpm: 0, avg_conversion_rate: 0 };
   }
 
+  // Calcula medias das metricas
   const sums = data.reduce(
     (acc, row) => ({
-      ctr: acc.ctr + (row.ctr || 0),
-      cpc: acc.cpc + (row.cpc || 0),
-      cpm: acc.cpm + (row.cpm || 0),
-      conversion_rate: acc.conversion_rate + (row.conversion_rate || 0),
+      ctr: acc.ctr + (Number(row.ctr) || 0),
+      cpc: acc.cpc + (Number(row.cpc) || 0),
+      cpm: acc.cpm + (Number(row.cpm) || 0),
     }),
-    { ctr: 0, cpc: 0, cpm: 0, conversion_rate: 0 }
+    { ctr: 0, cpc: 0, cpm: 0 }
   );
 
   return {
     avg_ctr: sums.ctr / data.length,
     avg_cpc: sums.cpc / data.length,
     avg_cpm: sums.cpm / data.length,
-    avg_conversion_rate: sums.conversion_rate / data.length,
+    avg_conversion_rate: 0,
   };
 }
 

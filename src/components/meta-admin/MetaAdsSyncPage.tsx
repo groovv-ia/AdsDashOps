@@ -363,15 +363,22 @@ export const MetaAdsSyncPage: React.FC = () => {
   // ============================================================
 
   // Abre o modal de detalhes do anuncio
+  // Passa o meta_id (formato act_XXXXX) para as Edge Functions e o ID interno para consultas no banco
   const handleOpenAdDetail = (row: { entity_id: string; entity_name: string }) => {
     if (selectedLevel !== 'ad') return;
+
+    // Busca a conta selecionada para obter o meta_id correto
+    const account = getAccountById(navigationState.selectedAccountId || '');
 
     setAdDetailModal({
       isOpen: true,
       adData: {
         ad_id: row.entity_id,
         entity_name: row.entity_name,
-        meta_ad_account_id: navigationState.selectedAccountId || '',
+        // Usa o meta_id (formato act_XXXXX) para chamadas a Edge Functions do Meta
+        meta_ad_account_id: account?.meta_id || '',
+        // Guarda o ID interno para consultas no banco de dados local
+        meta_ad_account_internal_id: navigationState.selectedAccountId || undefined,
         campaign_name: navigationState.selectedCampaignName || undefined,
       },
     });
@@ -1032,11 +1039,17 @@ export const MetaAdsSyncPage: React.FC = () => {
       </Card>
 
       {/* Modal de Detalhes do Anuncio */}
+      {/* Passa os insights pre-carregados filtrados pelo ad_id do anuncio selecionado */}
       <AdDetailModal
         isOpen={adDetailModal.isOpen}
         onClose={handleCloseAdDetail}
         adData={adDetailModal.adData}
         dateRange={{ start: dateRange.dateFrom, end: dateRange.dateTo }}
+        preloadedMetrics={
+          adDetailModal.adData
+            ? insights.filter((row) => row.entity_id === adDetailModal.adData?.ad_id)
+            : []
+        }
       />
     </div>
   );

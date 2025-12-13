@@ -1,11 +1,12 @@
 /**
  * AdDetailModal Component
  *
- * Modal completo para visualização de detalhes de um anúncio
- * incluindo criativo, métricas e análise de IA.
+ * Modal completo para visualizacao de detalhes de um anuncio
+ * incluindo criativo (imagem/video), metricas com graficos e analise de IA.
+ * Suporta dados pre-carregados para exibicao imediata.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   X,
   Eye,
@@ -16,26 +17,49 @@ import {
   ExternalLink,
   RefreshCw,
   Play,
+  Pause,
   CheckCircle,
   AlertCircle,
   Clock,
   TrendingUp,
   TrendingDown,
-  Minus,
+  DollarSign,
+  MousePointer,
+  Users,
+  Target,
+  Volume2,
+  VolumeX,
+  Maximize2,
   ChevronRight,
 } from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+} from 'recharts';
 import { useAdDetailData } from '../../hooks/useAdDetails';
 import { ScoreCircle } from './ScoreCircle';
 import { RecommendationCard } from './RecommendationCard';
 import { ImageZoomModal } from './ImageZoomModal';
 import { AdDetailTab, getCreativeTypeLabel } from '../../types/adAnalysis';
-import type { AdDetailModalState } from '../../types/adAnalysis';
+import type { AdDetailModalState, PreloadedInsightRow } from '../../types/adAnalysis';
 
+// Interface para props do modal
 interface AdDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   adData: AdDetailModalState['adData'];
   dateRange?: { start: string; end: string };
+  // Metricas pre-carregadas da pagina pai (evita nova query)
+  preloadedMetrics?: PreloadedInsightRow[];
 }
 
 export const AdDetailModal: React.FC<AdDetailModalProps> = ({
@@ -43,12 +67,13 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   onClose,
   adData,
   dateRange,
+  preloadedMetrics = [],
 }) => {
   const [activeTab, setActiveTab] = useState<AdDetailTab>(AdDetailTab.OVERVIEW);
   const [imageZoomOpen, setImageZoomOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
-  // Datas padrão: últimos 30 dias
+  // Datas padrao: ultimos 30 dias
   const defaultStartDate = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -70,7 +95,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     isAnalyzing,
     analyzeAd,
     hasAnalysis,
-    metrics,
+    metrics: fetchedMetrics,
     metricsLoading,
   } = useAdDetailData(
     adData?.ad_id || null,
@@ -78,6 +103,68 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     startDate,
     endDate
   );
+
+  // Usa metricas pre-carregadas se disponiveis, senao usa as buscadas do banco
+  const hasPreloadedData = preloadedMetrics.length > 0;
+
+  // Agrega metricas pre-carregadas no formato esperado
+  const aggregatedPreloadedMetrics = useMemo(() => {
+    if (!hasPreloadedData) return null;
+
+    const totals = preloadedMetrics.reduce(
+      (acc, row) => ({
+        impressions: acc.impressions + (row.impressions || 0),
+        reach: acc.reach + (row.reach || 0),
+        clicks: acc.clicks + (row.clicks || 0),
+        spend: acc.spend + (row.spend || 0),
+      }),
+      { impressions: 0, reach: 0, clicks: 0, spend: 0 }
+    );
+
+    // Calcula metricas derivadas
+    const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+    const avgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
+    const avgCpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
+    const avgFrequency = totals.reach > 0 ? totals.impressions / totals.reach : 0;
+
+    // Metricas diarias ordenadas por data
+    const dailyMetrics = [...preloadedMetrics]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((row) => ({
+        ad_id: row.entity_id,
+        date: row.date,
+        impressions: row.impressions || 0,
+        reach: row.reach || 0,
+        frequency: row.reach > 0 ? row.impressions / row.reach : 0,
+        clicks: row.clicks || 0,
+        ctr: row.ctr || 0,
+        cpc: row.cpc || 0,
+        cpm: row.cpm || 0,
+        spend: row.spend || 0,
+        conversions: 0,
+        conversion_rate: 0,
+        cost_per_conversion: 0,
+      }));
+
+    return {
+      total_impressions: totals.impressions,
+      total_reach: totals.reach,
+      avg_frequency: avgFrequency,
+      total_clicks: totals.clicks,
+      avg_ctr: avgCtr,
+      avg_cpc: avgCpc,
+      avg_cpm: avgCpm,
+      total_spend: totals.spend,
+      total_conversions: 0,
+      avg_conversion_rate: 0,
+      avg_cost_per_conversion: 0,
+      daily_metrics: dailyMetrics,
+    };
+  }, [hasPreloadedData, preloadedMetrics]);
+
+  // Escolhe a fonte de metricas: pre-carregadas ou buscadas
+  const metrics = hasPreloadedData ? aggregatedPreloadedMetrics : fetchedMetrics;
+  const isMetricsLoading = hasPreloadedData ? false : metricsLoading;
 
   // Fecha modal com ESC
   React.useEffect(() => {
@@ -105,7 +192,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     setTimeout(() => setCopiedId(false), 2000);
   };
 
-  // Handler para análise de IA
+  // Handler para analise de IA
   const handleAnalyze = async () => {
     if (!creative) return;
 
@@ -131,7 +218,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     }
   };
 
-  // Tabs disponíveis
+  // Tabs disponiveis
   const tabs = [
     { id: AdDetailTab.OVERVIEW, label: 'Visão Geral', icon: Eye },
     { id: AdDetailTab.CREATIVE, label: 'Criativo', icon: Image },
@@ -139,7 +226,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     { id: AdDetailTab.AI_ANALYSIS, label: 'Análise IA', icon: Sparkles },
   ];
 
-  // URL da imagem para visualização
+  // URL da imagem para visualizacao
   const displayImageUrl = creative?.thumbnail_url || creative?.image_url;
 
   return (
@@ -217,7 +304,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
                 creative={creative}
                 creativeLoading={creativeLoading}
                 metrics={metrics}
-                metricsLoading={metricsLoading}
+                metricsLoading={isMetricsLoading}
                 hasAnalysis={hasAnalysis}
                 analysis={analysis}
                 onImageClick={() => setImageZoomOpen(true)}
@@ -241,7 +328,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
             {activeTab === AdDetailTab.METRICS && (
               <MetricsTab
                 metrics={metrics}
-                loading={metricsLoading}
+                loading={isMetricsLoading}
                 startDate={startDate}
                 endDate={endDate}
               />
@@ -307,9 +394,15 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
 }) => {
   const imageUrl = creative?.thumbnail_url || creative?.image_url;
 
+  // Funcoes de formatacao
+  const formatCurrency = (n: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+  const formatNumber = (n: number) => new Intl.NumberFormat('pt-BR').format(Math.round(n));
+  const formatPercent = (n: number) => `${n.toFixed(2)}%`;
+
   return (
     <div className="space-y-6">
-      {/* Info básica + Preview */}
+      {/* Info basica + Preview */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Info Card */}
         <div className="bg-gray-50 rounded-lg p-4 space-y-3">
@@ -381,10 +474,30 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
         ) : metrics ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KPICard label="Gasto Total" value={`R$ ${metrics.total_spend.toFixed(2)}`} />
-            <KPICard label="CTR" value={`${metrics.avg_ctr.toFixed(2)}%`} />
-            <KPICard label="CPC" value={`R$ ${metrics.avg_cpc.toFixed(2)}`} />
-            <KPICard label="Conversões" value={metrics.total_conversions.toString()} />
+            <KPICard
+              label="Gasto Total"
+              value={formatCurrency(metrics.total_spend)}
+              icon={DollarSign}
+              color="green"
+            />
+            <KPICard
+              label="CTR"
+              value={formatPercent(metrics.avg_ctr)}
+              icon={TrendingUp}
+              color="blue"
+            />
+            <KPICard
+              label="CPC"
+              value={formatCurrency(metrics.avg_cpc)}
+              icon={MousePointer}
+              color="cyan"
+            />
+            <KPICard
+              label="Impressões"
+              value={formatNumber(metrics.total_impressions)}
+              icon={Eye}
+              color="amber"
+            />
           </div>
         ) : (
           <div className="text-sm text-gray-500 text-center py-4">
@@ -393,7 +506,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
         )}
       </div>
 
-      {/* Status da análise de IA */}
+      {/* Status da analise de IA */}
       <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -437,15 +550,35 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   );
 };
 
-// KPI Card helper
-const KPICard: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="bg-white border border-gray-200 rounded-lg p-3">
-    <div className="text-xs text-gray-500 mb-1">{label}</div>
-    <div className="text-lg font-semibold text-gray-900">{value}</div>
-  </div>
-);
+// KPI Card helper com icone e cor
+interface KPICardProps {
+  label: string;
+  value: string;
+  icon?: React.FC<{ className?: string }>;
+  color?: 'green' | 'blue' | 'cyan' | 'amber' | 'red';
+}
 
-// Creative Tab Component
+const KPICard: React.FC<KPICardProps> = ({ label, value, icon: Icon, color = 'blue' }) => {
+  const colorClasses = {
+    green: 'bg-green-50 border-green-100 text-green-600',
+    blue: 'bg-blue-50 border-blue-100 text-blue-600',
+    cyan: 'bg-cyan-50 border-cyan-100 text-cyan-600',
+    amber: 'bg-amber-50 border-amber-100 text-amber-600',
+    red: 'bg-red-50 border-red-100 text-red-600',
+  };
+
+  return (
+    <div className={`rounded-lg p-3 border ${colorClasses[color]}`}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs text-gray-500">{label}</span>
+        {Icon && <Icon className="w-4 h-4 opacity-50" />}
+      </div>
+      <div className="text-lg font-semibold text-gray-900">{value}</div>
+    </div>
+  );
+};
+
+// Creative Tab Component com suporte a video
 interface CreativeTabProps {
   creative: ReturnType<typeof useAdDetailData>['creative'];
   loading: boolean;
@@ -461,6 +594,30 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
   onRefresh,
   onImageClick,
 }) => {
+  // Estados para controle do video
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+
+  // Handlers do video
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -503,10 +660,12 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
   }
 
   const imageUrl = creative.thumbnail_url || creative.image_url;
+  const videoUrl = creative.video_url;
+  const isVideo = creative.creative_type === 'video' && videoUrl;
 
   return (
     <div className="space-y-6">
-      {/* Preview da imagem */}
+      {/* Preview da midia (imagem ou video) */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-medium text-gray-900">Visual</h3>
@@ -523,7 +682,54 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
             </button>
           </div>
         </div>
-        {imageUrl ? (
+
+        {/* Player de video se for video */}
+        {isVideo ? (
+          <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-black">
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              poster={imageUrl || undefined}
+              className="w-full max-h-96 object-contain"
+              muted={isMuted}
+              playsInline
+              onEnded={() => setIsPlaying(false)}
+            />
+            {/* Controles do video */}
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={togglePlay}
+                    className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+                  >
+                    {isPlaying ? (
+                      <Pause className="w-5 h-5 text-white" />
+                    ) : (
+                      <Play className="w-5 h-5 text-white" />
+                    )}
+                  </button>
+                  <button
+                    onClick={toggleMute}
+                    className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+                  >
+                    {isMuted ? (
+                      <VolumeX className="w-5 h-5 text-white" />
+                    ) : (
+                      <Volume2 className="w-5 h-5 text-white" />
+                    )}
+                  </button>
+                </div>
+                <button
+                  onClick={onImageClick}
+                  className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+                >
+                  <Maximize2 className="w-5 h-5 text-white" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : imageUrl ? (
           <div
             className="relative cursor-pointer group rounded-lg overflow-hidden border border-gray-200"
             onClick={onImageClick}
@@ -533,12 +739,6 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
               alt="Criativo do anúncio"
               className="w-full max-h-96 object-contain bg-gray-50"
             />
-            {creative.creative_type === 'video' && (
-              <div className="absolute top-3 left-3 flex items-center gap-1 px-2 py-1 bg-black/70 text-white text-xs rounded">
-                <Play className="w-3 h-3" />
-                Vídeo
-              </div>
-            )}
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
           </div>
         ) : (
@@ -548,7 +748,7 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
         )}
       </div>
 
-      {/* Textos do anúncio */}
+      {/* Textos do anuncio */}
       <div className="space-y-4">
         <h3 className="font-medium text-gray-900">Textos do Anúncio</h3>
 
@@ -620,7 +820,7 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
   );
 };
 
-// Metrics Tab Component
+// Metrics Tab Component com graficos
 interface MetricsTabProps {
   metrics: ReturnType<typeof useAdDetailData>['metrics'];
   loading: boolean;
@@ -629,6 +829,9 @@ interface MetricsTabProps {
 }
 
 const MetricsTab: React.FC<MetricsTabProps> = ({ metrics, loading, startDate, endDate }) => {
+  // Tipo de grafico selecionado
+  const [chartType, setChartType] = useState<'spend' | 'performance'>('spend');
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -651,32 +854,213 @@ const MetricsTab: React.FC<MetricsTabProps> = ({ metrics, loading, startDate, en
     );
   }
 
+  // Funcoes de formatacao
   const formatNumber = (n: number) => n.toLocaleString('pt-BR');
-  const formatCurrency = (n: number) => `R$ ${n.toFixed(2)}`;
+  const formatCurrency = (n: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
   const formatPercent = (n: number) => `${n.toFixed(2)}%`;
+  const formatCompact = (n: number) => {
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return formatNumber(n);
+  };
+
+  // Dados para graficos
+  const chartData = metrics.daily_metrics.map((day) => ({
+    date: day.date,
+    dateLabel: new Date(day.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+    spend: day.spend,
+    impressions: day.impressions,
+    clicks: day.clicks,
+    ctr: day.ctr,
+    cpc: day.cpc,
+    cpm: day.cpm,
+  }));
 
   return (
     <div className="space-y-6">
-      {/* Período */}
+      {/* Periodo */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Clock className="w-4 h-4" />
         Período: {new Date(startDate).toLocaleDateString('pt-BR')} - {new Date(endDate).toLocaleDateString('pt-BR')}
       </div>
 
-      {/* Grid de métricas */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <MetricCard label="Impressões" value={formatNumber(metrics.total_impressions)} />
-        <MetricCard label="Alcance" value={formatNumber(metrics.total_reach)} />
-        <MetricCard label="Frequência" value={metrics.avg_frequency.toFixed(2)} />
-        <MetricCard label="Cliques" value={formatNumber(metrics.total_clicks)} />
-        <MetricCard label="CTR" value={formatPercent(metrics.avg_ctr)} highlight />
-        <MetricCard label="CPC" value={formatCurrency(metrics.avg_cpc)} />
-        <MetricCard label="CPM" value={formatCurrency(metrics.avg_cpm)} />
-        <MetricCard label="Gasto Total" value={formatCurrency(metrics.total_spend)} highlight />
-        <MetricCard label="Conversões" value={formatNumber(metrics.total_conversions)} />
+      {/* Grid de metricas principais */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-green-50 to-white border border-green-100 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-500">Gasto Total</span>
+            <DollarSign className="w-4 h-4 text-green-500" />
+          </div>
+          <p className="text-xl font-bold text-gray-900">{formatCurrency(metrics.total_spend)}</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-100 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-500">Impressões</span>
+            <Eye className="w-4 h-4 text-blue-500" />
+          </div>
+          <p className="text-xl font-bold text-gray-900">{formatCompact(metrics.total_impressions)}</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-cyan-50 to-white border border-cyan-100 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-500">Cliques</span>
+            <MousePointer className="w-4 h-4 text-cyan-500" />
+          </div>
+          <p className="text-xl font-bold text-gray-900">{formatCompact(metrics.total_clicks)}</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-amber-50 to-white border border-amber-100 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-500">Alcance</span>
+            <Users className="w-4 h-4 text-amber-500" />
+          </div>
+          <p className="text-xl font-bold text-gray-900">{formatCompact(metrics.total_reach)}</p>
+        </div>
       </div>
 
-      {/* Tabela de métricas diárias */}
+      {/* Metricas secundarias */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+        <MetricBadge label="CTR" value={formatPercent(metrics.avg_ctr)} trend="up" />
+        <MetricBadge label="CPC" value={formatCurrency(metrics.avg_cpc)} />
+        <MetricBadge label="CPM" value={formatCurrency(metrics.avg_cpm)} />
+        <MetricBadge label="Frequência" value={metrics.avg_frequency.toFixed(2)} />
+        <MetricBadge label="Conversões" value={formatNumber(metrics.total_conversions)} />
+        <MetricBadge label="Custo/Conv." value={formatCurrency(metrics.avg_cost_per_conversion)} />
+      </div>
+
+      {/* Graficos */}
+      {chartData.length > 1 && (
+        <div className="space-y-4">
+          {/* Seletor de tipo de grafico */}
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Evolução Diária</h3>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setChartType('spend')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  chartType === 'spend'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Gasto
+              </button>
+              <button
+                onClick={() => setChartType('performance')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  chartType === 'performance'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Performance
+              </button>
+            </div>
+          </div>
+
+          {/* Grafico de Gasto */}
+          {chartType === 'spend' && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="spendGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="dateLabel" stroke="#9ca3af" fontSize={11} />
+                    <YAxis
+                      tickFormatter={(v) => `R$${v}`}
+                      stroke="#9ca3af"
+                      fontSize={11}
+                      width={60}
+                    />
+                    <Tooltip
+                      formatter={(value: number) => [formatCurrency(value), 'Gasto']}
+                      labelFormatter={(label) => `Data: ${label}`}
+                      contentStyle={{
+                        backgroundColor: 'white',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="spend"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      fill="url(#spendGradient)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Grafico de Performance (Impressoes e Cliques) */}
+          {chartType === 'performance' && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="dateLabel" stroke="#9ca3af" fontSize={11} />
+                    <YAxis stroke="#9ca3af" fontSize={11} width={60} />
+                    <Tooltip
+                      formatter={(value: number, name: string) => [
+                        formatNumber(value),
+                        name === 'impressions' ? 'Impressões' : 'Cliques',
+                      ]}
+                      labelFormatter={(label) => `Data: ${label}`}
+                      contentStyle={{
+                        backgroundColor: 'white',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="impressions"
+                      name="impressions"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="clicks"
+                      name="clicks"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Legenda */}
+              <div className="flex items-center justify-center gap-6 mt-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-blue-500" />
+                  <span className="text-xs text-gray-600">Impressões</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                  <span className="text-xs text-gray-600">Cliques</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tabela de metricas diarias */}
       {metrics.daily_metrics.length > 0 && (
         <div>
           <h3 className="font-medium text-gray-900 mb-3">Métricas Diárias</h3>
@@ -725,16 +1109,18 @@ const MetricsTab: React.FC<MetricsTabProps> = ({ metrics, loading, startDate, en
   );
 };
 
-// Metric Card helper
-const MetricCard: React.FC<{ label: string; value: string; highlight?: boolean }> = ({
+// Metric Badge helper
+const MetricBadge: React.FC<{ label: string; value: string; trend?: 'up' | 'down' }> = ({
   label,
   value,
-  highlight,
+  trend,
 }) => (
-  <div className={`rounded-lg p-4 ${highlight ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
+  <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
     <div className="text-xs text-gray-500 mb-1">{label}</div>
-    <div className={`text-xl font-semibold ${highlight ? 'text-blue-700' : 'text-gray-900'}`}>
-      {value}
+    <div className="flex items-center justify-center gap-1">
+      <span className="text-sm font-semibold text-gray-900">{value}</span>
+      {trend === 'up' && <TrendingUp className="w-3 h-3 text-green-500" />}
+      {trend === 'down' && <TrendingDown className="w-3 h-3 text-red-500" />}
     </div>
   </div>
 );
