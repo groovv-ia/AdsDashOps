@@ -6,7 +6,7 @@ import { logger } from '../utils/logger';
  * Inclui métricas totalizadas de todo o período
  */
 export interface CampaignWithMetrics {
-  // Dados básicos da campanha
+  // Dados basicos da campanha
   id: string;
   name: string;
   platform: string;
@@ -21,7 +21,11 @@ export interface CampaignWithMetrics {
   lifetime_budget?: number;
   budget_remaining?: number;
 
-  // Métricas agregadas
+  // Campo para vincular com Meta Insights (entity_id do Meta)
+  meta_entity_id?: string;
+  meta_ad_account_id?: string;
+
+  // Metricas agregadas
   metrics: {
     impressions: number;
     clicks: number;
@@ -34,6 +38,7 @@ export interface CampaignWithMetrics {
     cpm: number;
     roas: number;
     cost_per_result: number;
+    conversion_value?: number;
   };
 
   // Metadados
@@ -41,6 +46,9 @@ export interface CampaignWithMetrics {
   total_ads: number;
   last_sync: string;
   days_active: number;
+
+  // Fonte dos dados
+  data_source?: 'meta_insights' | 'ad_metrics' | 'legacy';
 }
 
 /**
