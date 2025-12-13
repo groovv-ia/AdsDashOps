@@ -29,7 +29,7 @@ interface MetaConnection {
  * Modelo de negócio: 1 conexão por workspace (agência), sem OAuth de usuário.
  */
 export const MetaConnectionPage: React.FC = () => {
-  const { workspace } = useWorkspace();
+  const { workspace, loading: workspaceLoading, error: workspaceError } = useWorkspace();
 
   // Estados
   const [connection, setConnection] = useState<MetaConnection | null>(null);
@@ -263,6 +263,43 @@ export const MetaConnectionPage: React.FC = () => {
       setTesting(false);
     }
   };
+
+  // Mostra loading enquanto workspace está carregando
+  if (workspaceLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Carregando workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Mostra erro se workspace falhou ao carregar
+  if (workspaceError) {
+    return (
+      <div className="max-w-2xl mx-auto p-6">
+        <Alert variant="error" title="Erro ao carregar workspace">
+          <p>{workspaceError}</p>
+          <p className="mt-2 text-sm">
+            Por favor, tente recarregar a página ou entre em contato com o suporte.
+          </p>
+        </Alert>
+      </div>
+    );
+  }
+
+  // Não deve acontecer, mas caso workspace seja null
+  if (!workspace) {
+    return (
+      <div className="max-w-2xl mx-auto p-6">
+        <Alert variant="error" title="Workspace não encontrado">
+          <p>Não foi possível carregar o workspace. Por favor, faça login novamente.</p>
+        </Alert>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

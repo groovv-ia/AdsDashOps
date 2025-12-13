@@ -64,7 +64,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         .maybeSingle();
 
       if (fetchError) {
-        throw fetchError;
+        logger.error('Erro ao buscar workspace', { error: fetchError, userId: user.id });
+        throw new Error(`Erro ao buscar workspace: ${fetchError.message || JSON.stringify(fetchError)}`);
       }
 
       if (existingWorkspace) {
@@ -88,15 +89,21 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           .single();
 
         if (createError) {
-          throw createError;
+          logger.error('Erro ao criar workspace', { error: createError, userId: user.id });
+          throw new Error(`Erro ao criar workspace: ${createError.message || JSON.stringify(createError)}`);
         }
 
         logger.info('Workspace criado com sucesso', { workspaceId: newWorkspace.id });
         setWorkspace(newWorkspace);
       }
     } catch (err: any) {
-      logger.error('Erro ao carregar workspace', err);
-      setError(err.message || 'Erro ao carregar workspace');
+      const errorMessage = err?.message || err?.error?.message || 'Erro desconhecido ao carregar workspace';
+      logger.error('Erro ao carregar workspace', {
+        error: err,
+        message: errorMessage,
+        stack: err?.stack
+      });
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
