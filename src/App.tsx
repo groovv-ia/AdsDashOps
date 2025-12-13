@@ -10,6 +10,7 @@ import { PerformanceChart } from './components/dashboard/PerformanceChart';
 import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
 import { SettingsPage } from './components/settings/SettingsPage';
+import { MetaConnectionPage } from './components/settings/MetaConnectionPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { SupportPage } from './components/support/SupportPage';
 import { FloatingHelpButton } from './components/help/FloatingHelpButton';
@@ -314,6 +315,8 @@ function AppContent() {
             }}
           />
         );
+      case 'meta-connection':
+        return <MetaConnectionPage />;
       case 'campaign-analysis':
         if (!selectedCampaignId) {
           setCurrentPage('campaigns');
