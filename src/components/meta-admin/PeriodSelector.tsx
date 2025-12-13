@@ -180,7 +180,7 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
   };
 
   return (
-    <div className={`relative ${className}`} ref={dropdownRef}>
+    <div className={`relative ${isOpen ? 'z-50' : ''} ${className}`} ref={dropdownRef}>
       {/* Botao principal */}
       <button
         onClick={() => setIsOpen(!isOpen)}
