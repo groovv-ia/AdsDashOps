@@ -15,7 +15,6 @@ import {
   MetaApiError
 } from './types';
 import { Campaign as CampaignType, AdSet as AdSetType, Ad as AdType, AdMetrics, AudienceInsight } from '../shared/types';
-import { extractMetricsFromInsight, MetaInsightsRaw } from '../../utils/metaMetricsExtractor';
 
 export class MetaAdsService {
   private api: FacebookAdsApi;
@@ -295,33 +294,55 @@ export class MetaAdsService {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('User not authenticated');
 
-      // Usa helper compartilhado para extração consistente de métricas
-      const metrics: AdMetrics[] = response.data.data.map((insight: MetaInsightsRaw) => {
-        const extracted = extractMetricsFromInsight(insight);
+      const metrics: AdMetrics[] = response.data.data.map((insight: any) => {
+        // Extrai conversões - verifica múltiplos tipos
+        const conversions = this.extractActionValueMultiple(
+          insight.actions,
+          ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase', 'app_custom_event.fb_mobile_purchase']
+        );
+
+        // Extrai valor REAL das conversões (não estimar)
+        const conversionValue = this.extractActionValueMultiple(
+          insight.action_values,
+          ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase', 'app_custom_event.fb_mobile_purchase']
+        );
+
+        // Extrai visualizações de vídeo
+        const videoViews = this.extractActionValueMultiple(insight.actions, ['video_view']);
+
+        // Extrai cliques em links inline
+        const inlineLinkClicks = parseInt(insight.inline_link_clicks || '0');
+
+        const spend = parseFloat(insight.spend || '0');
 
         return {
           connectionId,
           userId: userData.user!.id,
           [`${objectType}Id`]: objectId,
           date: insight.date_start,
-          // Usa dados extraídos pelo helper
-          impressions: extracted.impressions,
-          clicks: extracted.clicks,
-          spend: extracted.spend,
-          reach: extracted.reach,
-          frequency: extracted.frequency,
-          ctr: extracted.ctr,
-          cpc: extracted.cpc,
-          cpm: extracted.cpm,
-          cpp: extracted.cpp,
-          conversions: extracted.conversions,
-          conversionValue: extracted.conversion_value,
-          costPerResult: extracted.cost_per_result,
-          inlineLinkClicks: extracted.inline_link_clicks,
-          costPerInlineLinkClick: extracted.cost_per_inline_link_click,
-          outboundClicks: extracted.outbound_clicks,
-          videoViews: extracted.video_views,
-          roas: extracted.roas,
+          // Métricas básicas
+          impressions: parseInt(insight.impressions || '0'),
+          clicks: parseInt(insight.clicks || '0'),
+          spend: spend,
+          reach: parseInt(insight.reach || '0'),
+          frequency: parseFloat(insight.frequency || '0'),
+          // Métricas de taxa - USA VALORES DA API
+          ctr: parseFloat(insight.ctr || '0'),
+          cpc: parseFloat(insight.cpc || '0'),
+          cpm: parseFloat(insight.cpm || '0'),
+          cpp: parseFloat(insight.cpp || '0'),
+          // Conversões - USA VALOR REAL
+          conversions: conversions,
+          conversionValue: conversionValue,
+          costPerResult: conversions > 0 ? spend / conversions : 0,
+          // Cliques detalhados
+          inlineLinkClicks: inlineLinkClicks,
+          costPerInlineLinkClick: parseFloat(insight.cost_per_inline_link_click || '0'),
+          outboundClicks: parseInt(insight.outbound_clicks || '0'),
+          // Vídeo
+          videoViews,
+          // ROAS - USA VALOR REAL DE CONVERSÃO
+          roas: conversionValue > 0 && spend > 0 ? conversionValue / spend : 0,
         };
       });
 
@@ -389,14 +410,32 @@ export class MetaAdsService {
     }
   }
 
-  /**
-   * @deprecated Use extractActionValue from metaMetricsExtractor helper instead
-   * Mantido para compatibilidade com código legado
-   */
   private extractActionValue(actions: any[] | undefined, actionType: string): number {
     if (!actions) return 0;
     const action = actions.find((a: any) => a.action_type === actionType);
     return action ? parseFloat(action.value) : 0;
+  }
+
+  /**
+   * Extrai valor de uma ação específica do array actions ou action_values
+   * Suporta múltiplos tipos de ação (ex: purchase, omni_purchase, etc)
+   *
+   * @param actionsArray - Array de actions ou action_values da API Meta
+   * @param actionTypes - Array de tipos de ação para buscar (em ordem de prioridade)
+   * @returns Valor numérico da ação encontrada, ou 0 se não encontrar
+   */
+  private extractActionValueMultiple(actionsArray: any[] | undefined, actionTypes: string[]): number {
+    if (!actionsArray || actionsArray.length === 0) return 0;
+
+    // Percorre tipos de ação em ordem de prioridade
+    for (const actionType of actionTypes) {
+      const action = actionsArray.find((a: any) => a.action_type === actionType);
+      if (action && action.value) {
+        return parseFloat(action.value);
+      }
+    }
+
+    return 0;
   }
 
   private handleApiError(error: any): Error {

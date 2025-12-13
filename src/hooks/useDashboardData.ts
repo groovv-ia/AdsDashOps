@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { DashboardDataService } from '../lib/services/DashboardDataService';
+import { useClient } from '../contexts/ClientContext';
 import {
   mockCampaigns,
   mockMetrics,
@@ -33,9 +34,10 @@ interface DashboardData {
  * Hook principal para gerenciar dados do dashboard
  *
  * Retorna dados do Supabase quando disponíveis, ou dados mockados como fallback.
- * Mantém interface idêntica aos dados mockados para compatibilidade total.
+ * Filtra dados pelo cliente selecionado no ClientContext.
  */
 export const useDashboardData = (): DashboardData => {
+  const { selectedClient } = useClient();
   const [campaigns, setCampaigns] = useState<Campaign[]>(mockCampaigns);
   const [metrics, setMetrics] = useState<AdMetrics[]>(mockMetrics);
   const [adSets, setAdSets] = useState<AdSet[]>(mockAdSets);
@@ -47,6 +49,9 @@ export const useDashboardData = (): DashboardData => {
 
   const dataService = DashboardDataService.getInstance();
 
+  // ID do cliente selecionado (null = todos os clientes)
+  const clientId = selectedClient?.id || null;
+
   /**
    * Carrega dados do Supabase ou usa mocks como fallback
    * ATUALIZADO: Agora exibe campanhas reais mesmo sem métricas
@@ -56,10 +61,13 @@ export const useDashboardData = (): DashboardData => {
       setLoading(true);
       setError(null);
 
-      console.log('\n🔄 Iniciando carregamento de dados do dashboard...');
+      console.log('\n🔄 Iniciando carregamento de dados do dashboard...', {
+        clientId: clientId || 'todos',
+        clientName: selectedClient?.name || 'Todos os Clientes'
+      });
 
-      // Busca todos os dados do banco em paralelo
-      const data = await dataService.fetchAllDashboardData();
+      // Busca todos os dados do banco em paralelo (filtrados por cliente)
+      const data = await dataService.fetchAllDashboardData(clientId);
 
       console.log('📄 Resultado da busca:', {
         hasRealData: data.hasRealData,
@@ -125,10 +133,10 @@ export const useDashboardData = (): DashboardData => {
     await loadData();
   };
 
-  // Carrega dados ao montar o componente
+  // Carrega dados ao montar o componente e quando o cliente selecionado mudar
   useEffect(() => {
     loadData();
-  }, []);
+  }, [clientId]);
 
   return {
     campaigns,

@@ -3,7 +3,6 @@ import { logger } from '../utils/logger';
 import { MetaAdsService } from '../connectors/meta/MetaAdsService';
 import { GoogleAdsService } from '../connectors/google/GoogleAdsService';
 import { Campaign, AdSet, Ad, AdMetrics, SyncJob, SyncResult } from '../connectors/shared/types';
-import { extractMetricsFromInsight, validateExtractedMetrics, MetaInsightsRaw } from '../utils/metaMetricsExtractor';
 
 export class DataSyncService {
   private metaService: MetaAdsService;
@@ -116,70 +115,41 @@ export class DataSyncService {
           await supabase.from('ads').upsert(ad, { onConflict: 'id' });
         }
 
-        // Busca insights brutos da API Meta
-        const adSetInsights = await this.fetchMetaInsightsRaw(
+        const adSetMetrics = await this.metaService.getInsights(
           connectionId,
           adSet.id,
           'adset',
-          this.getDateRange(30).start,
-          this.getDateRange(30).end
+          this.getDateRange(90).start,
+          this.getDateRange(90).end
         );
-        metricsCount += adSetInsights.length;
+        metricsCount += adSetMetrics.length;
 
-        // Extrai e salva métricas usando helper compartilhado
-        for (const insight of adSetInsights) {
-          const extractedMetrics = extractMetricsFromInsight(insight);
-
-          // Valida métricas antes de salvar
-          const warnings = validateExtractedMetrics(extractedMetrics);
-          if (warnings.length > 0) {
-            logger.warn('Avisos ao validar métricas do ad set', { adSetId: adSet.id, warnings });
-          }
-
+        for (const metric of adSetMetrics) {
           await supabase.from('ad_metrics').upsert(
             {
-              connection_id: connectionId,
-              user_id: (await supabase.auth.getUser()).data.user?.id,
-              campaign_id: campaign.id,
+              ...metric,
               ad_set_id: adSet.id,
-              ad_id: null,
-              date: insight.date_start,
-              ...extractedMetrics,
+              campaign_id: campaign.id,
             },
             { onConflict: 'campaign_id,ad_set_id,ad_id,date' }
           );
         }
       }
 
-      // Busca insights brutos da campanha
-      const campaignInsights = await this.fetchMetaInsightsRaw(
+      const campaignMetrics = await this.metaService.getInsights(
         connectionId,
         campaign.id,
         'campaign',
-        this.getDateRange(30).start,
-        this.getDateRange(30).end
+        this.getDateRange(90).start,
+        this.getDateRange(90).end
       );
-      metricsCount += campaignInsights.length;
+      metricsCount += campaignMetrics.length;
 
-      // Extrai e salva métricas usando helper compartilhado
-      for (const insight of campaignInsights) {
-        const extractedMetrics = extractMetricsFromInsight(insight);
-
-        // Valida métricas antes de salvar
-        const warnings = validateExtractedMetrics(extractedMetrics);
-        if (warnings.length > 0) {
-          logger.warn('Avisos ao validar métricas da campanha', { campaignId: campaign.id, warnings });
-        }
-
+      for (const metric of campaignMetrics) {
         await supabase.from('ad_metrics').upsert(
           {
-            connection_id: connectionId,
-            user_id: (await supabase.auth.getUser()).data.user?.id,
+            ...metric,
             campaign_id: campaign.id,
-            ad_set_id: null,
-            ad_id: null,
-            date: insight.date_start,
-            ...extractedMetrics,
           },
           { onConflict: 'campaign_id,ad_set_id,ad_id,date' }
         );
@@ -229,8 +199,8 @@ export class DataSyncService {
           customerId,
           adGroup.id,
           'ad_group',
-          this.getDateRange(30).start,
-          this.getDateRange(30).end
+          this.getDateRange(90).start,
+          this.getDateRange(90).end
         );
         metricsCount += adGroupMetrics.length;
 
@@ -251,8 +221,8 @@ export class DataSyncService {
         customerId,
         campaign.id,
         'campaign',
-        this.getDateRange(30).start,
-        this.getDateRange(30).end
+        this.getDateRange(90).start,
+        this.getDateRange(90).end
       );
       metricsCount += campaignMetrics.length;
 
@@ -339,89 +309,26 @@ export class DataSyncService {
   }
 
   /**
-   * Busca insights brutos da API Meta (sem processamento)
-   * Retorna dados no formato original da API para processamento pelo helper
-   *
-   * @param connectionId - ID da conexão
-   * @param objectId - ID do objeto (campanha, ad set ou anúncio)
-   * @param objectType - Tipo do objeto
-   * @param dateStart - Data inicial
-   * @param dateEnd - Data final
-   * @returns Array de insights brutos da API Meta
+   * Calcula intervalo de datas para busca de métricas
+   * @param days Número de dias retroativos (padrão: 90)
    */
-  private async fetchMetaInsightsRaw(
-    connectionId: string,
-    objectId: string,
-    objectType: 'campaign' | 'adset' | 'ad',
-    dateStart: string,
-    dateEnd: string
-  ): Promise<MetaInsightsRaw[]> {
-    try {
-      // Busca token de acesso
-      const { data: tokenData } = await supabase
-        .from('oauth_tokens')
-        .select('access_token')
-        .eq('connection_id', connectionId)
-        .maybeSingle();
-
-      if (!tokenData?.access_token) {
-        throw new Error('Token de acesso não encontrado');
-      }
-
-      const accessToken = tokenData.access_token;
-
-      // Lista completa de campos - ALINHADA com MetaSyncService
-      const fields = [
-        // Métricas básicas
-        'impressions', 'clicks', 'spend', 'reach', 'frequency',
-        // Métricas de taxa (já calculadas pela API)
-        'ctr', 'cpc', 'cpm', 'cpp',
-        // Cliques detalhados
-        'inline_link_clicks', 'cost_per_inline_link_click', 'outbound_clicks',
-        // Conversões e ações
-        'actions', 'action_values',
-        // Vídeo
-        'video_views', 'video_avg_time_watched_actions',
-        'video_p25_watched_actions', 'video_p50_watched_actions',
-        'video_p75_watched_actions', 'video_p100_watched_actions'
-      ].join(',');
-
-      // Monta URL da API Meta com time_range corretamente codificado
-      const baseUrl = 'https://graph.facebook.com/v19.0';
-      const timeRange = encodeURIComponent(JSON.stringify({ since: dateStart, until: dateEnd }));
-      const url = `${baseUrl}/${objectId}/insights?fields=${fields}&time_range=${timeRange}&time_increment=1&level=${objectType}&access_token=${accessToken}`;
-
-      logger.info('Buscando insights da API Meta', { objectId, objectType, dateStart, dateEnd });
-
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(`Meta API Error: ${data.error.message} (Code: ${data.error.code})`);
-      }
-
-      logger.info('Insights recebidos da API Meta', {
-        objectId,
-        objectType,
-        count: data.data?.length || 0,
-      });
-
-      return data.data || [];
-    } catch (error: any) {
-      logger.error('Erro ao buscar insights da API Meta', error, { connectionId, objectId });
-      throw error;
-    }
-  }
-
-  private getDateRange(days: number): { start: string; end: string } {
+  private getDateRange(days: number = 90): { start: string; end: string } {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - days);
 
-    return {
+    const dateRange = {
       start: start.toISOString().split('T')[0],
       end: end.toISOString().split('T')[0],
     };
+
+    logger.info('Calculando intervalo de datas para métricas', {
+      days,
+      start: dateRange.start,
+      end: dateRange.end
+    });
+
+    return dateRange;
   }
 
   async getSyncHistory(connectionId: string, limit: number = 10): Promise<SyncJob[]> {
