@@ -20,6 +20,8 @@ import {
   ArrowLeft,
   Download,
   Filter,
+  Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -35,6 +37,8 @@ import {
   SyncResult,
 } from '../../lib/services/MetaSystemUserService';
 import { useClient } from '../../contexts/ClientContext';
+import { AdDetailModal } from '../ad-analysis';
+import type { AdDetailModalState } from '../../types/adAnalysis';
 import {
   LineChart,
   Line,
@@ -128,6 +132,12 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Mensagens
   const [error, setError] = useState<string | null>(null);
+
+  // Estado do modal de detalhes do anuncio
+  const [adDetailModal, setAdDetailModal] = useState<AdDetailModalState>({
+    isOpen: false,
+    adData: null,
+  });
 
   // ============================================================
   // EFEITOS
@@ -346,6 +356,33 @@ export const MetaAdsSyncPage: React.FC = () => {
   const handlePeriodChange = (periodId: string, newDateRange: { dateFrom: string; dateTo: string }) => {
     setSelectedPeriod(periodId);
     setDateRange(newDateRange);
+  };
+
+  // ============================================================
+  // FUNCOES DO MODAL DE DETALHES DO ANUNCIO
+  // ============================================================
+
+  // Abre o modal de detalhes do anuncio
+  const handleOpenAdDetail = (row: { entity_id: string; entity_name: string }) => {
+    if (selectedLevel !== 'ad') return;
+
+    setAdDetailModal({
+      isOpen: true,
+      adData: {
+        ad_id: row.entity_id,
+        entity_name: row.entity_name,
+        meta_ad_account_id: navigationState.selectedAccountId || '',
+        campaign_name: navigationState.selectedCampaignName || undefined,
+      },
+    });
+  };
+
+  // Fecha o modal de detalhes do anuncio
+  const handleCloseAdDetail = () => {
+    setAdDetailModal({
+      isOpen: false,
+      adData: null,
+    });
   };
 
   // ============================================================
@@ -922,6 +959,9 @@ export const MetaAdsSyncPage: React.FC = () => {
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CTR</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPC</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPM</th>
+                {selectedLevel === 'ad' && (
+                  <th className="text-center py-3 px-4 text-sm font-medium text-gray-700">Acoes</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -941,7 +981,10 @@ export const MetaAdsSyncPage: React.FC = () => {
                 tableData.map((row) => (
                   <tr
                     key={row.entity_id}
-                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                      selectedLevel === 'ad' ? 'cursor-pointer' : ''
+                    }`}
+                    onClick={selectedLevel === 'ad' ? () => handleOpenAdDetail(row) : undefined}
                   >
                     <td className="py-3 px-4">
                       <span className="text-sm font-medium text-gray-900">{row.entity_name}</span>
@@ -965,6 +1008,21 @@ export const MetaAdsSyncPage: React.FC = () => {
                     <td className="text-right py-3 px-4 text-sm text-gray-600">
                       {formatCurrency(row.cpm)}
                     </td>
+                    {selectedLevel === 'ad' && (
+                      <td className="text-center py-3 px-4">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenAdDetail(row);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Ver detalhes e analisar com IA"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Detalhes
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -972,6 +1030,14 @@ export const MetaAdsSyncPage: React.FC = () => {
           </table>
         </div>
       </Card>
+
+      {/* Modal de Detalhes do Anuncio */}
+      <AdDetailModal
+        isOpen={adDetailModal.isOpen}
+        onClose={handleCloseAdDetail}
+        adData={adDetailModal.adData}
+        dateRange={{ start: dateRange.dateFrom, end: dateRange.dateTo }}
+      />
     </div>
   );
 };
