@@ -10,7 +10,6 @@ import { PerformanceChart } from './components/dashboard/PerformanceChart';
 import { CampaignTable } from './components/dashboard/CampaignTable';
 import { DataSources } from './components/dashboard/DataSources';
 import { SettingsPage } from './components/settings/SettingsPage';
-import { MetaConnectionPage } from './components/settings/MetaConnectionPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { SupportPage } from './components/support/SupportPage';
 import { FloatingHelpButton } from './components/help/FloatingHelpButton';
@@ -22,7 +21,6 @@ import { CookiePreferencesModal } from './components/legal/CookiePreferencesModa
 import { CookieSettingsButton } from './components/legal/CookieSettingsButton';
 import { CookieConsentProvider } from './contexts/CookieConsentContext';
 import { ClientProvider } from './contexts/ClientContext';
-import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { ClientsPage } from './components/clients/ClientsPage';
@@ -315,8 +313,6 @@ function AppContent() {
             }}
           />
         );
-      case 'meta-connection':
-        return <MetaConnectionPage />;
       case 'campaign-analysis':
         if (!selectedCampaignId) {
           setCurrentPage('campaigns');
@@ -499,11 +495,9 @@ function App() {
   return (
     <ThemeProvider>
       <CookieConsentProvider>
-        <WorkspaceProvider>
-          <ClientProvider>
-            <AppContent />
-          </ClientProvider>
-        </WorkspaceProvider>
+        <ClientProvider>
+          <AppContent />
+        </ClientProvider>
       </CookieConsentProvider>
     </ThemeProvider>
   );
