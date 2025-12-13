@@ -323,12 +323,28 @@ export class MetaSyncService {
               `Campanha "${campaign.name}" salva (${processedCampaigns}/${totalCampaigns})`
             );
 
+            // Calcula datas do período (últimos 90 dias) para buscar métricas em todos os níveis
+            const now = new Date();
+            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startDate = new Date(endDate);
+            startDate.setDate(startDate.getDate() - 90);
+            const dateEnd = endDate.toISOString().split('T')[0];
+            const dateStart = startDate.toISOString().split('T')[0];
+
+            logger.info('Período de métricas definido', {
+              campaignId: campaign.id,
+              campaignName: campaign.name,
+              dateStart,
+              dateEnd,
+              totalDays: 90
+            });
+
             // 3. Busca ad sets de cada campanha
             this.updateProgress('adsets', 0, 1, `Buscando ad sets da campanha "${campaign.name}"...`);
             const adSets = await this.fetchAdSets(campaign.id);
             logger.info('Ad Sets encontrados', { campaignId: campaign.id, count: adSets.length });
 
-            // 4. Salva ad sets no banco
+            // 4. Salva ad sets e suas métricas
             for (let j = 0; j < adSets.length; j++) {
               const adSet = adSets[j];
               await this.saveAdSet(connectionId, campaign.id, adSet);
@@ -340,12 +356,33 @@ export class MetaSyncService {
                 `Ad Set "${adSet.name}" salvo (${j + 1}/${adSets.length})`
               );
 
+              // 4.1 Busca e salva métricas do ad set
+              logger.info('Buscando métricas do Ad Set', { adSetId: adSet.id, adSetName: adSet.name });
+              const adSetInsights = await this.fetchAdSetInsights(adSet.id, dateStart, dateEnd);
+
+              if (adSetInsights.length > 0) {
+                logger.info(`✅ ${adSetInsights.length} métricas encontradas para Ad Set "${adSet.name}"`);
+                for (const insight of adSetInsights) {
+                  try {
+                    await this.saveMetrics(connectionId, campaign.id, insight, adSet.id);
+                  } catch (err: any) {
+                    logger.error('Erro ao salvar métrica de Ad Set', {
+                      adSetId: adSet.id,
+                      date: insight.date_start,
+                      error: err.message
+                    });
+                  }
+                }
+              } else {
+                logger.warn(`⚠️ Nenhuma métrica retornada para Ad Set "${adSet.name}"`);
+              }
+
               // 5. Busca anúncios de cada ad set
               this.updateProgress('ads', 0, 1, `Buscando anúncios do ad set "${adSet.name}"...`);
               const ads = await this.fetchAds(adSet.id);
               logger.info('Anúncios encontrados', { adSetId: adSet.id, count: ads.length });
 
-              // 6. Salva anúncios no banco
+              // 6. Salva anúncios e suas métricas
               for (let k = 0; k < ads.length; k++) {
                 const ad = ads[k];
                 await this.saveAd(connectionId, campaign.id, adSet.id, ad);
@@ -356,29 +393,32 @@ export class MetaSyncService {
                   ads.length,
                   `Anúncio "${ad.name}" salvo (${k + 1}/${ads.length})`
                 );
+
+                // 6.1 Busca e salva métricas do anúncio
+                logger.info('Buscando métricas do Anúncio', { adId: ad.id, adName: ad.name });
+                const adInsights = await this.fetchAdInsights(ad.id, dateStart, dateEnd);
+
+                if (adInsights.length > 0) {
+                  logger.info(`✅ ${adInsights.length} métricas encontradas para Anúncio "${ad.name}"`);
+                  for (const insight of adInsights) {
+                    try {
+                      await this.saveMetrics(connectionId, campaign.id, insight, adSet.id, ad.id);
+                    } catch (err: any) {
+                      logger.error('Erro ao salvar métrica de Anúncio', {
+                        adId: ad.id,
+                        date: insight.date_start,
+                        error: err.message
+                      });
+                    }
+                  }
+                } else {
+                  logger.warn(`⚠️ Nenhuma métrica retornada para Anúncio "${ad.name}"`);
+                }
               }
             }
 
-            // 7. Busca métricas da campanha (últimos 90 dias para garantir histórico completo)
+            // 7. Busca métricas da campanha (usa mesmo período já definido)
             this.updateProgress('metrics', 0, 1, `Buscando métricas da campanha "${campaign.name}"...`);
-
-            // Calcula datas usando UTC para evitar problemas de timezone
-            const now = new Date();
-            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const startDate = new Date(endDate);
-            startDate.setDate(startDate.getDate() - 90);
-
-            const dateEnd = endDate.toISOString().split('T')[0];
-            const dateStart = startDate.toISOString().split('T')[0];
-
-            logger.info('Buscando métricas do período', {
-              campaignId: campaign.id,
-              campaignName: campaign.name,
-              dateStart,
-              dateEnd,
-              totalDays: 90,
-              currentDate: now.toISOString().split('T')[0]
-            });
 
             const insights = await this.fetchInsights(campaign.id, dateStart, dateEnd);
             logger.info('Métricas encontradas da API Meta', {
@@ -589,6 +629,106 @@ export class MetaSyncService {
     const url = `${this.baseUrl}/${adSetId}/ads?fields=id,name,status,creative{title,body,image_url}&access_token=${this.accessToken}`;
     const data = await this.fetchWithRetry(url);
     return data.data || [];
+  }
+
+  /**
+   * Busca métricas/insights de um Ad Set
+   * Retorna dados no mesmo formato de fetchInsights para reutilizar saveMetrics
+   */
+  private async fetchAdSetInsights(adSetId: string, dateStart: string, dateEnd: string): Promise<any[]> {
+    try {
+      // Valida e ajusta datas
+      const now = new Date();
+      const currentDateStr = now.toISOString().split('T')[0];
+      let adjustedDateEnd = dateEnd;
+
+      if (new Date(dateEnd) > now) {
+        adjustedDateEnd = currentDateStr;
+      }
+
+      // Campos de métricas - mesmos usados para campanhas
+      const fields = [
+        'impressions', 'clicks', 'spend', 'reach', 'frequency',
+        'ctr', 'cpc', 'cpm', 'cpp',
+        'inline_link_clicks', 'cost_per_inline_link_click', 'outbound_clicks',
+        'actions', 'action_values',
+        'video_views', 'video_avg_time_watched_actions',
+        'video_p25_watched_actions', 'video_p50_watched_actions',
+        'video_p75_watched_actions', 'video_p100_watched_actions'
+      ].join(',');
+
+      const timeRange = encodeURIComponent(JSON.stringify({ since: dateStart, until: adjustedDateEnd }));
+      const url = `${this.baseUrl}/${adSetId}/insights?fields=${fields}&time_range=${timeRange}&time_increment=1&access_token=${this.accessToken}`;
+
+      logger.info('Buscando insights do Ad Set', { adSetId, dateStart, dateEnd: adjustedDateEnd });
+
+      const data = await this.fetchWithRetry(url);
+      const insights = data.data || [];
+
+      logger.info('Insights do Ad Set recebidos', {
+        adSetId,
+        count: insights.length,
+        hasData: insights.length > 0
+      });
+
+      return insights;
+    } catch (error: any) {
+      logger.error('Erro ao buscar insights do Ad Set', {
+        adSetId,
+        error: error.message
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Busca métricas/insights de um Anúncio
+   * Retorna dados no mesmo formato de fetchInsights para reutilizar saveMetrics
+   */
+  private async fetchAdInsights(adId: string, dateStart: string, dateEnd: string): Promise<any[]> {
+    try {
+      // Valida e ajusta datas
+      const now = new Date();
+      const currentDateStr = now.toISOString().split('T')[0];
+      let adjustedDateEnd = dateEnd;
+
+      if (new Date(dateEnd) > now) {
+        adjustedDateEnd = currentDateStr;
+      }
+
+      // Campos de métricas - mesmos usados para campanhas
+      const fields = [
+        'impressions', 'clicks', 'spend', 'reach', 'frequency',
+        'ctr', 'cpc', 'cpm', 'cpp',
+        'inline_link_clicks', 'cost_per_inline_link_click', 'outbound_clicks',
+        'actions', 'action_values',
+        'video_views', 'video_avg_time_watched_actions',
+        'video_p25_watched_actions', 'video_p50_watched_actions',
+        'video_p75_watched_actions', 'video_p100_watched_actions'
+      ].join(',');
+
+      const timeRange = encodeURIComponent(JSON.stringify({ since: dateStart, until: adjustedDateEnd }));
+      const url = `${this.baseUrl}/${adId}/insights?fields=${fields}&time_range=${timeRange}&time_increment=1&access_token=${this.accessToken}`;
+
+      logger.info('Buscando insights do Anúncio', { adId, dateStart, dateEnd: adjustedDateEnd });
+
+      const data = await this.fetchWithRetry(url);
+      const insights = data.data || [];
+
+      logger.info('Insights do Anúncio recebidos', {
+        adId,
+        count: insights.length,
+        hasData: insights.length > 0
+      });
+
+      return insights;
+    } catch (error: any) {
+      logger.error('Erro ao buscar insights do Anúncio', {
+        adId,
+        error: error.message
+      });
+      return [];
+    }
   }
 
   /**
@@ -828,8 +968,20 @@ export class MetaSyncService {
   /**
    * Salva métricas no banco de dados
    * Extrai e armazena TODOS os campos retornados pela API Meta, incluindo JSONs brutos para auditoria
+   *
+   * @param connectionId - ID da conexão
+   * @param campaignId - ID da campanha
+   * @param insight - Dados de insight da API Meta
+   * @param adSetId - ID do ad set (opcional - se não informado, salva como nível de campanha)
+   * @param adId - ID do anúncio (opcional - se não informado, salva como nível de ad set ou campanha)
    */
-  private async saveMetrics(connectionId: string, campaignId: string, insight: any): Promise<void> {
+  private async saveMetrics(
+    connectionId: string,
+    campaignId: string,
+    insight: any,
+    adSetId?: string,
+    adId?: string
+  ): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
@@ -837,6 +989,9 @@ export class MetaSyncService {
     if (!insight.date_start) {
       throw new Error('Métrica sem data - campo date_start ausente');
     }
+
+    // Determina o nível da métrica para logs
+    const level = adId ? 'ad' : adSetId ? 'adset' : 'campaign';
 
     // Extrai conversões das actions - verifica múltiplos tipos de conversão
     const actions = insight.actions || [];
@@ -872,7 +1027,10 @@ export class MetaSyncService {
 
     // Log detalhado para debugging e auditoria
     logger.info('Preparando para salvar métricas', {
+      level,
       campaignId,
+      adSetId: adSetId || null,
+      adId: adId || null,
       date: insight.date_start,
       userId: user.id,
       connectionId,
@@ -894,14 +1052,23 @@ export class MetaSyncService {
     });
 
     // Verifica se a métrica já existe (usando a unique constraint)
-    const { data: existing } = await supabase
+    // A query varia dependendo do nível (campanha, ad set ou anúncio)
+    let existingQuery = supabase
       .from('ad_metrics')
       .select('id')
       .eq('campaign_id', campaignId)
-      .eq('date', insight.date_start)
-      .is('ad_set_id', null)
-      .is('ad_id', null)
-      .maybeSingle();
+      .eq('date', insight.date_start);
+
+    // Adiciona filtros para ad_set_id e ad_id conforme o nível
+    if (adId) {
+      existingQuery = existingQuery.eq('ad_set_id', adSetId).eq('ad_id', adId);
+    } else if (adSetId) {
+      existingQuery = existingQuery.eq('ad_set_id', adSetId).is('ad_id', null);
+    } else {
+      existingQuery = existingQuery.is('ad_set_id', null).is('ad_id', null);
+    }
+
+    const { data: existing } = await existingQuery.maybeSingle();
 
     // Prepara dados para salvar - usa valores REAIS da API, não recalcula
     const metricsData = {
@@ -967,26 +1134,43 @@ export class MetaSyncService {
     } else {
       // Insere nova métrica
       logger.info('Inserindo nova métrica', {
+        level,
         campaignId,
+        adSetId: adSetId || null,
+        adId: adId || null,
         date: insight.date_start,
         userId: user.id,
         connectionId
       });
 
+      // Prepara objeto para inserção com os IDs corretos
+      const insertData: Record<string, any> = {
+        connection_id: connectionId,
+        user_id: user.id,
+        campaign_id: campaignId,
+        date: insight.date_start,
+        ...metricsData,
+      };
+
+      // Adiciona ad_set_id e ad_id se fornecidos
+      if (adSetId) {
+        insertData.ad_set_id = adSetId;
+      }
+      if (adId) {
+        insertData.ad_id = adId;
+      }
+
       const { data: insertedData, error } = await supabase
         .from('ad_metrics')
-        .insert({
-          connection_id: connectionId,
-          user_id: user.id,
-          campaign_id: campaignId,
-          date: insight.date_start,
-          ...metricsData,
-        })
+        .insert(insertData)
         .select();
 
       if (error) {
         logger.error('Erro ao inserir métrica', {
+          level,
           campaignId,
+          adSetId: adSetId || null,
+          adId: adId || null,
           date: insight.date_start,
           error: error.message,
           errorCode: error.code,
@@ -998,7 +1182,10 @@ export class MetaSyncService {
 
       if (!insertedData || insertedData.length === 0) {
         logger.error('Métrica inserida mas não retornou dados', {
+          level,
           campaignId,
+          adSetId: adSetId || null,
+          adId: adId || null,
           date: insight.date_start
         });
         throw new Error('Falha ao confirmar inserção da métrica no banco');
@@ -1006,7 +1193,10 @@ export class MetaSyncService {
 
       logger.info('Métrica inserida com sucesso', {
         metricId: insertedData[0].id,
+        level,
         campaignId,
+        adSetId: adSetId || null,
+        adId: adId || null,
         date: insight.date_start,
         spend: insertedData[0].spend,
         impressions: insertedData[0].impressions,
