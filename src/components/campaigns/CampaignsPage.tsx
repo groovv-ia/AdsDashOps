@@ -10,7 +10,8 @@ import {
   Download,
   TrendingUp,
   DollarSign,
-  Eye
+  Eye,
+  Database
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -22,6 +23,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 
 interface CampaignsPageProps {
   onNavigateToAnalysis: (campaignId: string) => void;
+  onNavigateToExtractedData?: () => void;
 }
 
 /**
@@ -38,7 +40,7 @@ interface CampaignsPageProps {
  * - Estatísticas gerais no topo
  * - Estados de loading e erro
  */
-export const CampaignsPage: React.FC<CampaignsPageProps> = ({ onNavigateToAnalysis }) => {
+export const CampaignsPage: React.FC<CampaignsPageProps> = ({ onNavigateToAnalysis, onNavigateToExtractedData }) => {
   // Estado dos dados
   const [campaigns, setCampaigns] = useState<CampaignWithMetrics[]>([]);
   const [filteredCampaigns, setFilteredCampaigns] = useState<CampaignWithMetrics[]>([]);
@@ -253,6 +255,16 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({ onNavigateToAnalys
         </div>
 
         <div className="flex items-center space-x-2">
+          {onNavigateToExtractedData && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onNavigateToExtractedData}
+            >
+              <Database className="h-4 w-4 mr-2" />
+              Ver Dados Extraidos
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"

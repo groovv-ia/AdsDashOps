@@ -22,6 +22,7 @@ import { CookieConsentProvider } from './contexts/CookieConsentContext';
 import { ClientProvider } from './contexts/ClientContext';
 import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
+import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
 import { ClientsPage } from './components/clients/ClientsPage';
 import { DataExtractorPage } from './components/extraction/DataExtractorPage';
 import { SavedDashboardsPage } from './components/dashboard/SavedDashboardsPage';
@@ -315,6 +316,15 @@ function AppContent() {
               setSelectedCampaignId(campaignId);
               setCurrentPage('campaign-analysis');
             }}
+            onNavigateToExtractedData={() => {
+              setCurrentPage('campaign-extracted-data');
+            }}
+          />
+        );
+      case 'campaign-extracted-data':
+        return (
+          <CampaignExtractedDataPage
+            onNavigateBack={() => setCurrentPage('campaigns')}
           />
         );
       case 'campaign-analysis':
