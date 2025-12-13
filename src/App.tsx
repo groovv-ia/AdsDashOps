@@ -27,6 +27,7 @@ import { ClientsPage } from './components/clients/ClientsPage';
 import { DataExtractorPage } from './components/extraction/DataExtractorPage';
 import { SavedDashboardsPage } from './components/dashboard/SavedDashboardsPage';
 import { DashboardViewPage } from './components/dashboard/DashboardViewPage';
+import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -372,6 +373,10 @@ function AppContent() {
         );
       case 'settings':
         return <SettingsPage />;
+      case 'meta-admin':
+        return <MetaAdminPage />;
+      case 'meta-sync':
+        return <MetaAdsSyncPage />;
       case 'ai-insights':
         return (
           <AIInsightsPanel
