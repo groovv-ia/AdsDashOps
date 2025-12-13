@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { logger } from '../lib/utils/logger';
 
@@ -37,11 +37,21 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Ref para prevenir múltiplas chamadas simultâneas
+  const isLoadingRef = useRef(false);
+
   /**
    * Busca ou cria workspace para o usuário autenticado
    */
   const loadWorkspace = async () => {
+    // Previne múltiplas chamadas simultâneas
+    if (isLoadingRef.current) {
+      logger.info('loadWorkspace já está em execução, ignorando chamada');
+      return;
+    }
+
     try {
+      isLoadingRef.current = true;
       setLoading(true);
       setError(null);
 
@@ -51,6 +61,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         logger.info('Usuário não autenticado, aguardando login');
         setWorkspace(null);
         setLoading(false);
+        isLoadingRef.current = false;
         return;
       }
 
@@ -106,6 +117,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setError(errorMessage);
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
