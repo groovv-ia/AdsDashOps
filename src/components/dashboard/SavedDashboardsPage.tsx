@@ -8,7 +8,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
-  Plus,
   Calendar,
   Clock,
   RefreshCw,
@@ -31,7 +30,6 @@ import { autoDashboardService, type DashboardInstance } from '../../lib/services
 
 interface SavedDashboardsPageProps {
   onViewDashboard: (dashboardId: string, dataSetId: string) => void;
-  onCreateNew: () => void;
 }
 
 // ============================================
@@ -40,7 +38,6 @@ interface SavedDashboardsPageProps {
 
 export function SavedDashboardsPage({
   onViewDashboard,
-  onCreateNew,
 }: SavedDashboardsPageProps) {
   // Estados
   const [dataSets, setDataSets] = useState<DataSetListItem[]>([]);
@@ -170,9 +167,6 @@ export function SavedDashboardsPage({
           </div>
         </div>
 
-        <Button onClick={onCreateNew} icon={Plus}>
-          Novo Dashboard
-        </Button>
       </div>
 
       {/* Barra de busca */}
@@ -218,16 +212,11 @@ export function SavedDashboardsPage({
           <h3 className="text-lg font-medium text-gray-900 mb-2">
             {searchTerm ? 'Nenhum resultado encontrado' : 'Nenhum dashboard salvo'}
           </h3>
-          <p className="text-gray-500 mb-4">
+          <p className="text-gray-500">
             {searchTerm
               ? 'Tente buscar com outros termos.'
-              : 'Extraia dados e salve um dashboard para começar.'}
+              : 'Nenhum dashboard disponivel. Sincronize dados pelo Meta Ads Sync para criar dashboards.'}
           </p>
-          {!searchTerm && (
-            <Button onClick={onCreateNew} icon={Plus}>
-              Criar Primeiro Dashboard
-            </Button>
-          )}
         </Card>
       )}
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Settings, Sparkles, Headphones, Target, Users, Download, LayoutDashboard, Link2, RefreshCw } from 'lucide-react';
+import { BarChart3, Settings, Sparkles, Headphones, Target, Users, LayoutDashboard, Link2, RefreshCw } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -14,7 +14,6 @@ const menuItems = [
   { icon: Users, label: 'Clientes', page: 'clients' },
   { icon: Target, label: 'Campanhas', page: 'campaigns' },
   { icon: RefreshCw, label: 'Meta Ads Sync', page: 'meta-sync' },
-  { icon: Download, label: 'Extrair Dados', page: 'data-extractor' },
   { icon: LayoutDashboard, label: 'Meus Dashboards', page: 'saved-dashboards' },
   { icon: Sparkles, label: 'Analise com IA', page: 'ai-insights' },
   { icon: Link2, label: 'Conexao Meta', page: 'meta-admin' },

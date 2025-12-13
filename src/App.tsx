@@ -24,7 +24,6 @@ import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
 import { ClientsPage } from './components/clients/ClientsPage';
-import { DataExtractorPage } from './components/extraction/DataExtractorPage';
 import { SavedDashboardsPage } from './components/dashboard/SavedDashboardsPage';
 import { DashboardViewPage } from './components/dashboard/DashboardViewPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
@@ -342,8 +341,6 @@ function AppContent() {
             }}
           />
         );
-      case 'data-extractor':
-        return <DataExtractorPage />;
       case 'saved-dashboards':
         return (
           <SavedDashboardsPage
@@ -352,7 +349,6 @@ function AppContent() {
               setSelectedDataSetId(dataSetId);
               setCurrentPage('view-dashboard');
             }}
-            onCreateNew={() => setCurrentPage('data-extractor')}
           />
         );
       case 'view-dashboard':
@@ -426,14 +422,6 @@ function AppContent() {
                         ? 'Você está visualizando dados das suas campanhas conectadas.'
                         : 'Você está visualizando dados de exemplo. Conecte suas fontes de dados para ver suas campanhas reais.'}
                     </p>
-                    {!isUsingRealData && (
-                      <button
-                        onClick={() => setCurrentPage('data-extractor')}
-                        className="mt-2 text-blue-300 hover:text-blue-200 underline text-xs"
-                      >
-                        Ir para Extrair Dados →
-                      </button>
-                    )}
                     <div className="absolute -top-1 right-4 w-2 h-2 bg-gray-900 transform rotate-45"></div>
                   </div>
                 </div>
