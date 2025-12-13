@@ -83,6 +83,8 @@ export const SimpleMetaConnect: React.FC = () => {
    * Abre popup com tela de autorização do Facebook
    */
   const handleConnect = () => {
+    console.log('🚀 [Meta Connect] Iniciando processo de conexão OAuth');
+
     setLoading(true);
     setError(null);
     setStatus('connecting');
@@ -93,36 +95,107 @@ export const SimpleMetaConnect: React.FC = () => {
     const scope = 'ads_read,ads_management,business_management';
     const state = `meta_${Date.now()}`;
 
+    // Validação de configuração
+    console.log('🚀 [Meta Connect] Configurações OAuth:');
+    console.log('  - Client ID:', clientId ? `${clientId.substring(0, 10)}...` : '❌ NÃO CONFIGURADO');
+    console.log('  - Redirect URI:', redirectUri);
+    console.log('  - Scope:', scope);
+    console.log('  - State:', state);
+
+    if (!clientId) {
+      console.error('❌ [Meta Connect] VITE_META_APP_ID não está configurado no .env');
+      setError('App ID do Meta não configurado. Verifique o arquivo .env');
+      setStatus('disconnected');
+      setLoading(false);
+      return;
+    }
+
     // Constrói URL de autorização do Facebook
     const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${state}`;
 
-    console.log('Iniciando OAuth Meta com URL:', authUrl);
+    console.log('🚀 [Meta Connect] URL de autorização:', authUrl);
+    console.log('🚀 [Meta Connect] Abrindo popup de autorização...');
 
     // Abre popup para autorização
     const popup = window.open(authUrl, 'meta-oauth', 'width=600,height=700');
 
+    if (!popup) {
+      console.error('❌ [Meta Connect] Falha ao abrir popup. Verifique se popups estão bloqueados');
+      setError('Não foi possível abrir a janela de autorização. Permita popups para este site.');
+      setStatus('disconnected');
+      setLoading(false);
+      return;
+    }
+
+    console.log('✅ [Meta Connect] Popup aberto com sucesso');
+
+    // Timeout de 60 segundos para receber o callback
+    const callbackTimeout = setTimeout(() => {
+      console.warn('⏱️ [Meta Connect] Timeout: Callback não recebido em 60 segundos');
+      if (!popup.closed) {
+        popup.close();
+      }
+      window.removeEventListener('message', handleMessage);
+      clearInterval(checkPopupClosed);
+      if (status === 'connecting') {
+        setError('Tempo esgotado aguardando autorização. Tente novamente.');
+        setStatus('disconnected');
+        setLoading(false);
+      }
+    }, 60000); // 60 segundos
+
     // Listener para receber mensagem do popup após autorização
     const handleMessage = async (event: MessageEvent) => {
+      console.log('💬 [Meta Connect] Mensagem recebida:', {
+        origin: event.origin,
+        expectedOrigin: window.location.origin,
+        type: event.data.type,
+        platform: event.data.platform,
+      });
+
       // Verifica origem por segurança
-      if (event.origin !== window.location.origin) return;
+      if (event.origin !== window.location.origin) {
+        console.warn('⚠️ [Meta Connect] Origem da mensagem não confiável:', event.origin);
+        return;
+      }
 
       if (event.data.type === 'oauth-success' && event.data.platform === 'meta') {
+        console.log('✅ [Meta Connect] Autorização bem-sucedida recebida!');
+        clearTimeout(callbackTimeout);
+        clearInterval(checkPopupClosed);
         window.removeEventListener('message', handleMessage);
 
         const { code, accessToken } = event.data;
 
+        console.log('💬 [Meta Connect] Dados recebidos:', {
+          hasCode: !!code,
+          hasAccessToken: !!accessToken,
+          codePreview: code ? `${code.substring(0, 20)}...` : null,
+        });
+
         // Se já recebeu o access token, busca contas
         if (accessToken) {
+          console.log('🔑 [Meta Connect] Access token já recebido, buscando contas...');
           await fetchAccounts(accessToken);
         } else if (code) {
+          console.log('🔄 [Meta Connect] Código recebido, iniciando troca por token...');
           // Se recebeu apenas o código, precisa trocar por token
           await exchangeCodeForToken(code);
+        } else {
+          console.error('❌ [Meta Connect] Nenhum código ou token recebido');
+          setError('Erro: Nenhum código de autorização recebido');
+          setStatus('disconnected');
+          setLoading(false);
         }
 
         if (popup && !popup.closed) {
+          console.log('🔒 [Meta Connect] Fechando popup');
           popup.close();
         }
       } else if (event.data.type === 'oauth-error') {
+        console.error('❌ [Meta Connect] Erro recebido do callback:', event.data.error);
+        clearTimeout(callbackTimeout);
+        clearInterval(checkPopupClosed);
         window.removeEventListener('message', handleMessage);
         setError(event.data.error || 'Erro ao autorizar com Meta');
         setStatus('disconnected');
@@ -135,16 +208,20 @@ export const SimpleMetaConnect: React.FC = () => {
     };
 
     window.addEventListener('message', handleMessage);
+    console.log('👂 [Meta Connect] Listener de mensagens registrado');
 
     // Verifica se popup foi fechado manualmente
     const checkPopupClosed = setInterval(() => {
       if (popup?.closed) {
+        console.log('🔒 [Meta Connect] Popup foi fechado');
+        clearTimeout(callbackTimeout);
         clearInterval(checkPopupClosed);
         window.removeEventListener('message', handleMessage);
         if (status === 'connecting') {
+          console.warn('⚠️ [Meta Connect] Popup fechado antes de completar autorização');
           setStatus('disconnected');
           setLoading(false);
-          setError('Autorização cancelada');
+          setError('Autorização cancelada pelo usuário');
         }
       }
     }, 1000);
@@ -155,9 +232,24 @@ export const SimpleMetaConnect: React.FC = () => {
    */
   const exchangeCodeForToken = async (code: string) => {
     try {
+      console.log('🔄 [Exchange Token] Iniciando troca de código por token');
+
       const clientId = import.meta.env.VITE_META_APP_ID;
       const clientSecret = import.meta.env.VITE_META_APP_SECRET;
       const redirectUri = import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
+
+      console.log('🔄 [Exchange Token] Parâmetros:', {
+        clientId: clientId ? `${clientId.substring(0, 10)}...` : '❌ NÃO CONFIGURADO',
+        clientSecret: clientSecret ? `${clientSecret.substring(0, 10)}...` : '❌ NÃO CONFIGURADO',
+        redirectUri,
+        codeLength: code.length,
+      });
+
+      if (!clientId || !clientSecret) {
+        throw new Error('Client ID ou Client Secret não configurados no .env');
+      }
+
+      console.log('🔄 [Exchange Token] Fazendo requisição para Graph API...');
 
       const response = await fetch('https://graph.facebook.com/v19.0/oauth/access_token', {
         method: 'POST',
@@ -172,14 +264,29 @@ export const SimpleMetaConnect: React.FC = () => {
 
       const data = await response.json();
 
+      console.log('🔄 [Exchange Token] Resposta recebida:', {
+        hasAccessToken: !!data.access_token,
+        hasError: !!data.error,
+        tokenType: data.token_type,
+      });
+
       if (data.error) {
+        console.error('❌ [Exchange Token] Erro na resposta:', data.error);
         throw new Error(data.error.message || 'Erro ao obter token');
       }
+
+      if (!data.access_token) {
+        console.error('❌ [Exchange Token] Token não recebido na resposta');
+        throw new Error('Token de acesso não recebido');
+      }
+
+      console.log('✅ [Exchange Token] Token obtido com sucesso!');
+      console.log('🔄 [Exchange Token] Buscando contas com o token...');
 
       // Busca contas com o token obtido
       await fetchAccounts(data.access_token);
     } catch (err: any) {
-      console.error('Erro ao trocar código por token:', err);
+      console.error('❌ [Exchange Token] Erro ao trocar código por token:', err);
       setError(err.message || 'Erro ao obter token de acesso');
       setStatus('disconnected');
       setLoading(false);
@@ -191,24 +298,51 @@ export const SimpleMetaConnect: React.FC = () => {
    */
   const fetchAccounts = async (accessToken: string) => {
     try {
-      const response = await fetch(
-        `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id,account_status,currency&access_token=${accessToken}`
-      );
+      console.log('📋 [Fetch Accounts] Buscando contas de anúncios do Meta');
+      console.log('📋 [Fetch Accounts] Token length:', accessToken.length);
+
+      const apiUrl = `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id,account_status,currency&access_token=${accessToken}`;
+      console.log('📋 [Fetch Accounts] Fazendo requisição para:', apiUrl.replace(accessToken, 'TOKEN_HIDDEN'));
+
+      const response = await fetch(apiUrl);
+
+      console.log('📋 [Fetch Accounts] Resposta recebida:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      });
 
       const data = await response.json();
 
+      console.log('📋 [Fetch Accounts] Dados recebidos:', {
+        hasData: !!data.data,
+        hasError: !!data.error,
+        accountCount: data.data?.length || 0,
+      });
+
       if (data.error) {
+        console.error('❌ [Fetch Accounts] Erro na resposta:', data.error);
         throw new Error(data.error.message || 'Erro ao buscar contas');
       }
 
       const accountsList = data.data || [];
 
+      console.log('📋 [Fetch Accounts] Contas encontradas:', accountsList.length);
+
       if (accountsList.length === 0) {
-        setError('Nenhuma conta de anúncios encontrada');
+        console.warn('⚠️ [Fetch Accounts] Nenhuma conta de anúncios encontrada');
+        setError('Nenhuma conta de anúncios encontrada. Verifique se sua conta Meta tem acesso a contas de anúncios.');
         setStatus('disconnected');
         setLoading(false);
         return;
       }
+
+      // Log das contas encontradas
+      accountsList.forEach((acc: any, index: number) => {
+        console.log(`  ${index + 1}. ${acc.name} (ID: ${acc.account_id}, Status: ${acc.account_status}, Moeda: ${acc.currency})`);
+      });
+
+      console.log('✅ [Fetch Accounts] Salvando token temporário e exibindo seleção de contas');
 
       // Salva token temporariamente para uso posterior
       sessionStorage.setItem('meta_temp_token', accessToken);
@@ -217,8 +351,8 @@ export const SimpleMetaConnect: React.FC = () => {
       setStatus('selecting');
       setLoading(false);
     } catch (err: any) {
-      console.error('Erro ao buscar contas:', err);
-      setError(err.message || 'Erro ao buscar contas');
+      console.error('❌ [Fetch Accounts] Erro ao buscar contas:', err);
+      setError(err.message || 'Erro ao buscar contas de anúncios');
       setStatus('disconnected');
       setLoading(false);
     }

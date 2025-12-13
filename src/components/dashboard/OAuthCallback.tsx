@@ -20,12 +20,22 @@ export const OAuthCallback: React.FC = () => {
    */
   const processCallback = () => {
     try {
+      console.log('📨 [OAuth Callback] Iniciando processamento do callback');
+      console.log('📨 [OAuth Callback] URL completa:', window.location.href);
+
       // Extrai parâmetros da URL
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const error = urlParams.get('error');
       const errorDescription = urlParams.get('error_description');
       const state = urlParams.get('state');
+
+      console.log('📨 [OAuth Callback] Parâmetros extraídos:', {
+        code: code ? `${code.substring(0, 20)}...` : null,
+        error,
+        errorDescription,
+        state,
+      });
 
       // Identifica a plataforma pelo state (meta_, google_, tiktok_)
       let platform = 'unknown';
@@ -37,22 +47,31 @@ export const OAuthCallback: React.FC = () => {
         platform = 'tiktok';
       }
 
+      console.log('📨 [OAuth Callback] Plataforma identificada:', platform);
+      console.log('📨 [OAuth Callback] Window opener existe?', !!window.opener);
+
       // Verifica se houve erro na autorização
       if (error) {
+        console.error('❌ [OAuth Callback] Erro recebido do provedor:', error, errorDescription);
         setStatus('error');
         setMessage(errorDescription || error);
 
         // Envia erro para janela pai
         if (window.opener) {
+          console.log('📨 [OAuth Callback] Enviando mensagem de erro para janela pai');
           window.opener.postMessage({
             type: 'oauth-error',
             platform,
             error: errorDescription || error,
           }, window.location.origin);
+          console.log('✅ [OAuth Callback] Mensagem de erro enviada');
+        } else {
+          console.warn('⚠️ [OAuth Callback] Sem window.opener para enviar erro');
         }
 
         // Fecha janela após 3 segundos
         setTimeout(() => {
+          console.log('📨 [OAuth Callback] Fechando janela após erro');
           window.close();
         }, 3000);
         return;
@@ -63,29 +82,38 @@ export const OAuthCallback: React.FC = () => {
         throw new Error('Código de autorização não recebido');
       }
 
+      console.log('✅ [OAuth Callback] Código de autorização recebido com sucesso');
       setStatus('success');
       setMessage('Autorização concluída! Fechando...');
 
       // Envia código para janela pai processar
       if (window.opener) {
-        window.opener.postMessage({
+        console.log('📨 [OAuth Callback] Enviando código para janela pai');
+        const message = {
           type: 'oauth-success',
           platform,
           code,
-        }, window.location.origin);
+        };
+        console.log('📨 [OAuth Callback] Mensagem a enviar:', message);
+        window.opener.postMessage(message, window.location.origin);
+        console.log('✅ [OAuth Callback] Mensagem enviada com sucesso');
+      } else {
+        console.error('❌ [OAuth Callback] Window.opener não existe! Não é possível enviar mensagem');
       }
 
-      // Fecha janela automaticamente após 1 segundo
+      // Fecha janela automaticamente após 2 segundos (aumentado de 1s para dar mais tempo)
       setTimeout(() => {
+        console.log('📨 [OAuth Callback] Fechando janela após sucesso');
         window.close();
-      }, 1000);
+      }, 2000);
     } catch (err: any) {
-      console.error('Erro ao processar callback:', err);
+      console.error('❌ [OAuth Callback] Erro ao processar callback:', err);
       setStatus('error');
       setMessage(err.message || 'Erro ao processar autorização');
 
       // Envia erro para janela pai
       if (window.opener) {
+        console.log('📨 [OAuth Callback] Enviando erro para janela pai');
         window.opener.postMessage({
           type: 'oauth-error',
           error: err.message || 'Erro desconhecido',
@@ -94,6 +122,7 @@ export const OAuthCallback: React.FC = () => {
 
       // Fecha janela após 3 segundos
       setTimeout(() => {
+        console.log('📨 [OAuth Callback] Fechando janela após exceção');
         window.close();
       }, 3000);
     }
