@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Users, TrendingUp, AlertCircle, CheckCircle, Link as LinkIcon } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
 import { useClient, Client } from '../../contexts/ClientContext';
 import { ClientForm } from './ClientForm';
-import { ClientMetaConnect } from './ClientMetaConnect';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -35,7 +34,6 @@ export function ClientsPage() {
   const [clientStats, setClientStats] = useState<Record<string, ClientStats>>({});
   const [loadingStats, setLoadingStats] = useState(true);
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
-  const [connectingMetaClient, setConnectingMetaClient] = useState<Client | null>(null);
 
   // Carrega estatísticas de todos os clientes
   useEffect(() => {
@@ -229,9 +227,10 @@ export function ClientsPage() {
             return (
               <Card
                 key={client.id}
-                className="hover:shadow-lg transition-shadow"
+                className="hover:shadow-lg transition-shadow cursor-pointer"
+                onClick={() => handleSelectClient(client)}
               >
-                <div className="p-6 cursor-pointer" onClick={() => handleSelectClient(client)}>
+                <div className="p-6">
                   {/* Header do card */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1 min-w-0">
@@ -323,22 +322,6 @@ export function ClientsPage() {
                       </div>
                     </div>
                   )}
-
-                  {/* Botão de conexão Meta */}
-                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConnectingMetaClient(client);
-                      }}
-                      className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg transition-colors"
-                    >
-                      <LinkIcon className="w-4 h-4" />
-                      <span className="text-sm font-medium">
-                        {stats?.accountsCount > 0 ? 'Gerenciar Meta Ads' : 'Conectar Meta Ads'}
-                      </span>
-                    </button>
-                  </div>
                 </div>
               </Card>
             );
@@ -412,26 +395,6 @@ export function ClientsPage() {
               </Button>
             </div>
           </div>
-        </Modal>
-      )}
-
-      {/* Modal de conexão Meta */}
-      {connectingMetaClient && (
-        <Modal
-          isOpen={!!connectingMetaClient}
-          onClose={() => setConnectingMetaClient(null)}
-          title={`Meta Ads - ${connectingMetaClient.name}`}
-          size="large"
-        >
-          <ClientMetaConnect
-            clientId={connectingMetaClient.id}
-            clientName={connectingMetaClient.name}
-            onConnectionComplete={() => {
-              setConnectingMetaClient(null);
-              loadClientStats();
-              showNotification('success', 'Contas Meta conectadas com sucesso!');
-            }}
-          />
         </Modal>
       )}
     </div>
