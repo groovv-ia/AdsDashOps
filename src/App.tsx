@@ -24,8 +24,6 @@ import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
 import { ClientsPage } from './components/clients/ClientsPage';
-import { SavedDashboardsPage } from './components/dashboard/SavedDashboardsPage';
-import { DashboardViewPage } from './components/dashboard/DashboardViewPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
@@ -58,8 +56,6 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState('overview');
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
-  const [selectedDashboardId, setSelectedDashboardId] = useState<string | null>(null);
-  const [selectedDataSetId, setSelectedDataSetId] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     platforms: [] as string[],
     campaigns: [] as string[],
@@ -338,32 +334,6 @@ function AppContent() {
             onBack={() => {
               setSelectedCampaignId(null);
               setCurrentPage('campaigns');
-            }}
-          />
-        );
-      case 'saved-dashboards':
-        return (
-          <SavedDashboardsPage
-            onViewDashboard={(dashboardId, dataSetId) => {
-              setSelectedDashboardId(dashboardId);
-              setSelectedDataSetId(dataSetId);
-              setCurrentPage('view-dashboard');
-            }}
-          />
-        );
-      case 'view-dashboard':
-        if (!selectedDashboardId || !selectedDataSetId) {
-          setCurrentPage('saved-dashboards');
-          return null;
-        }
-        return (
-          <DashboardViewPage
-            dashboardId={selectedDashboardId}
-            dataSetId={selectedDataSetId}
-            onBack={() => {
-              setSelectedDashboardId(null);
-              setSelectedDataSetId(null);
-              setCurrentPage('saved-dashboards');
             }}
           />
         );
