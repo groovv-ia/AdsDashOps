@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Settings, Database, Sparkles, Headphones, Target, Users } from 'lucide-react';
+import { BarChart3, Settings, Link as LinkIcon, Sparkles, Headphones, Target, Users } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -12,8 +12,8 @@ const menuItems = [
   { icon: BarChart3, label: 'Dashboard', page: 'overview' },
   { icon: Users, label: 'Clientes', page: 'clients' },
   { icon: Target, label: 'Campanhas', page: 'campaigns' },
+  { icon: LinkIcon, label: 'Conexão Meta', page: 'meta-connection' },
   { icon: Sparkles, label: 'Análise com IA', page: 'ai-insights' },
-  { icon: Database, label: 'Fontes de Dados', page: 'data-sources' },
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configurações', page: 'settings' },
 ];
