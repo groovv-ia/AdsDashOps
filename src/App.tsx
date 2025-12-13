@@ -24,6 +24,8 @@ import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
+import { InvitationAcceptPage } from './components/client-portal/InvitationAcceptPage';
+import { ClientPortalApp } from './components/client-portal/ClientPortalApp';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -224,15 +226,25 @@ function AppContent() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Detecta rota atual para páginas públicas e callbacks
+  // Detecta rota atual para paginas publicas e callbacks
   const currentPath = window.location.pathname;
   const isPrivacyPolicyPage = currentPath === '/politica-de-privacidade';
   const isTermsOfServicePage = currentPath === '/termos-de-uso';
   const isDataDeletionPage = currentPath === '/exclusao-de-dados';
   const isAuthCallbackPage = currentPath === '/auth/callback';
   const isOAuthCallbackPage = currentPath === '/oauth-callback';
+  const isInvitePage = currentPath.startsWith('/invite/');
+  const isClientPortalPage = currentPath.startsWith('/client-portal');
 
-  // Renderiza página de callback OAuth (Meta, Google, TikTok)
+  // Extrai token do convite da URL se estiver na pagina de convite
+  const inviteToken = isInvitePage ? currentPath.replace('/invite/', '') : null;
+
+  // Renderiza pagina de aceite de convite (publica - nao requer autenticacao)
+  if (isInvitePage && inviteToken) {
+    return <InvitationAcceptPage token={inviteToken} />;
+  }
+
+  // Renderiza pagina de callback OAuth (Meta, Google, TikTok)
   if (isOAuthCallbackPage) {
     return <OAuthCallback />;
   }
@@ -286,7 +298,7 @@ function AppContent() {
               <div className="flex items-center space-x-2">
                 <AlertTriangle className="w-5 h-5 text-yellow-600" />
                 <p className="text-yellow-800 text-sm">
-                  <strong>Modo Demonstração:</strong> Configure o Supabase para funcionalidade completa.
+                  <strong>Modo Demonstracao:</strong> Configure o Supabase para funcionalidade completa.
                   <a href="#" className="ml-2 underline hover:text-yellow-900">
                     Clique aqui para configurar
                   </a>
@@ -298,6 +310,11 @@ function AppContent() {
         <AuthForm onSuccess={() => window.location.reload()} />
       </>
     );
+  }
+
+  // Renderiza portal do cliente se usuario for do tipo cliente e estiver na rota correta
+  if (isClientPortalPage) {
+    return <ClientPortalApp />;
   }
 
   const renderPageContent = () => {
