@@ -52,76 +52,86 @@
     </div>
 
     <script>
+        /**
+         * Script para processar callback OAuth
+         * Detecta a plataforma pelo state parameter e envia mensagem para janela pai
+         */
         (function() {
+            // Extrai parâmetros da URL de callback
             const urlParams = new URLSearchParams(window.location.search);
             const code = urlParams.get('code');
             const error = urlParams.get('error');
+            const errorDescription = urlParams.get('error_description');
             const state = urlParams.get('state');
-            
+
             const statusEl = document.getElementById('status');
-            
-            if (error) {
-                statusEl.textContent = `Erro na autenticação: ${error}`;
-                statusEl.className = 'error';
-                
-                // Send error to parent window
-                if (window.opener) {
-                    window.opener.postMessage({
-                        type: 'oauth-callback',
-                        error: error,
-                        platform: getPlatformFromUrl()
-                    }, window.location.origin);
-                }
-                
-                setTimeout(() => window.close(), 3000);
-                return;
-            }
-            
-            if (code) {
-                statusEl.textContent = 'Autenticação bem-sucedida! Fechando janela...';
-                statusEl.className = 'success';
-                
-                // Send success to parent window
-                if (window.opener) {
-                    window.opener.postMessage({
-                        type: 'oauth-callback',
-                        code: code,
-                        state: state,
-                        platform: getPlatformFromUrl()
-                    }, window.location.origin);
-                }
-                
-                setTimeout(() => window.close(), 2000);
-                return;
-            }
-            
-            // No code or error - something went wrong
-            statusEl.textContent = 'Resposta OAuth inválida. Tente novamente.';
-            statusEl.className = 'error';
-            setTimeout(() => window.close(), 3000);
-            
-            function getPlatformFromUrl() {
-                const referrer = document.referrer;
-                if (referrer.includes('facebook.com') || referrer.includes('meta.com')) {
-                    return 'meta';
-                } else if (referrer.includes('google.com') || referrer.includes('googleapis.com')) {
-                    return 'google';
-                } else if (referrer.includes('tiktok.com')) {
-                    return 'tiktok';
-                }
-                
-                // Fallback: try to determine from state parameter or URL
+
+            /**
+             * Detecta a plataforma OAuth pelo prefixo do state parameter
+             * Formato esperado: meta_timestamp, google_timestamp, tiktok_timestamp
+             */
+            function getPlatformFromState() {
                 if (state) {
-                    try {
-                        const stateData = JSON.parse(atob(state));
-                        return stateData.platform;
-                    } catch (e) {
-                        // Ignore parsing errors
-                    }
+                    if (state.startsWith('meta_')) return 'meta';
+                    if (state.startsWith('google_')) return 'google';
+                    if (state.startsWith('tiktok_')) return 'tiktok';
                 }
-                
                 return 'unknown';
             }
+
+            const platform = getPlatformFromState();
+
+            // Tratamento de erro na autorizacao
+            if (error) {
+                const errorMsg = errorDescription || error;
+                statusEl.textContent = 'Erro na autenticacao: ' + errorMsg;
+                statusEl.className = 'error';
+
+                // Envia mensagem de erro para janela pai (formato esperado pelo SimpleMetaConnect)
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'oauth-error',
+                        platform: platform,
+                        error: errorMsg
+                    }, window.location.origin);
+                }
+
+                setTimeout(function() { window.close(); }, 3000);
+                return;
+            }
+
+            // Sucesso - recebeu codigo de autorizacao
+            if (code) {
+                statusEl.textContent = 'Autenticacao bem-sucedida! Fechando janela...';
+                statusEl.className = 'success';
+
+                // Envia mensagem de sucesso para janela pai (formato esperado pelo SimpleMetaConnect)
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'oauth-success',
+                        platform: platform,
+                        code: code,
+                        state: state
+                    }, window.location.origin);
+                }
+
+                setTimeout(function() { window.close(); }, 1500);
+                return;
+            }
+
+            // Nenhum codigo ou erro - resposta invalida
+            statusEl.textContent = 'Resposta OAuth invalida. Tente novamente.';
+            statusEl.className = 'error';
+
+            if (window.opener) {
+                window.opener.postMessage({
+                    type: 'oauth-error',
+                    platform: platform,
+                    error: 'Codigo de autorizacao nao recebido'
+                }, window.location.origin);
+            }
+
+            setTimeout(function() { window.close(); }, 3000);
         })();
     </script>
 </body>
