@@ -1,13 +1,12 @@
 /**
- * DataExtractorPage - Página principal de extração de dados estilo Adveronix
+ * DataExtractorPage - Pagina principal de extracao de dados
  *
- * Interface completa para extração configurável de dados do Meta Ads:
- * 1. Seleção de conta
- * 2. Nível do relatório (Campaign, Ad Set, Ad)
- * 3. Seleção de campos (chips clicáveis)
- * 4. Breakdowns (segmentações)
- * 5. Período de datas
- * 6. Execução e preview dos resultados
+ * Interface completa para conexao e extracao de dados do Meta Ads:
+ * 1. Conexao de conta Meta (OAuth)
+ * 2. Gerenciamento de fontes conectadas
+ * 3. Selecao de campos e breakdowns
+ * 4. Periodo de datas
+ * 5. Execucao e preview dos resultados
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -26,11 +25,15 @@ import {
   ChevronDown,
   ChevronUp,
   Settings,
+  Link,
+  Trash2,
+  Zap,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { FieldSelector } from './FieldSelector';
 import { BreakdownPicker } from './BreakdownPicker';
+import { SimpleMetaConnect } from '../dashboard/SimpleMetaConnect';
 import { supabase } from '../../lib/supabase';
 import { ConfigurableExtractService } from '../../lib/services/ConfigurableExtractService';
 import { DATE_PRESETS, DEFAULT_TEMPLATES } from '../../constants/fieldCatalog';
@@ -44,27 +47,37 @@ import type {
 } from '../../types/extraction';
 
 // ============================================
-// Props do componente
+// Tipos para fontes de dados
 // ============================================
 
-interface DataExtractorPageProps {
-  onNavigateToDataSources?: () => void;
+interface DataSource {
+  id: string;
+  name: string;
+  platform: string;
+  type: string;
+  status: 'connected' | 'disconnected' | 'error' | 'syncing';
+  lastSync: string;
+  config?: any;
+  logo: string;
+  description: string;
+  error?: string;
 }
 
 // ============================================
 // Componente Principal
 // ============================================
 
-export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
-  onNavigateToDataSources,
-}) => {
-  // Estados de conexão
+export const DataExtractorPage: React.FC = () => {
+  // Estados de conexao e fontes
+  const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [connections, setConnections] = useState<any[]>([]);
   const [selectedConnection, setSelectedConnection] = useState<string>('');
   const [accountId, setAccountId] = useState<string>('');
   const [loadingConnections, setLoadingConnections] = useState(true);
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
+  const [showConnectSection, setShowConnectSection] = useState(true);
 
-  // Estados de configuração
+  // Estados de configuracao
   const [level, setLevel] = useState<ReportLevel>('campaign');
   const [selectedFields, setSelectedFields] = useState<string[]>([
     'campaign_name',
@@ -85,7 +98,7 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
 
-  // Estados de extração
+  // Estados de extracao
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionProgress, setExtractionProgress] = useState<ExtractionProgress | null>(null);
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
@@ -94,19 +107,61 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
   // Estados de UI
   const [expandedSections, setExpandedSections] = useState({
     connection: true,
+    sources: true,
+    config: true,
     fields: true,
     breakdowns: false,
     dateRange: true,
     templates: false,
   });
 
-  // Carregar conexões ao montar
+  // Carregar conexoes ao montar
   useEffect(() => {
     loadConnections();
+    loadDataSources();
     loadTemplates();
   }, []);
 
-  // Carregar conexões Meta ativas
+  // Carregar fontes de dados (data_connections)
+  const loadDataSources = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('data_connections')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Mapear para o formato DataSource
+      const sources: DataSource[] = (data || []).map(conn => ({
+        id: conn.id,
+        name: conn.name,
+        platform: conn.platform,
+        type: conn.type,
+        status: conn.status,
+        lastSync: conn.last_sync,
+        config: conn.config,
+        logo: conn.logo,
+        description: conn.description,
+        error: conn.error,
+      }));
+
+      setDataSources(sources);
+
+      // Se tem conexoes, esconde a secao de conectar
+      if (sources.length > 0) {
+        setShowConnectSection(false);
+      }
+    } catch (err: any) {
+      console.error('Erro ao carregar fontes:', err);
+    }
+  };
+
+  // Carregar conexoes Meta ativas
   const loadConnections = async () => {
     try {
       setLoadingConnections(true);
@@ -124,14 +179,14 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
 
       setConnections(data || []);
 
-      // Selecionar primeira conexão automaticamente
+      // Selecionar primeira conexao automaticamente
       if (data && data.length > 0) {
         setSelectedConnection(data[0].id);
         setAccountId(data[0].config?.accountId || '');
       }
     } catch (err: any) {
-      console.error('Erro ao carregar conexões:', err);
-      setError('Erro ao carregar conexões');
+      console.error('Erro ao carregar conexoes:', err);
+      setError('Erro ao carregar conexoes');
     } finally {
       setLoadingConnections(false);
     }
@@ -158,9 +213,86 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
     }
   };
 
+  // Sincronizar fonte de dados
+  const handleSync = async (sourceId: string) => {
+    setSyncingIds(prev => new Set(prev).add(sourceId));
+
+    try {
+      // Buscar token de acesso
+      const { data: tokenData } = await supabase
+        .from('oauth_tokens')
+        .select('access_token')
+        .eq('connection_id', sourceId)
+        .maybeSingle();
+
+      if (!tokenData?.access_token) {
+        throw new Error('Token nao encontrado');
+      }
+
+      // Atualizar status para sincronizando
+      await supabase
+        .from('data_connections')
+        .update({ status: 'syncing' })
+        .eq('id', sourceId);
+
+      // Simular sincronizacao (aqui voce pode chamar o servico real)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Atualizar status e data de sincronizacao
+      await supabase
+        .from('data_connections')
+        .update({
+          status: 'connected',
+          last_sync: new Date().toISOString(),
+        })
+        .eq('id', sourceId);
+
+      await loadDataSources();
+    } catch (err: any) {
+      console.error('Erro ao sincronizar:', err);
+      setError('Erro ao sincronizar: ' + err.message);
+    } finally {
+      setSyncingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(sourceId);
+        return newSet;
+      });
+    }
+  };
+
+  // Remover fonte de dados
+  const handleDeleteSource = async (sourceId: string) => {
+    if (!confirm('Tem certeza que deseja remover esta fonte de dados?')) return;
+
+    try {
+      // Remover token OAuth
+      await supabase
+        .from('oauth_tokens')
+        .delete()
+        .eq('connection_id', sourceId);
+
+      // Remover conexao
+      await supabase
+        .from('data_connections')
+        .delete()
+        .eq('id', sourceId);
+
+      await loadDataSources();
+      await loadConnections();
+
+      // Se nao tem mais conexoes, mostra a secao de conectar
+      if (dataSources.length <= 1) {
+        setShowConnectSection(true);
+      }
+    } catch (err: any) {
+      console.error('Erro ao remover fonte:', err);
+      setError('Erro ao remover fonte');
+    }
+  };
+
   // Aplicar template selecionado
   const applyTemplate = (templateId: string) => {
-    // Verificar se é um template padrão
+    // Verificar se e um template padrao
     const defaultTemplate = DEFAULT_TEMPLATES.find(t => t.name === templateId);
     if (defaultTemplate) {
       setLevel(defaultTemplate.level);
@@ -192,7 +324,7 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
+      if (!user) throw new Error('Usuario nao autenticado');
 
       const { error } = await supabase.from('report_templates').insert({
         user_id: user.id,
@@ -219,10 +351,10 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
     setExtractionProgress(progress);
   }, []);
 
-  // Executar extração
+  // Executar extracao
   const handleExtract = async () => {
     if (!selectedConnection || !accountId) {
-      setError('Selecione uma conta de anúncios');
+      setError('Selecione uma conta de anuncios');
       return;
     }
 
@@ -247,10 +379,10 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
       const accessToken = tokenData?.access_token || import.meta.env.VITE_META_ACCESS_TOKEN;
 
       if (!accessToken) {
-        throw new Error('Token de acesso não encontrado');
+        throw new Error('Token de acesso nao encontrado');
       }
 
-      // Criar configuração de extração
+      // Criar configuracao de extracao
       const config: ExtractionConfig = {
         connectionId: selectedConnection,
         accountId,
@@ -267,14 +399,14 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
         templateId: selectedTemplate || undefined,
       };
 
-      // Executar extração
+      // Executar extracao
       const service = new ConfigurableExtractService(accessToken, handleProgress);
       const result = await service.extract(config);
 
       setExtractionResult(result);
 
       if (!result.success) {
-        setError(result.error || 'Erro desconhecido na extração');
+        setError(result.error || 'Erro desconhecido na extracao');
       }
     } catch (err: any) {
       setError(err.message);
@@ -306,13 +438,37 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Toggle de seção
+  // Toggle de secao
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections(prev => ({
       ...prev,
       [section]: !prev[section],
     }));
   };
+
+  // Helpers de status
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'connected': return 'text-green-600 bg-green-100';
+      case 'syncing': return 'text-blue-600 bg-blue-100';
+      case 'error': return 'text-red-600 bg-red-100';
+      case 'disconnected': return 'text-gray-600 bg-gray-100';
+      default: return 'text-gray-600 bg-gray-100';
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'connected': return 'Conectado';
+      case 'syncing': return 'Sincronizando';
+      case 'error': return 'Erro';
+      case 'disconnected': return 'Desconectado';
+      default: return status;
+    }
+  };
+
+  // Verifica se tem conexao Meta ativa
+  const hasMetaConnection = connections.length > 0;
 
   return (
     <div className="space-y-6">
@@ -324,7 +480,7 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Extrair Dados</h1>
-            <p className="text-gray-600">Configure e extraia dados do Meta Ads</p>
+            <p className="text-gray-600">Conecte e extraia dados do Meta Ads</p>
           </div>
         </div>
 
@@ -344,6 +500,19 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
           </Button>
         </div>
       </div>
+
+      {/* Banner de alerta quando nao ha conexao */}
+      {!hasMetaConnection && !loadingConnections && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-amber-800">Nenhuma conta conectada</p>
+            <p className="text-sm text-amber-700 mt-1">
+              Conecte sua conta Meta Ads abaixo para extrair dados das suas campanhas.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Mensagem de erro */}
       {error && (
@@ -381,9 +550,9 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Coluna de configuração */}
+        {/* Coluna de configuracao */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Seção: Conexão e Nível */}
+          {/* Secao: Conectar Conta */}
           <Card>
             <button
               type="button"
@@ -391,8 +560,8 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
               className="w-full flex items-center justify-between"
             >
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <Settings className="w-5 h-5" />
-                Configuração
+                <Link className="w-5 h-5" />
+                Conectar Conta
               </h3>
               {expandedSections.connection ? (
                 <ChevronUp className="w-5 h-5 text-gray-500" />
@@ -402,11 +571,157 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
             </button>
 
             {expandedSections.connection && (
+              <div className="mt-4">
+                {/* Grid com Meta e Google Ads */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* SimpleMetaConnect integrado */}
+                  <SimpleMetaConnect />
+
+                  {/* Placeholder Google Ads - Em breve */}
+                  <Card className="opacity-70 cursor-not-allowed relative bg-gray-50/80 hover:opacity-70 transition-opacity">
+                    {/* Badge "Em breve" */}
+                    <div className="absolute top-4 right-4 z-10">
+                      <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
+                        Em breve
+                      </span>
+                    </div>
+
+                    <div className="pointer-events-none">
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center space-x-3">
+                          <img src="/google-ads-icon.svg" alt="Google Ads" className="w-12 h-12 grayscale opacity-50" />
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">Google Ads</h3>
+                            <p className="text-sm text-gray-600">Search, Display, YouTube</p>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-gray-600 text-sm">
+                        Conexao com Google Ads sera disponibilizada em breve.
+                      </p>
+                    </div>
+                  </Card>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* Secao: Fontes Conectadas */}
+          {dataSources.length > 0 && (
+            <Card>
+              <button
+                type="button"
+                onClick={() => toggleSection('sources')}
+                className="w-full flex items-center justify-between"
+              >
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Zap className="w-5 h-5" />
+                  Contas Conectadas
+                  <span className="text-sm font-normal text-gray-500">
+                    ({dataSources.length})
+                  </span>
+                </h3>
+                {expandedSections.sources ? (
+                  <ChevronUp className="w-5 h-5 text-gray-500" />
+                ) : (
+                  <ChevronDown className="w-5 h-5 text-gray-500" />
+                )}
+              </button>
+
+              {expandedSections.sources && (
+                <div className="mt-4 space-y-3">
+                  {dataSources.map((source) => {
+                    const isCurrentlySyncing = syncingIds.has(source.id);
+
+                    return (
+                      <div
+                        key={source.id}
+                        className="bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-xl p-4 hover:shadow-md transition-all duration-200"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 flex items-center justify-center bg-gray-50 rounded-lg border border-gray-200">
+                              <img
+                                src={source.logo}
+                                alt={source.name}
+                                className="w-6 h-6 object-contain"
+                              />
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-gray-900">{source.name}</h4>
+                              <div className="flex items-center gap-3 mt-1">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(isCurrentlySyncing ? 'syncing' : source.status)}`}>
+                                  {source.status === 'connected' && !isCurrentlySyncing && <CheckCircle className="w-3 h-3 mr-1" />}
+                                  {source.status === 'error' && <AlertCircle className="w-3 h-3 mr-1" />}
+                                  {isCurrentlySyncing && <RefreshCw className="w-3 h-3 mr-1 animate-spin" />}
+                                  {getStatusText(isCurrentlySyncing ? 'syncing' : source.status)}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  Sync: {new Date(source.lastSync).toLocaleDateString('pt-BR')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleSync(source.id)}
+                              disabled={isCurrentlySyncing}
+                              title="Sincronizar"
+                            >
+                              <RefreshCw className={`w-4 h-4 ${isCurrentlySyncing ? 'animate-spin' : ''}`} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteSource(source.id)}
+                              title="Remover"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        {source.error && (
+                          <div className="mt-2 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                            {source.error}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Secao: Configuracao */}
+          <Card className={!hasMetaConnection ? 'opacity-60 pointer-events-none' : ''}>
+            <button
+              type="button"
+              onClick={() => toggleSection('config')}
+              className="w-full flex items-center justify-between"
+              disabled={!hasMetaConnection}
+            >
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Settings className="w-5 h-5" />
+                Configuracao
+              </h3>
+              {expandedSections.config ? (
+                <ChevronUp className="w-5 h-5 text-gray-500" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-500" />
+              )}
+            </button>
+
+            {expandedSections.config && (
               <div className="mt-4 space-y-4">
-                {/* Seleção de conta */}
+                {/* Selecao de conta */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Conta de Anúncios
+                    Conta de Anuncios
                   </label>
                   {loadingConnections ? (
                     <div className="flex items-center gap-2 text-gray-500">
@@ -414,29 +729,9 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
                       Carregando...
                     </div>
                   ) : connections.length === 0 ? (
-                    <div className="space-y-3">
-                      <p className="text-sm text-gray-500">
-                        Nenhuma conta Meta conectada. Conecte sua conta para extrair dados.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={onNavigateToDataSources}
-                        className="
-                          inline-flex items-center gap-2 px-6 py-3
-                          bg-gradient-to-r from-blue-600 to-blue-700
-                          text-white font-semibold text-sm
-                          rounded-lg shadow-lg shadow-blue-500/30
-                          hover:from-blue-700 hover:to-blue-800
-                          hover:shadow-xl hover:shadow-blue-500/40
-                          transform hover:-translate-y-0.5
-                          transition-all duration-200
-                          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
-                        "
-                      >
-                        <Database className="w-5 h-5" />
-                        Conectar Conta Meta
-                      </button>
-                    </div>
+                    <p className="text-sm text-gray-500">
+                      Nenhuma conta Meta conectada. Conecte sua conta acima.
+                    </p>
                   ) : (
                     <select
                       value={selectedConnection}
@@ -456,10 +751,10 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
                   )}
                 </div>
 
-                {/* Nível do relatório */}
+                {/* Nivel do relatorio */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nível do Relatório
+                    Nivel do Relatorio
                   </label>
                   <div className="flex gap-2">
                     {(['campaign', 'adset', 'ad'] as ReportLevel[]).map(l => (
@@ -486,12 +781,13 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
             )}
           </Card>
 
-          {/* Seção: Campos */}
-          <Card>
+          {/* Secao: Campos */}
+          <Card className={!hasMetaConnection ? 'opacity-60 pointer-events-none' : ''}>
             <button
               type="button"
               onClick={() => toggleSection('fields')}
               className="w-full flex items-center justify-between"
+              disabled={!hasMetaConnection}
             >
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <Filter className="w-5 h-5" />
@@ -518,12 +814,13 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
             )}
           </Card>
 
-          {/* Seção: Breakdowns */}
-          <Card>
+          {/* Secao: Breakdowns */}
+          <Card className={!hasMetaConnection ? 'opacity-60 pointer-events-none' : ''}>
             <button
               type="button"
               onClick={() => toggleSection('breakdowns')}
               className="w-full flex items-center justify-between"
+              disabled={!hasMetaConnection}
             >
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5" />
@@ -549,16 +846,17 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
             )}
           </Card>
 
-          {/* Seção: Período */}
-          <Card>
+          {/* Secao: Periodo */}
+          <Card className={!hasMetaConnection ? 'opacity-60 pointer-events-none' : ''}>
             <button
               type="button"
               onClick={() => toggleSection('dateRange')}
               className="w-full flex items-center justify-between"
+              disabled={!hasMetaConnection}
             >
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <Calendar className="w-5 h-5" />
-                Período
+                Periodo
               </h3>
               {expandedSections.dateRange ? (
                 <ChevronUp className="w-5 h-5 text-gray-500" />
@@ -571,7 +869,7 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
               <div className="mt-4 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Período
+                    Periodo
                   </label>
                   <select
                     value={datePreset}
@@ -630,16 +928,16 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
         {/* Coluna lateral: Templates e Resultado */}
         <div className="space-y-4">
           {/* Templates */}
-          <Card>
+          <Card className={!hasMetaConnection ? 'opacity-60 pointer-events-none' : ''}>
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <Save className="w-5 h-5" />
               Templates
             </h3>
 
             <div className="space-y-3">
-              {/* Templates padrão */}
+              {/* Templates padrao */}
               <div className="space-y-2">
-                <p className="text-xs font-medium text-gray-500 uppercase">Templates padrão</p>
+                <p className="text-xs font-medium text-gray-500 uppercase">Templates padrao</p>
                 {DEFAULT_TEMPLATES.map(template => (
                   <button
                     key={template.name}
@@ -714,13 +1012,13 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
                   onClick={() => setShowSaveTemplate(true)}
                   className="w-full mt-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
                 >
-                  + Salvar configuração atual
+                  + Salvar configuracao atual
                 </button>
               )}
             </div>
           </Card>
 
-          {/* Resultado da extração */}
+          {/* Resultado da extracao */}
           {extractionResult && (
             <Card>
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -750,7 +1048,7 @@ export const DataExtractorPage: React.FC<DataExtractorPageProps> = ({
                   </div>
 
                   <div className="text-xs text-gray-500">
-                    Período: {extractionResult.dateRange.start} até {extractionResult.dateRange.end}
+                    Periodo: {extractionResult.dateRange.start} ate {extractionResult.dateRange.end}
                   </div>
 
                   <Button onClick={exportToCSV} icon={Download} className="w-full">

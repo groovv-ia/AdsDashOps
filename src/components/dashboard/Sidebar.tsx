@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Settings, Database, Sparkles, Headphones, Target, Users, Download } from 'lucide-react';
+import { BarChart3, Settings, Sparkles, Headphones, Target, Users, Download } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -15,7 +15,6 @@ const menuItems = [
   { icon: Target, label: 'Campanhas', page: 'campaigns' },
   { icon: Download, label: 'Extrair Dados', page: 'data-extractor' },
   { icon: Sparkles, label: 'Análise com IA', page: 'ai-insights' },
-  { icon: Database, label: 'Fontes de Dados', page: 'data-sources' },
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configurações', page: 'settings' },
 ];

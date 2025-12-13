@@ -8,7 +8,6 @@ import { FilterBar } from './components/dashboard/FilterBar';
 import { MetricsOverview } from './components/dashboard/MetricsOverview';
 import { PerformanceChart } from './components/dashboard/PerformanceChart';
 import { CampaignTable } from './components/dashboard/CampaignTable';
-import { DataSources } from './components/dashboard/DataSources';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { SupportPage } from './components/support/SupportPage';
@@ -328,14 +327,8 @@ function AppContent() {
             }}
           />
         );
-      case 'data-sources':
-        return <DataSources />;
       case 'data-extractor':
-        return (
-          <DataExtractorPage
-            onNavigateToDataSources={() => setCurrentPage('data-sources')}
-          />
-        );
+        return <DataExtractorPage />;
       case 'settings':
         return <SettingsPage />;
       case 'ai-insights':
@@ -389,10 +382,10 @@ function AppContent() {
                     </p>
                     {!isUsingRealData && (
                       <button
-                        onClick={() => setCurrentPage('data-sources')}
+                        onClick={() => setCurrentPage('data-extractor')}
                         className="mt-2 text-blue-300 hover:text-blue-200 underline text-xs"
                       >
-                        Conectar fontes de dados →
+                        Ir para Extrair Dados →
                       </button>
                     )}
                     <div className="absolute -top-1 right-4 w-2 h-2 bg-gray-900 transform rotate-45"></div>
