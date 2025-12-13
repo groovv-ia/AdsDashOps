@@ -15,19 +15,14 @@ import { logger } from '../utils/logger';
  * Interface para campanha com metricas do Meta Insights
  */
 export interface MetaCampaignData {
-  // Identificadores
   entity_id: string;
   entity_name: string;
   level: 'campaign' | 'adset' | 'ad';
   meta_ad_account_id: string;
-
-  // Status e objetivo (do cache de entidades)
   status?: string;
   objective?: string;
   daily_budget?: number;
   lifetime_budget?: number;
-
-  // Metricas agregadas
   metrics: {
     impressions: number;
     clicks: number;
@@ -42,13 +37,9 @@ export interface MetaCampaignData {
     roas: number;
     cost_per_result: number;
   };
-
-  // Metadados
   first_date: string;
   last_date: string;
   days_with_data: number;
-
-  // Relacionamentos (para adsets e ads)
   campaign_id?: string;
   campaign_name?: string;
   adset_id?: string;
@@ -97,11 +88,9 @@ interface RawInsight {
   ctr: number;
   cpc: number;
   cpm: number;
-  cpp: number;
   frequency: number;
-  conversions: number;
-  conversion_value: number;
   unique_clicks: number;
+  actions_json?: Record<string, unknown>;
   action_values_json?: Record<string, unknown>;
 }
 
@@ -136,41 +125,114 @@ export interface MetaInsightsFilterOptions {
 }
 
 /**
+ * Extrai conversoes do campo actions_json
+ * O Meta retorna acoes em um formato de array com action_type e value
+ */
+function extractConversions(actionsJson: Record<string, unknown> | null | undefined): number {
+  if (!actionsJson) return 0;
+
+  // Se for um array, soma os valores relevantes
+  if (Array.isArray(actionsJson)) {
+    let total = 0;
+    for (const action of actionsJson) {
+      const actionType = action?.action_type || '';
+      // Tipos de acao que contam como conversao
+      if (
+        actionType.includes('purchase') ||
+        actionType.includes('lead') ||
+        actionType.includes('complete_registration') ||
+        actionType.includes('add_to_cart') ||
+        actionType === 'offsite_conversion.fb_pixel_purchase' ||
+        actionType === 'omni_purchase'
+      ) {
+        total += parseFloat(action?.value || '0');
+      }
+    }
+    return total;
+  }
+
+  // Se for objeto, tenta acessar diretamente
+  if (typeof actionsJson === 'object') {
+    const purchase = (actionsJson as Record<string, number>)['purchase'] || 0;
+    const lead = (actionsJson as Record<string, number>)['lead'] || 0;
+    return purchase + lead;
+  }
+
+  return 0;
+}
+
+/**
+ * Extrai valor de conversao do campo action_values_json
+ */
+function extractConversionValue(actionValuesJson: Record<string, unknown> | null | undefined): number {
+  if (!actionValuesJson) return 0;
+
+  // Se for um array, soma os valores relevantes
+  if (Array.isArray(actionValuesJson)) {
+    let total = 0;
+    for (const action of actionValuesJson) {
+      const actionType = action?.action_type || '';
+      if (
+        actionType.includes('purchase') ||
+        actionType === 'offsite_conversion.fb_pixel_purchase' ||
+        actionType === 'omni_purchase'
+      ) {
+        total += parseFloat(action?.value || '0');
+      }
+    }
+    return total;
+  }
+
+  // Se for objeto, tenta acessar diretamente
+  if (typeof actionValuesJson === 'object') {
+    const purchase = (actionValuesJson as Record<string, number>)['purchase'] || 0;
+    return purchase;
+  }
+
+  return 0;
+}
+
+/**
  * Classe principal do servico de dados do Meta Insights
  */
 export class MetaInsightsDataService {
-  // Cache em memoria para evitar queries repetidas
-  private cache: Map<string, { data: unknown; timestamp: number }> = new Map();
-  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutos
-
-  /**
-   * Verifica se item do cache ainda e valido
-   */
-  private isCacheValid(key: string): boolean {
-    const cached = this.cache.get(key);
-    if (!cached) return false;
-    return (Date.now() - cached.timestamp) < this.CACHE_TTL;
-  }
-
   /**
    * Busca o workspace_id do usuario atual
    */
   private async getUserWorkspaceId(): Promise<string | null> {
-    const { data, error } = await supabase.rpc('get_user_workspace_id');
+    try {
+      const { data, error } = await supabase.rpc('get_user_workspace_id');
 
-    if (error) {
-      logger.error('Erro ao buscar workspace_id', error);
+      if (error) {
+        logger.error('Erro ao buscar workspace_id via RPC', error);
+
+        // Fallback: busca diretamente na tabela workspaces
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return null;
+
+        const { data: workspace, error: wsError } = await supabase
+          .from('workspaces')
+          .select('id')
+          .eq('owner_id', user.id)
+          .maybeSingle();
+
+        if (wsError || !workspace) {
+          logger.error('Erro ao buscar workspace diretamente', wsError);
+          return null;
+        }
+
+        return workspace.id;
+      }
+
+      return data;
+    } catch (err) {
+      logger.error('Erro ao buscar workspace_id', err);
       return null;
     }
-
-    return data;
   }
 
   /**
    * Busca todas as campanhas com metricas agregadas do Meta Insights
-   *
-   * @param options - Opcoes de filtro
-   * @returns Lista de campanhas com metricas agregadas
    */
   async fetchCampaignsWithMetrics(
     options: MetaInsightsFilterOptions = {}
@@ -178,7 +240,6 @@ export class MetaInsightsDataService {
     try {
       logger.info('Buscando campanhas do Meta Insights', { options });
 
-      // Obtem workspace_id se nao fornecido
       const workspaceId = options.workspaceId || await this.getUserWorkspaceId();
       if (!workspaceId) {
         logger.warn('Workspace ID nao encontrado');
@@ -193,12 +254,6 @@ export class MetaInsightsDataService {
         .eq('level', 'campaign');
 
       // Aplica filtros
-      if (options.clientId) {
-        query = query.eq('client_id', options.clientId);
-      }
-      if (options.metaAdAccountId) {
-        query = query.eq('meta_ad_account_id', options.metaAdAccountId);
-      }
       if (options.dateFrom) {
         query = query.gte('date', options.dateFrom);
       }
@@ -228,21 +283,22 @@ export class MetaInsightsDataService {
         const existing = campaignsMap.get(insight.entity_id);
         const entity = entities.find(e => e.entity_id === insight.entity_id);
 
+        // Extrai conversoes do actions_json
+        const conversions = extractConversions(insight.actions_json);
+        const conversionValue = extractConversionValue(insight.action_values_json);
+
         if (existing) {
-          // Soma metricas
-          existing.metrics.impressions += insight.impressions || 0;
-          existing.metrics.clicks += insight.clicks || 0;
-          existing.metrics.spend += insight.spend || 0;
-          existing.metrics.reach += insight.reach || 0;
-          existing.metrics.conversions += insight.conversions || 0;
-          existing.metrics.conversion_value += insight.conversion_value || 0;
+          existing.metrics.impressions += Number(insight.impressions) || 0;
+          existing.metrics.clicks += Number(insight.clicks) || 0;
+          existing.metrics.spend += Number(insight.spend) || 0;
+          existing.metrics.reach += Number(insight.reach) || 0;
+          existing.metrics.conversions += conversions;
+          existing.metrics.conversion_value += conversionValue;
           existing.days_with_data += 1;
 
-          // Atualiza datas
           if (insight.date < existing.first_date) existing.first_date = insight.date;
           if (insight.date > existing.last_date) existing.last_date = insight.date;
         } else {
-          // Cria nova entrada
           campaignsMap.set(insight.entity_id, {
             entity_id: insight.entity_id,
             entity_name: insight.entity_name || entity?.name || insight.entity_id,
@@ -253,18 +309,18 @@ export class MetaInsightsDataService {
             daily_budget: entity?.daily_budget,
             lifetime_budget: entity?.lifetime_budget,
             metrics: {
-              impressions: insight.impressions || 0,
-              clicks: insight.clicks || 0,
-              spend: insight.spend || 0,
-              reach: insight.reach || 0,
-              frequency: insight.frequency || 0,
-              ctr: 0, // Calculado depois
-              cpc: 0, // Calculado depois
-              cpm: 0, // Calculado depois
-              conversions: insight.conversions || 0,
-              conversion_value: insight.conversion_value || 0,
-              roas: 0, // Calculado depois
-              cost_per_result: 0, // Calculado depois
+              impressions: Number(insight.impressions) || 0,
+              clicks: Number(insight.clicks) || 0,
+              spend: Number(insight.spend) || 0,
+              reach: Number(insight.reach) || 0,
+              frequency: Number(insight.frequency) || 0,
+              ctr: 0,
+              cpc: 0,
+              cpm: 0,
+              conversions: conversions,
+              conversion_value: conversionValue,
+              roas: 0,
+              cost_per_result: 0,
             },
             first_date: insight.date,
             last_date: insight.date,
@@ -275,30 +331,10 @@ export class MetaInsightsDataService {
 
       // Calcula metricas derivadas para cada campanha
       const campaigns = Array.from(campaignsMap.values()).map(campaign => {
-        const m = campaign.metrics;
-
-        // CTR = (cliques / impressoes) * 100
-        m.ctr = m.impressions > 0 ? (m.clicks / m.impressions) * 100 : 0;
-
-        // CPC = gasto / cliques
-        m.cpc = m.clicks > 0 ? m.spend / m.clicks : 0;
-
-        // CPM = (gasto / impressoes) * 1000
-        m.cpm = m.impressions > 0 ? (m.spend / m.impressions) * 1000 : 0;
-
-        // Frequencia = impressoes / alcance
-        m.frequency = m.reach > 0 ? m.impressions / m.reach : 0;
-
-        // ROAS = valor_conversao / gasto
-        m.roas = m.spend > 0 && m.conversion_value > 0 ? m.conversion_value / m.spend : 0;
-
-        // Custo por resultado = gasto / conversoes
-        m.cost_per_result = m.conversions > 0 ? m.spend / m.conversions : 0;
-
+        this.calculateDerivedMetrics(campaign.metrics);
         return campaign;
       });
 
-      // Ordena por gasto (maior primeiro)
       campaigns.sort((a, b) => b.metrics.spend - a.metrics.spend);
 
       logger.info('Campanhas carregadas do Meta Insights', { count: campaigns.length });
@@ -312,10 +348,6 @@ export class MetaInsightsDataService {
 
   /**
    * Busca AdSets de uma campanha especifica
-   *
-   * @param campaignId - ID da campanha no Meta
-   * @param options - Opcoes de filtro
-   * @returns Lista de AdSets com metricas
    */
   async fetchCampaignAdSets(
     campaignId: string,
@@ -368,14 +400,16 @@ export class MetaInsightsDataService {
       for (const insight of (insights || []) as RawInsight[]) {
         const entity = (adsetEntities || []).find((e: CachedEntity) => e.entity_id === insight.entity_id);
         const existing = adsetsMap.get(insight.entity_id);
+        const conversions = extractConversions(insight.actions_json);
+        const conversionValue = extractConversionValue(insight.action_values_json);
 
         if (existing) {
-          existing.metrics.impressions += insight.impressions || 0;
-          existing.metrics.clicks += insight.clicks || 0;
-          existing.metrics.spend += insight.spend || 0;
-          existing.metrics.reach += insight.reach || 0;
-          existing.metrics.conversions += insight.conversions || 0;
-          existing.metrics.conversion_value += insight.conversion_value || 0;
+          existing.metrics.impressions += Number(insight.impressions) || 0;
+          existing.metrics.clicks += Number(insight.clicks) || 0;
+          existing.metrics.spend += Number(insight.spend) || 0;
+          existing.metrics.reach += Number(insight.reach) || 0;
+          existing.metrics.conversions += conversions;
+          existing.metrics.conversion_value += conversionValue;
           existing.days_with_data += 1;
         } else {
           adsetsMap.set(insight.entity_id, {
@@ -388,16 +422,16 @@ export class MetaInsightsDataService {
             lifetime_budget: entity?.lifetime_budget,
             campaign_id: campaignId,
             metrics: {
-              impressions: insight.impressions || 0,
-              clicks: insight.clicks || 0,
-              spend: insight.spend || 0,
-              reach: insight.reach || 0,
+              impressions: Number(insight.impressions) || 0,
+              clicks: Number(insight.clicks) || 0,
+              spend: Number(insight.spend) || 0,
+              reach: Number(insight.reach) || 0,
               frequency: 0,
               ctr: 0,
               cpc: 0,
               cpm: 0,
-              conversions: insight.conversions || 0,
-              conversion_value: insight.conversion_value || 0,
+              conversions: conversions,
+              conversion_value: conversionValue,
               roas: 0,
               cost_per_result: 0,
             },
@@ -408,7 +442,6 @@ export class MetaInsightsDataService {
         }
       }
 
-      // Calcula metricas derivadas
       const adsets = Array.from(adsetsMap.values()).map(adset => {
         this.calculateDerivedMetrics(adset.metrics);
         return adset;
@@ -425,10 +458,6 @@ export class MetaInsightsDataService {
 
   /**
    * Busca Ads de uma campanha especifica
-   *
-   * @param campaignId - ID da campanha no Meta
-   * @param options - Opcoes de filtro
-   * @returns Lista de Ads com metricas
    */
   async fetchCampaignAds(
     campaignId: string,
@@ -481,14 +510,16 @@ export class MetaInsightsDataService {
       for (const insight of (insights || []) as RawInsight[]) {
         const entity = (adEntities || []).find((e: CachedEntity) => e.entity_id === insight.entity_id);
         const existing = adsMap.get(insight.entity_id);
+        const conversions = extractConversions(insight.actions_json);
+        const conversionValue = extractConversionValue(insight.action_values_json);
 
         if (existing) {
-          existing.metrics.impressions += insight.impressions || 0;
-          existing.metrics.clicks += insight.clicks || 0;
-          existing.metrics.spend += insight.spend || 0;
-          existing.metrics.reach += insight.reach || 0;
-          existing.metrics.conversions += insight.conversions || 0;
-          existing.metrics.conversion_value += insight.conversion_value || 0;
+          existing.metrics.impressions += Number(insight.impressions) || 0;
+          existing.metrics.clicks += Number(insight.clicks) || 0;
+          existing.metrics.spend += Number(insight.spend) || 0;
+          existing.metrics.reach += Number(insight.reach) || 0;
+          existing.metrics.conversions += conversions;
+          existing.metrics.conversion_value += conversionValue;
           existing.days_with_data += 1;
         } else {
           adsMap.set(insight.entity_id, {
@@ -500,16 +531,16 @@ export class MetaInsightsDataService {
             campaign_id: campaignId,
             adset_id: entity?.adset_id,
             metrics: {
-              impressions: insight.impressions || 0,
-              clicks: insight.clicks || 0,
-              spend: insight.spend || 0,
-              reach: insight.reach || 0,
+              impressions: Number(insight.impressions) || 0,
+              clicks: Number(insight.clicks) || 0,
+              spend: Number(insight.spend) || 0,
+              reach: Number(insight.reach) || 0,
               frequency: 0,
               ctr: 0,
               cpc: 0,
               cpm: 0,
-              conversions: insight.conversions || 0,
-              conversion_value: insight.conversion_value || 0,
+              conversions: conversions,
+              conversion_value: conversionValue,
               roas: 0,
               cost_per_result: 0,
             },
@@ -520,7 +551,6 @@ export class MetaInsightsDataService {
         }
       }
 
-      // Calcula metricas derivadas
       const ads = Array.from(adsMap.values()).map(ad => {
         this.calculateDerivedMetrics(ad.metrics);
         return ad;
@@ -537,10 +567,6 @@ export class MetaInsightsDataService {
 
   /**
    * Busca metricas diarias de uma campanha para graficos
-   *
-   * @param campaignId - ID da campanha no Meta
-   * @param options - Opcoes de filtro
-   * @returns Metricas diarias ordenadas por data
    */
   async fetchDailyMetrics(
     campaignId: string,
@@ -571,29 +597,31 @@ export class MetaInsightsDataService {
 
       if (error) throw error;
 
-      const dailyMetrics: MetaDailyMetrics[] = (insights || []).map((insight: RawInsight) => ({
-        date: insight.date,
-        entity_id: insight.entity_id,
-        entity_name: insight.entity_name,
-        level: insight.level,
-        impressions: insight.impressions || 0,
-        clicks: insight.clicks || 0,
-        spend: insight.spend || 0,
-        reach: insight.reach || 0,
-        frequency: insight.frequency || 0,
-        ctr: insight.ctr || 0,
-        cpc: insight.cpc || 0,
-        cpm: insight.cpm || 0,
-        conversions: insight.conversions || 0,
-        conversion_value: insight.conversion_value || 0,
-        roas: insight.spend > 0 && insight.conversion_value > 0
-          ? insight.conversion_value / insight.spend
-          : 0,
-        cost_per_result: insight.conversions > 0
-          ? insight.spend / insight.conversions
-          : 0,
-        unique_clicks: insight.unique_clicks || 0,
-      }));
+      const dailyMetrics: MetaDailyMetrics[] = (insights || []).map((insight: RawInsight) => {
+        const conversions = extractConversions(insight.actions_json);
+        const conversionValue = extractConversionValue(insight.action_values_json);
+        const spend = Number(insight.spend) || 0;
+
+        return {
+          date: insight.date,
+          entity_id: insight.entity_id,
+          entity_name: insight.entity_name,
+          level: insight.level,
+          impressions: Number(insight.impressions) || 0,
+          clicks: Number(insight.clicks) || 0,
+          spend: spend,
+          reach: Number(insight.reach) || 0,
+          frequency: Number(insight.frequency) || 0,
+          ctr: Number(insight.ctr) || 0,
+          cpc: Number(insight.cpc) || 0,
+          cpm: Number(insight.cpm) || 0,
+          conversions: conversions,
+          conversion_value: conversionValue,
+          roas: spend > 0 && conversionValue > 0 ? conversionValue / spend : 0,
+          cost_per_result: conversions > 0 ? spend / conversions : 0,
+          unique_clicks: Number(insight.unique_clicks) || 0,
+        };
+      });
 
       return dailyMetrics;
     } catch (error) {
@@ -604,10 +632,6 @@ export class MetaInsightsDataService {
 
   /**
    * Busca detalhes de uma campanha especifica por entity_id
-   *
-   * @param entityId - ID da entidade no Meta
-   * @param options - Opcoes de filtro
-   * @returns Dados da campanha ou null
    */
   async getCampaignByEntityId(
     entityId: string,
@@ -678,14 +702,6 @@ export class MetaInsightsDataService {
     metrics.cost_per_result = metrics.conversions > 0
       ? metrics.spend / metrics.conversions
       : 0;
-  }
-
-  /**
-   * Limpa o cache de dados
-   */
-  clearCache(): void {
-    this.cache.clear();
-    logger.info('Cache do MetaInsightsDataService limpo');
   }
 }
 
