@@ -610,7 +610,9 @@ export const MetaAdsSyncPage: React.FC = () => {
         {/* Header Principal */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center space-x-3">
-            <img src="/meta-icon.svg" alt="Meta" className="w-10 h-10" />
+            <div className="p-3 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl shadow-lg">
+              <BarChart3 className="w-6 h-6 text-white" />
+            </div>
             <div>
               <h2 className="text-2xl font-bold text-gray-900">Meta Ads Sync</h2>
               <p className="text-gray-600">
@@ -770,7 +772,9 @@ export const MetaAdsSyncPage: React.FC = () => {
         {/* Info da Conta Selecionada */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center space-x-3">
-            <img src="/meta-icon.svg" alt="Meta" className="w-10 h-10" />
+            <div className="p-3 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl shadow-lg">
+              <BarChart3 className="w-6 h-6 text-white" />
+            </div>
             <div>
               <h2 className="text-2xl font-bold text-gray-900">
                 {selectedAccount?.name || 'Conta'}
