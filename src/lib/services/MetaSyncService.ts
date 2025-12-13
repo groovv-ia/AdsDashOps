@@ -395,6 +395,22 @@ export class MetaSyncService {
                 campaignName: campaign.name,
                 period: `${dateStart} até ${dateEnd}`
               });
+
+              // Log mais visível no console para debug
+              console.error('⚠️ AVISO: Nenhuma métrica retornada pela API Meta!', {
+                campanha: campaign.name,
+                id: campaign.id,
+                periodo: `${dateStart} até ${dateEnd}`,
+                mensagem: 'Possíveis causas: campanha sem gastos, token sem permissão ads_read, ou período incorreto'
+              });
+            } else {
+              // Log de sucesso para confirmar que métricas foram encontradas
+              console.log('✅ Métricas encontradas:', {
+                campanha: campaign.name,
+                quantidade: insights.length,
+                primeiraData: insights[0]?.date_start,
+                ultimaData: insights[insights.length - 1]?.date_start
+              });
             }
 
             // 8. Salva métricas no banco com validação
@@ -425,6 +441,14 @@ export class MetaSyncService {
                     spend: insight.spend
                   }
                 });
+
+                // Log mais visível no console
+                console.error('❌ ERRO ao salvar métrica:', {
+                  campanha: campaign.name,
+                  data: insight.date_start,
+                  erro: metricError.message,
+                  detalhes: metricError
+                });
               }
             }
 
@@ -435,6 +459,14 @@ export class MetaSyncService {
               saved: metricsSaved,
               errors: metricsErrors
             });
+
+            // Log mais visível no console
+            if (metricsSaved > 0) {
+              console.log(`💾 ${metricsSaved} métricas salvas com sucesso para "${campaign.name}"`);
+            }
+            if (metricsErrors > 0) {
+              console.error(`⚠️ ${metricsErrors} erros ao salvar métricas de "${campaign.name}"`);
+            }
 
           } catch (error: any) {
             logger.error(`Erro ao processar campanha ${campaign.id}`, {
@@ -477,6 +509,23 @@ export class MetaSyncService {
         connectionId,
         totalMetricsInDatabase: totalMetrics
       });
+
+      // Log visual no console
+      console.log('📊 RESUMO DA SINCRONIZAÇÃO:', {
+        campanhas: processedCampaigns,
+        metricasNoBanco: totalMetrics,
+        status: totalMetrics > 0 ? '✅ Sucesso' : '⚠️ Nenhuma métrica foi salva'
+      });
+
+      // Se nenhuma métrica foi salva, alerta o usuário
+      if (totalMetrics === 0) {
+        console.error('⚠️ ALERTA: Nenhuma métrica foi salva no banco!');
+        console.error('Possíveis causas:');
+        console.error('1. API Meta não retornou dados (campanhas sem gastos)');
+        console.error('2. Token sem permissão "ads_read"');
+        console.error('3. Erro de permissão RLS no banco');
+        console.error('4. Período de datas incorreto');
+      }
 
       // Atualiza status para conectado
       await supabase
