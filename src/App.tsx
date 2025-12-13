@@ -23,7 +23,6 @@ import { ClientProvider } from './contexts/ClientContext';
 import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
-import { ClientsPage } from './components/clients/ClientsPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
@@ -303,8 +302,6 @@ function AppContent() {
 
   const renderPageContent = () => {
     switch (currentPage) {
-      case 'clients':
-        return <ClientsPage />;
       case 'campaigns':
         return (
           <CampaignsPage
