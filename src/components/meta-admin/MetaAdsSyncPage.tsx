@@ -1,29 +1,32 @@
 /**
  * MetaAdsSyncPage
  *
- * Pagina principal de sincronizacao Meta Ads com dashboard.
- * Permite extrair metricas, visualizar KPIs e tabelas por nivel.
+ * Pagina principal de sincronizacao Meta Ads redesenhada.
+ * Layout com cards de contas, navegacao drill-down e visualizacao de metricas.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   RefreshCw,
-  Download,
-  Calendar,
+  BarChart3,
+  Settings,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
   TrendingUp,
   DollarSign,
   Eye,
   MousePointer,
-  Percent,
-  Loader2,
-  AlertCircle,
-  CheckCircle2,
-  ChevronDown,
+  ArrowLeft,
+  Download,
   Filter,
-  BarChart3,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { AdAccountCard, AdAccountData } from './AdAccountCard';
+import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems } from './BreadcrumbNav';
+import { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
+import { SyncStatusBadge, SyncStatus } from './SyncStatusBadge';
 import {
   runMetaSync,
   getMetaSyncStatus,
@@ -32,9 +35,22 @@ import {
   SyncResult,
 } from '../../lib/services/MetaSystemUserService';
 import { useClient } from '../../contexts/ClientContext';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+} from 'recharts';
 
-// Tipos locais
+// ============================================================
+// TIPOS
+// ============================================================
+
 interface InsightRow {
   id: string;
   level: string;
@@ -60,28 +76,33 @@ interface KPIs {
   avgCpm: number;
 }
 
-// Presets de periodo
-const DATE_PRESETS = [
-  { label: 'Hoje', value: 'today', days: 0 },
-  { label: 'Ontem', value: 'yesterday', days: 1 },
-  { label: 'Ultimos 7 dias', value: 'last_7', days: 7 },
-  { label: 'Ultimos 30 dias', value: 'last_30', days: 30 },
-  { label: 'Este mes', value: 'this_month', days: -1 },
-];
-
-// Niveis de entidade
+// Niveis de entidade disponiveis
 const LEVELS = [
   { label: 'Campanhas', value: 'campaign' },
   { label: 'Conjuntos', value: 'adset' },
   { label: 'Anuncios', value: 'ad' },
 ];
 
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
+
 export const MetaAdsSyncPage: React.FC = () => {
   const { selectedClient } = useClient();
+
+  // Estado de navegacao
+  const [navigationState, setNavigationState] = useState<NavigationState>({
+    currentView: 'accounts',
+    selectedAccountId: null,
+    selectedAccountName: null,
+    selectedCampaignId: null,
+    selectedCampaignName: null,
+  });
 
   // Estado de sincronizacao
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
 
   // Estado de dados
@@ -100,64 +121,43 @@ export const MetaAdsSyncPage: React.FC = () => {
   // Filtros
   const [selectedLevel, setSelectedLevel] = useState<string>('campaign');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('last_7');
-  const [selectedAdAccount, setSelectedAdAccount] = useState<string>('');
-  const [includeToday, setIncludeToday] = useState(true);
+  const [dateRange, setDateRange] = useState<{ dateFrom: string; dateTo: string }>(() => {
+    const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === 'last_7');
+    return preset ? preset.getDateRange() : { dateFrom: '', dateTo: '' };
+  });
 
   // Mensagens
   const [error, setError] = useState<string | null>(null);
 
-  // Calcula datas baseado no preset
-  const getDateRange = useCallback(() => {
-    const today = new Date();
-    let dateFrom: Date;
-    let dateTo: Date = includeToday ? today : new Date(today.setDate(today.getDate() - 1));
-
-    const preset = DATE_PRESETS.find((p) => p.value === selectedPeriod);
-    if (!preset) {
-      dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - 7);
-    } else if (preset.value === 'today') {
-      dateFrom = new Date();
-      dateTo = new Date();
-    } else if (preset.value === 'yesterday') {
-      dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - 1);
-      dateTo = new Date(dateFrom);
-    } else if (preset.value === 'this_month') {
-      dateFrom = new Date(today.getFullYear(), today.getMonth(), 1);
-    } else {
-      dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - preset.days);
-    }
-
-    return {
-      dateFrom: dateFrom.toISOString().split('T')[0],
-      dateTo: dateTo.toISOString().split('T')[0],
-    };
-  }, [selectedPeriod, includeToday]);
+  // ============================================================
+  // EFEITOS
+  // ============================================================
 
   // Carrega status inicial
   useEffect(() => {
     loadStatus();
   }, [selectedClient]);
 
-  // Carrega dados quando filtros mudam
+  // Carrega dados quando filtros mudam e ha conta selecionada
   useEffect(() => {
-    if (syncStatus?.connection?.status === 'connected') {
+    if (
+      syncStatus?.connection?.status === 'connected' &&
+      navigationState.selectedAccountId &&
+      navigationState.currentView === 'account-detail'
+    ) {
       loadInsights();
     }
-  }, [selectedLevel, selectedPeriod, selectedAdAccount, includeToday, syncStatus]);
+  }, [selectedLevel, selectedPeriod, navigationState.selectedAccountId, navigationState.currentView]);
+
+  // ============================================================
+  // FUNCOES DE CARREGAMENTO
+  // ============================================================
 
   const loadStatus = async () => {
     setLoading(true);
     try {
       const status = await getMetaSyncStatus(selectedClient?.id);
       setSyncStatus(status);
-
-      // Usa o UUID interno (id) em vez do meta_id textual
-      if (status.ad_accounts.length > 0 && !selectedAdAccount) {
-        setSelectedAdAccount(status.ad_accounts[0].id);
-      }
     } catch (err) {
       console.error('Erro ao carregar status:', err);
     } finally {
@@ -165,22 +165,25 @@ export const MetaAdsSyncPage: React.FC = () => {
     }
   };
 
-  // Encontra a ad account selecionada para obter o meta_id para a API
-  const getSelectedAdAccountMetaId = (): string => {
-    const account = syncStatus?.ad_accounts.find((acc) => acc.id === selectedAdAccount);
-    return account?.meta_id || '';
-  };
+  // Encontra os dados da conta pelo UUID interno
+  const getAccountById = useCallback(
+    (accountId: string) => {
+      return syncStatus?.ad_accounts.find((acc) => acc.id === accountId);
+    },
+    [syncStatus]
+  );
 
+  // Carrega insights do banco de dados
   const loadInsights = async () => {
-    const { dateFrom, dateTo } = getDateRange();
+    if (!navigationState.selectedAccountId) return;
 
     try {
       const result = await getInsightsFromDatabase({
         clientId: selectedClient?.id,
-        metaAdAccountId: selectedAdAccount,
+        metaAdAccountId: navigationState.selectedAccountId,
         level: selectedLevel,
-        dateFrom,
-        dateTo,
+        dateFrom: dateRange.dateFrom,
+        dateTo: dateRange.dateTo,
         limit: 1000,
       });
 
@@ -196,6 +199,7 @@ export const MetaAdsSyncPage: React.FC = () => {
     }
   };
 
+  // Calcula KPIs a partir dos dados
   const calculateKPIs = (data: InsightRow[]) => {
     if (data.length === 0) {
       setKpis({
@@ -231,24 +235,29 @@ export const MetaAdsSyncPage: React.FC = () => {
     });
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
+  // ============================================================
+  // FUNCOES DE SINCRONIZACAO
+  // ============================================================
+
+  // Sincroniza uma conta especifica
+  const handleSyncAccount = async (accountId: string) => {
+    const account = getAccountById(accountId);
+    if (!account) return;
+
+    setSyncingAccountId(accountId);
     setError(null);
     setSyncResult(null);
 
     try {
-      const preset = DATE_PRESETS.find((p) => p.value === selectedPeriod);
-      const daysBack = preset?.days === -1 ? 30 : preset?.days || 7;
-
-      // Usa o meta_id textual para a API do Meta
-      const metaId = getSelectedAdAccountMetaId();
+      const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === selectedPeriod);
+      const daysBack = preset?.days === -1 || preset?.days === -2 ? 30 : Math.max(preset?.days || 7, 1);
 
       const result = await runMetaSync({
         mode: selectedPeriod === 'today' ? 'intraday' : 'backfill',
         clientId: selectedClient?.id,
-        metaAdAccountId: metaId,
-        daysBack: Math.max(daysBack, 1),
-        levels: [selectedLevel],
+        metaAdAccountId: account.meta_id,
+        daysBack,
+        levels: ['campaign', 'adset', 'ad'],
       });
 
       setSyncResult(result);
@@ -258,61 +267,177 @@ export const MetaAdsSyncPage: React.FC = () => {
       }
 
       // Recarrega dados
-      await loadInsights();
       await loadStatus();
+      if (navigationState.selectedAccountId === accountId) {
+        await loadInsights();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao sincronizar');
     } finally {
-      setSyncing(false);
+      setSyncingAccountId(null);
     }
   };
 
-  // Agrupa dados por data para grafico
-  const chartData = React.useMemo(() => {
-    const grouped = insights.reduce((acc, row) => {
-      const date = row.date;
-      if (!acc[date]) {
-        acc[date] = { date, spend: 0, impressions: 0, clicks: 0 };
+  // Sincroniza todas as contas
+  const handleSyncAll = async () => {
+    if (!syncStatus?.ad_accounts.length) return;
+
+    setSyncing(true);
+    setError(null);
+
+    try {
+      for (const account of syncStatus.ad_accounts) {
+        setSyncingAccountId(account.id);
+        await handleSyncAccount(account.id);
       }
-      acc[date].spend += row.spend || 0;
-      acc[date].impressions += row.impressions || 0;
-      acc[date].clicks += row.clicks || 0;
-      return acc;
-    }, {} as Record<string, { date: string; spend: number; impressions: number; clicks: number }>);
+    } finally {
+      setSyncing(false);
+      setSyncingAccountId(null);
+    }
+  };
+
+  // ============================================================
+  // FUNCOES DE NAVEGACAO
+  // ============================================================
+
+  // Seleciona uma conta e navega para detalhes
+  const handleSelectAccount = (accountId: string) => {
+    const account = getAccountById(accountId);
+    if (!account) return;
+
+    setNavigationState({
+      currentView: 'account-detail',
+      selectedAccountId: accountId,
+      selectedAccountName: account.name,
+      selectedCampaignId: null,
+      selectedCampaignName: null,
+    });
+  };
+
+  // Navega via breadcrumb
+  const handleBreadcrumbNavigate = (item: BreadcrumbItem) => {
+    if (item.type === 'home') {
+      setNavigationState({
+        currentView: 'accounts',
+        selectedAccountId: null,
+        selectedAccountName: null,
+        selectedCampaignId: null,
+        selectedCampaignName: null,
+      });
+      setInsights([]);
+    }
+  };
+
+  // Volta para lista de contas
+  const handleBackToAccounts = () => {
+    setNavigationState({
+      currentView: 'accounts',
+      selectedAccountId: null,
+      selectedAccountName: null,
+      selectedCampaignId: null,
+      selectedCampaignName: null,
+    });
+    setInsights([]);
+    setSyncResult(null);
+    setError(null);
+  };
+
+  // Handler de mudanca de periodo
+  const handlePeriodChange = (periodId: string, newDateRange: { dateFrom: string; dateTo: string }) => {
+    setSelectedPeriod(periodId);
+    setDateRange(newDateRange);
+  };
+
+  // ============================================================
+  // DADOS DERIVADOS
+  // ============================================================
+
+  // Transforma contas em formato para os cards
+  const accountCards: AdAccountData[] = useMemo(() => {
+    if (!syncStatus?.ad_accounts) return [];
+
+    return syncStatus.ad_accounts.map((acc) => {
+      // Determina status de sincronizacao
+      let syncStatusValue: SyncStatus = 'never';
+      if (acc.last_sync_at) {
+        const lastSync = new Date(acc.last_sync_at);
+        const hoursSince = (Date.now() - lastSync.getTime()) / (1000 * 60 * 60);
+        syncStatusValue = hoursSince < 24 ? 'synced' : 'stale';
+      }
+
+      return {
+        id: acc.id,
+        metaId: acc.meta_id,
+        name: acc.name,
+        currency: acc.currency,
+        timezone: acc.timezone,
+        status: acc.status,
+        lastSyncAt: acc.last_sync_at,
+        syncStatus: syncingAccountId === acc.id ? 'syncing' : syncStatusValue,
+        metrics: acc.metrics || undefined,
+      };
+    });
+  }, [syncStatus, syncingAccountId]);
+
+  // Breadcrumb items
+  const breadcrumbItems = useMemo(() => createBreadcrumbItems(navigationState), [navigationState]);
+
+  // Dados para graficos
+  const chartData = useMemo(() => {
+    const grouped = insights.reduce(
+      (acc, row) => {
+        const date = row.date;
+        if (!acc[date]) {
+          acc[date] = { date, spend: 0, impressions: 0, clicks: 0 };
+        }
+        acc[date].spend += row.spend || 0;
+        acc[date].impressions += row.impressions || 0;
+        acc[date].clicks += row.clicks || 0;
+        return acc;
+      },
+      {} as Record<string, { date: string; spend: number; impressions: number; clicks: number }>
+    );
 
     return Object.values(grouped).sort((a, b) => a.date.localeCompare(b.date));
   }, [insights]);
 
-  // Agrupa por entidade para tabela
-  const tableData = React.useMemo(() => {
-    const grouped = insights.reduce((acc, row) => {
-      const key = row.entity_id;
-      if (!acc[key]) {
-        acc[key] = {
-          entity_id: row.entity_id,
-          entity_name: row.entity_name || row.entity_id,
-          spend: 0,
-          impressions: 0,
-          clicks: 0,
-          reach: 0,
-        };
-      }
-      acc[key].spend += row.spend || 0;
-      acc[key].impressions += row.impressions || 0;
-      acc[key].clicks += row.clicks || 0;
-      acc[key].reach += row.reach || 0;
-      return acc;
-    }, {} as Record<string, any>);
+  // Dados agrupados para tabela
+  const tableData = useMemo(() => {
+    const grouped = insights.reduce(
+      (acc, row) => {
+        const key = row.entity_id;
+        if (!acc[key]) {
+          acc[key] = {
+            entity_id: row.entity_id,
+            entity_name: row.entity_name || row.entity_id,
+            spend: 0,
+            impressions: 0,
+            clicks: 0,
+            reach: 0,
+          };
+        }
+        acc[key].spend += row.spend || 0;
+        acc[key].impressions += row.impressions || 0;
+        acc[key].clicks += row.clicks || 0;
+        acc[key].reach += row.reach || 0;
+        return acc;
+      },
+      {} as Record<string, { entity_id: string; entity_name: string; spend: number; impressions: number; clicks: number; reach: number }>
+    );
 
     return Object.values(grouped)
-      .map((item: any) => ({
+      .map((item) => ({
         ...item,
         ctr: item.impressions > 0 ? (item.clicks / item.impressions) * 100 : 0,
         cpc: item.clicks > 0 ? item.spend / item.clicks : 0,
         cpm: item.impressions > 0 ? (item.spend / item.impressions) * 1000 : 0,
       }))
-      .sort((a: any, b: any) => b.spend - a.spend);
+      .sort((a, b) => b.spend - a.spend);
   }, [insights]);
+
+  // ============================================================
+  // FUNCOES DE FORMATACAO
+  // ============================================================
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -325,9 +450,19 @@ export const MetaAdsSyncPage: React.FC = () => {
     return new Intl.NumberFormat('pt-BR').format(Math.round(value));
   };
 
+  const formatCompact = (value: number) => {
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+    return formatNumber(value);
+  };
+
   const formatPercent = (value: number) => {
     return `${value.toFixed(2)}%`;
   };
+
+  // ============================================================
+  // RENDERIZACAO - ESTADOS DE LOADING/ERRO
+  // ============================================================
 
   if (loading) {
     return (
@@ -344,12 +479,13 @@ export const MetaAdsSyncPage: React.FC = () => {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Card className="max-w-md text-center">
-          <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Conexao Necessaria</h3>
           <p className="text-gray-600 mb-4">
             Configure a conexao com o Meta Ads antes de sincronizar dados.
           </p>
-          <Button onClick={() => window.location.href = '#meta-admin'}>
+          <Button onClick={() => (window.location.href = '#meta-admin')}>
+            <Settings className="w-4 h-4 mr-2" />
             Configurar Conexao
           </Button>
         </Card>
@@ -357,145 +493,257 @@ export const MetaAdsSyncPage: React.FC = () => {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center space-x-3">
-          <div className="p-3 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg">
-            <BarChart3 className="w-6 h-6 text-white" />
+  // ============================================================
+  // RENDERIZACAO - VISTA DE CONTAS (GRID DE CARDS)
+  // ============================================================
+
+  if (navigationState.currentView === 'accounts') {
+    return (
+      <div className="space-y-6">
+        {/* Header Principal */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl shadow-lg">
+              <BarChart3 className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Meta Ads Sync</h2>
+              <p className="text-gray-600">
+                {accountCards.length} conta{accountCards.length !== 1 ? 's' : ''} conectada{accountCards.length !== 1 ? 's' : ''}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Meta Ads Sync</h2>
-            <p className="text-gray-600">Extraia e visualize metricas das suas campanhas</p>
+
+          <div className="flex items-center space-x-3">
+            {/* Status global */}
+            <SyncStatusBadge
+              status={
+                syncStatus.health_status === 'healthy'
+                  ? 'synced'
+                  : syncStatus.health_status === 'stale'
+                  ? 'stale'
+                  : 'error'
+              }
+              showLabel
+              size="md"
+            />
+
+            {/* Botao sincronizar todas */}
+            <Button onClick={handleSyncAll} disabled={syncing || accountCards.length === 0}>
+              {syncing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Sincronizando...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Sincronizar Todas
+                </>
+              )}
+            </Button>
           </div>
         </div>
 
-        {/* Status Badge */}
-        <div className="flex items-center space-x-2">
-          <span
-            className={`flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
-              syncStatus.health_status === 'healthy'
-                ? 'bg-green-100 text-green-700'
-                : syncStatus.health_status === 'stale'
-                ? 'bg-yellow-100 text-yellow-700'
-                : 'bg-red-100 text-red-700'
+        {/* Seletor de Periodo */}
+        <Card className="bg-gradient-to-r from-gray-50 to-white">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h3 className="font-medium text-gray-900">Periodo de Analise</h3>
+              <p className="text-sm text-gray-500">
+                Selecione o periodo para extrair metricas
+              </p>
+            </div>
+            <PeriodButtons
+              selectedPeriod={selectedPeriod}
+              onPeriodChange={handlePeriodChange}
+            />
+          </div>
+        </Card>
+
+        {/* Mensagem de resultado de sincronizacao */}
+        {syncResult && (
+          <div
+            className={`p-4 rounded-xl border ${
+              syncResult.errors.length > 0
+                ? 'bg-amber-50 border-amber-200'
+                : 'bg-green-50 border-green-200'
             }`}
           >
-            <span
-              className={`w-2 h-2 rounded-full mr-2 ${
-                syncStatus.health_status === 'healthy'
-                  ? 'bg-green-500'
-                  : syncStatus.health_status === 'stale'
-                  ? 'bg-yellow-500'
-                  : 'bg-red-500'
-              }`}
+            <div className="flex items-center space-x-3">
+              {syncResult.errors.length > 0 ? (
+                <AlertCircle className="w-5 h-5 text-amber-500" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5 text-green-500" />
+              )}
+              <span className="font-medium">
+                {syncResult.insights_synced} registros sincronizados de {syncResult.accounts_synced} conta(s)
+              </span>
+            </div>
+            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          </div>
+        )}
+
+        {/* Grid de Cards de Contas */}
+        {accountCards.length === 0 ? (
+          <Card className="text-center py-12">
+            <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Nenhuma conta encontrada
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Verifique a configuracao da conexao com o Meta Ads.
+            </p>
+            <Button variant="outline" onClick={() => (window.location.href = '#meta-admin')}>
+              <Settings className="w-4 h-4 mr-2" />
+              Configurar Conexao
+            </Button>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {accountCards.map((account) => (
+              <AdAccountCard
+                key={account.id}
+                account={account}
+                isSelected={false}
+                isSyncing={syncingAccountId === account.id}
+                onSelect={handleSelectAccount}
+                onSync={handleSyncAccount}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Resumo Geral */}
+        {syncStatus.totals.total_insights_rows > 0 && (
+          <Card className="bg-gradient-to-r from-blue-50 to-white border-blue-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-blue-900">Dados Armazenados</h3>
+                <p className="text-sm text-blue-700">
+                  {formatNumber(syncStatus.totals.total_insights_rows)} registros de metricas no banco de dados
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-blue-600">
+                  Ultima atualizacao:{' '}
+                  {syncStatus.ad_accounts[0]?.last_sync_at
+                    ? new Date(syncStatus.ad_accounts[0].last_sync_at).toLocaleString('pt-BR')
+                    : 'N/A'}
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  // ============================================================
+  // RENDERIZACAO - VISTA DE DETALHES DA CONTA
+  // ============================================================
+
+  const selectedAccount = getAccountById(navigationState.selectedAccountId || '');
+
+  return (
+    <div className="space-y-6">
+      {/* Header com Breadcrumb */}
+      <div className="flex flex-col gap-4">
+        {/* Botao Voltar e Breadcrumb */}
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={handleBackToAccounts}
+            className="flex items-center space-x-2 px-3 py-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="font-medium">Voltar</span>
+          </button>
+
+          <BreadcrumbNav items={breadcrumbItems} onNavigate={handleBreadcrumbNavigate} />
+        </div>
+
+        {/* Info da Conta Selecionada */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl shadow-lg">
+              <BarChart3 className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {selectedAccount?.name || 'Conta'}
+              </h2>
+              <p className="text-gray-600 font-mono text-sm">
+                {selectedAccount?.meta_id}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <SyncStatusBadge
+              status={syncingAccountId === navigationState.selectedAccountId ? 'syncing' : 'synced'}
+              lastSyncAt={selectedAccount?.last_sync_at}
+              showLabel
+              size="md"
             />
-            {syncStatus.totals.total_insights_rows} registros
-          </span>
+
+            <Button
+              onClick={() => navigationState.selectedAccountId && handleSyncAccount(navigationState.selectedAccountId)}
+              disabled={syncingAccountId === navigationState.selectedAccountId}
+            >
+              {syncingAccountId === navigationState.selectedAccountId ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Sincronizando...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Sincronizar
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Filtros e Acoes */}
-      <Card className="bg-white">
-        <div className="flex flex-wrap items-end gap-4">
-          {/* Ad Account */}
+      {/* Filtros */}
+      <Card>
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Periodo */}
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Conta de Anuncios</label>
-            <select
-              value={selectedAdAccount}
-              onChange={(e) => setSelectedAdAccount(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              {syncStatus.ad_accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name} ({acc.meta_id})
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Periodo</label>
+            <PeriodSelector
+              selectedPeriod={selectedPeriod}
+              onPeriodChange={handlePeriodChange}
+              size="md"
+            />
           </div>
 
           {/* Nivel */}
           <div className="flex-1 min-w-[150px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nivel</label>
-            <select
-              value={selectedLevel}
-              onChange={(e) => setSelectedLevel(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
+            <label className="block text-sm font-medium text-gray-700 mb-2">Nivel</label>
+            <div className="flex space-x-1">
               {LEVELS.map((level) => (
-                <option key={level.value} value={level.value}>
+                <button
+                  key={level.value}
+                  onClick={() => setSelectedLevel(level.value)}
+                  className={`
+                    flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                    ${
+                      selectedLevel === level.value
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }
+                  `}
+                >
                   {level.label}
-                </option>
+                </button>
               ))}
-            </select>
-          </div>
-
-          {/* Periodo */}
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Periodo</label>
-            <select
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              {DATE_PRESETS.map((preset) => (
-                <option key={preset.value} value={preset.value}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Include Today */}
-          <div className="flex items-center">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={includeToday}
-                onChange={(e) => setIncludeToday(e.target.checked)}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-700">Incluir hoje</span>
-            </label>
-          </div>
-
-          {/* Botao Sincronizar */}
-          <Button onClick={handleSync} disabled={syncing} className="flex-shrink-0">
-            {syncing ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Sincronizando...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Extrair Metricas
-              </>
-            )}
-          </Button>
-        </div>
-
-        {/* Mensagens de resultado */}
-        {syncResult && (
-          <div
-            className={`mt-4 p-3 rounded-lg ${
-              syncResult.errors.length > 0 ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'
-            }`}
-          >
-            <div className="flex items-center space-x-2">
-              {syncResult.errors.length > 0 ? (
-                <AlertCircle className="w-5 h-5 text-yellow-500" />
-              ) : (
-                <CheckCircle2 className="w-5 h-5 text-green-500" />
-              )}
-              <span className="text-sm font-medium">
-                {syncResult.insights_synced} registros sincronizados de {syncResult.accounts_synced} conta(s)
-              </span>
             </div>
           </div>
-        )}
+        </div>
 
+        {/* Mensagem de erro */}
         {error && (
           <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
             <div className="flex items-center space-x-2">
@@ -506,65 +754,94 @@ export const MetaAdsSyncPage: React.FC = () => {
         )}
       </Card>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-        <Card className="text-center">
-          <DollarSign className="w-6 h-6 text-green-600 mx-auto mb-2" />
-          <p className="text-xs text-gray-500">Gasto Total</p>
-          <p className="text-lg font-bold text-gray-900">{formatCurrency(kpis.totalSpend)}</p>
+      {/* KPIs Principais */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Gasto Total */}
+        <Card className="bg-gradient-to-br from-green-50 to-white border-green-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-green-600">Gasto Total</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {formatCurrency(kpis.totalSpend)}
+              </p>
+            </div>
+            <div className="p-2 bg-green-100 rounded-lg">
+              <DollarSign className="w-5 h-5 text-green-600" />
+            </div>
+          </div>
         </Card>
 
-        <Card className="text-center">
-          <Eye className="w-6 h-6 text-blue-600 mx-auto mb-2" />
-          <p className="text-xs text-gray-500">Impressoes</p>
-          <p className="text-lg font-bold text-gray-900">{formatNumber(kpis.totalImpressions)}</p>
+        {/* Impressoes */}
+        <Card className="bg-gradient-to-br from-blue-50 to-white border-blue-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-blue-600">Impressoes</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {formatCompact(kpis.totalImpressions)}
+              </p>
+            </div>
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Eye className="w-5 h-5 text-blue-600" />
+            </div>
+          </div>
         </Card>
 
-        <Card className="text-center">
-          <MousePointer className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-          <p className="text-xs text-gray-500">Cliques</p>
-          <p className="text-lg font-bold text-gray-900">{formatNumber(kpis.totalClicks)}</p>
+        {/* Cliques */}
+        <Card className="bg-gradient-to-br from-cyan-50 to-white border-cyan-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-cyan-600">Cliques</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {formatCompact(kpis.totalClicks)}
+              </p>
+            </div>
+            <div className="p-2 bg-cyan-100 rounded-lg">
+              <MousePointer className="w-5 h-5 text-cyan-600" />
+            </div>
+          </div>
         </Card>
 
-        <Card className="text-center">
-          <TrendingUp className="w-6 h-6 text-orange-600 mx-auto mb-2" />
-          <p className="text-xs text-gray-500">Alcance</p>
-          <p className="text-lg font-bold text-gray-900">{formatNumber(kpis.totalReach)}</p>
-        </Card>
-
-        <Card className="text-center">
-          <Percent className="w-6 h-6 text-teal-600 mx-auto mb-2" />
-          <p className="text-xs text-gray-500">CTR</p>
-          <p className="text-lg font-bold text-gray-900">{formatPercent(kpis.avgCtr)}</p>
-        </Card>
-
-        <Card className="text-center">
-          <DollarSign className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
-          <p className="text-xs text-gray-500">CPC</p>
-          <p className="text-lg font-bold text-gray-900">{formatCurrency(kpis.avgCpc)}</p>
-        </Card>
-
-        <Card className="text-center">
-          <DollarSign className="w-6 h-6 text-pink-600 mx-auto mb-2" />
-          <p className="text-xs text-gray-500">CPM</p>
-          <p className="text-lg font-bold text-gray-900">{formatCurrency(kpis.avgCpm)}</p>
+        {/* CTR */}
+        <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-amber-600">CTR</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {formatPercent(kpis.avgCtr)}
+              </p>
+            </div>
+            <div className="p-2 bg-amber-100 rounded-lg">
+              <TrendingUp className="w-5 h-5 text-amber-600" />
+            </div>
+          </div>
         </Card>
       </div>
 
       {/* Graficos */}
       {chartData.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Grafico de Gasto */}
           <Card>
             <h3 className="font-semibold text-gray-900 mb-4">Gasto por Dia</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} />
-                  <YAxis tickFormatter={(v) => `R$${v}`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(v) => v.slice(5)}
+                    stroke="#9ca3af"
+                    fontSize={12}
+                  />
+                  <YAxis tickFormatter={(v) => `R$${v}`} stroke="#9ca3af" fontSize={12} />
                   <Tooltip
                     formatter={(value: number) => [formatCurrency(value), 'Gasto']}
                     labelFormatter={(label) => `Data: ${label}`}
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                    }}
                   />
                   <Bar dataKey="spend" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -572,20 +849,31 @@ export const MetaAdsSyncPage: React.FC = () => {
             </div>
           </Card>
 
+          {/* Grafico de Impressoes e Cliques */}
           <Card>
             <h3 className="font-semibold text-gray-900 mb-4">Impressoes e Cliques por Dia</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} />
-                  <YAxis />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(v) => v.slice(5)}
+                    stroke="#9ca3af"
+                    fontSize={12}
+                  />
+                  <YAxis stroke="#9ca3af" fontSize={12} />
                   <Tooltip
                     formatter={(value: number, name: string) => [
                       formatNumber(value),
                       name === 'impressions' ? 'Impressoes' : 'Cliques',
                     ]}
                     labelFormatter={(label) => `Data: ${label}`}
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                    }}
                   />
                   <Line
                     type="monotone"
@@ -608,12 +896,19 @@ export const MetaAdsSyncPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tabela */}
+      {/* Tabela de Entidades */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-900">
             {LEVELS.find((l) => l.value === selectedLevel)?.label} ({tableData.length})
           </h3>
+
+          {tableData.length > 0 && (
+            <Button variant="outline" size="sm">
+              <Download className="w-4 h-4 mr-2" />
+              Exportar
+            </Button>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -632,18 +927,27 @@ export const MetaAdsSyncPage: React.FC = () => {
             <tbody>
               {tableData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-gray-500">
-                    Nenhum dado encontrado. Clique em "Extrair Metricas" para sincronizar.
+                  <td colSpan={7} className="text-center py-12 text-gray-500">
+                    <div className="flex flex-col items-center">
+                      <BarChart3 className="w-12 h-12 text-gray-300 mb-4" />
+                      <p className="font-medium">Nenhum dado encontrado</p>
+                      <p className="text-sm mt-1">
+                        Clique em "Sincronizar" para extrair metricas do Meta Ads
+                      </p>
+                    </div>
                   </td>
                 </tr>
               ) : (
-                tableData.map((row: any) => (
-                  <tr key={row.entity_id} className="border-b border-gray-100 hover:bg-gray-50">
+                tableData.map((row) => (
+                  <tr
+                    key={row.entity_id}
+                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                  >
                     <td className="py-3 px-4">
                       <span className="text-sm font-medium text-gray-900">{row.entity_name}</span>
-                      <span className="block text-xs text-gray-500">{row.entity_id}</span>
+                      <span className="block text-xs text-gray-500 font-mono">{row.entity_id}</span>
                     </td>
-                    <td className="text-right py-3 px-4 text-sm text-gray-900">
+                    <td className="text-right py-3 px-4 text-sm font-medium text-gray-900">
                       {formatCurrency(row.spend)}
                     </td>
                     <td className="text-right py-3 px-4 text-sm text-gray-600">
