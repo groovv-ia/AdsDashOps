@@ -4,6 +4,9 @@
  * Analisa um anúncio usando GPT-4 Vision para fornecer insights sobre
  * o criativo visual e a copy/texto do anúncio.
  * 
+ * IMPORTANTE: Baixa a imagem e converte para base64 antes de enviar para OpenAI
+ * pois URLs do Facebook requerem autenticação e não podem ser acessadas diretamente.
+ * 
  * POST /functions/v1/meta-analyze-ad-ai
  * Body: { 
  *   ad_id: string, 
@@ -144,13 +147,66 @@ Categories possíveis: visual, copy, cta, targeting, general.
 Prioridades: high, medium, low.`;
 }
 
-// Função para chamar a API do OpenAI com GPT-4 Vision
+/**
+ * Baixa uma imagem de uma URL e converte para base64
+ * Necessário porque URLs do Facebook requerem autenticação
+ * e não podem ser acessadas diretamente pelo OpenAI
+ */
+async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
+  console.log("Downloading image from:", imageUrl);
+  
+  const response = await fetch(imageUrl, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "image/*,*/*;q=0.8",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+  }
+
+  // Detecta o tipo MIME da imagem
+  const contentType = response.headers.get("content-type") || "image/jpeg";
+  let mimeType = "image/jpeg";
+  
+  if (contentType.includes("png")) {
+    mimeType = "image/png";
+  } else if (contentType.includes("gif")) {
+    mimeType = "image/gif";
+  } else if (contentType.includes("webp")) {
+    mimeType = "image/webp";
+  }
+
+  // Converte a imagem para ArrayBuffer e depois para base64
+  const arrayBuffer = await response.arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  
+  // Converte para base64 usando método compatível com Deno
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < uint8Array.length; i += chunkSize) {
+    const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  const base64 = btoa(binary);
+
+  console.log(`Image downloaded: ${uint8Array.length} bytes, type: ${mimeType}`);
+  
+  return { base64, mimeType };
+}
+
+// Função para chamar a API do OpenAI com GPT-4 Vision usando base64
 async function analyzeWithGPT4Vision(
-  imageUrl: string,
+  imageBase64: string,
+  imageMimeType: string,
   copyData: RequestPayload["copy_data"],
   openaiApiKey: string
 ): Promise<{ analysis: AIAnalysisResponse; tokensUsed: number }> {
   const userPrompt = buildAnalysisPrompt(copyData);
+
+  // Monta a URL de dados base64 para a imagem
+  const imageDataUrl = `data:${imageMimeType};base64,${imageBase64}`;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -175,7 +231,7 @@ async function analyzeWithGPT4Vision(
             {
               type: "image_url",
               image_url: {
-                url: imageUrl,
+                url: imageDataUrl,
                 detail: "high",
               },
             },
@@ -292,9 +348,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Executa análise com GPT-4 Vision
+    // Baixa a imagem e converte para base64
+    console.log("Starting image download...");
+    const { base64: imageBase64, mimeType: imageMimeType } = await downloadImageAsBase64(image_url);
+    console.log("Image downloaded successfully");
+
+    // Executa análise com GPT-4 Vision usando imagem em base64
     const { analysis, tokensUsed } = await analyzeWithGPT4Vision(
-      image_url,
+      imageBase64,
+      imageMimeType,
       copy_data || {},
       openaiApiKey
     );
