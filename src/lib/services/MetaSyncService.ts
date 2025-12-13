@@ -1,6 +1,7 @@
 import { supabase } from '../supabase';
 import { logger } from '../utils/logger';
 import { decryptData } from '../utils/encryption';
+import { extractMetricsFromInsight, validateExtractedMetrics, MetaInsightsRaw } from '../utils/metaMetricsExtractor';
 
 /**
  * Interface para callback de progresso da sincronização
@@ -69,29 +70,10 @@ export class MetaSyncService {
       await this.sleep(this.REQUEST_DELAY_MS);
 
       const response = await fetch(url);
-
-      // Log do status da resposta
-      if (!response.ok) {
-        logger.error('Erro HTTP na requisição à API Meta', {
-          status: response.status,
-          statusText: response.statusText,
-          url: url.replace(this.accessToken, 'TOKEN_HIDDEN')
-        });
-      }
-
       const data = await response.json();
 
       // Verifica se há erro na resposta
       if (data.error) {
-        // Log detalhado do erro
-        logger.error('Erro retornado pela API Meta', {
-          errorCode: data.error.code,
-          errorMessage: data.error.message,
-          errorType: data.error.type,
-          errorSubcode: data.error.error_subcode,
-          fbtrace_id: data.error.fbtrace_id
-        });
-
         // Se for rate limit, aguarda mais tempo e tenta novamente
         if (data.error.code === 4 || data.error.code === 17 || data.error.message.includes('rate limit')) {
           if (retryCount < this.MAX_RETRIES) {
@@ -164,63 +146,60 @@ export class MetaSyncService {
   }
 
   /**
-   * Sincroniza todos os dados de uma conta Meta específica com rate limiting inteligente
-   * @param oauthTokenId ID do oauth_token no banco de dados
+   * Sincroniza todos os dados de uma conexão Meta com rate limiting inteligente
+   * @param connectionId ID da conexão no banco de dados
    */
-  async syncAccount(oauthTokenId: string): Promise<void> {
+  async syncConnection(connectionId: string): Promise<void> {
     try {
-      logger.info('Iniciando sincronização Meta', { oauthTokenId });
+      logger.info('Iniciando sincronização Meta', { connectionId });
 
-      // Busca dados do oauth_token
-      const { data: tokenRecord, error: tokenError } = await supabase
-        .from('oauth_tokens')
+      // Atualiza status para sincronizando
+      await supabase
+        .from('data_connections')
+        .update({ status: 'syncing' })
+        .eq('id', connectionId);
+
+      // Busca dados da conexão
+      const { data: connection } = await supabase
+        .from('data_connections')
         .select('*')
-        .eq('id', oauthTokenId)
+        .eq('id', connectionId)
         .single();
 
-      if (tokenError || !tokenRecord) {
-        throw new Error('OAuth token não encontrado');
-      }
-
-      const clientId = tokenRecord.client_id;
-      const accountId = tokenRecord.account_id;
-
-      if (!clientId) {
-        throw new Error('client_id não encontrado no oauth_token');
-      }
-
-      if (!accountId) {
-        throw new Error('account_id não encontrado no oauth_token');
-      }
-
-      logger.info('Dados do token recuperados', {
-        oauthTokenId,
-        clientId,
-        accountId,
-        accountName: tokenRecord.account_name
-      });
+      if (!connection) throw new Error('Conexão não encontrada');
 
       // Busca token OAuth se não foi passado no construtor
       if (!this.accessToken) {
-        if (!tokenRecord.access_token) {
-          logger.error('Token de acesso não encontrado', { oauthTokenId });
+        const { data: tokenData, error: tokenError } = await supabase
+          .from('oauth_tokens')
+          .select('access_token')
+          .eq('connection_id', connectionId)
+          .maybeSingle();
+
+        if (tokenError) {
+          logger.error('Erro ao buscar token no banco', tokenError);
+          throw new Error(`Erro ao buscar token: ${tokenError.message}`);
+        }
+
+        if (!tokenData?.access_token) {
+          logger.error('Token não encontrado no banco', { connectionId });
           throw new Error('Token de acesso não encontrado no banco de dados');
         }
 
         logger.info('Token encontrado no banco', {
-          oauthTokenId,
-          tokenPrefix: tokenRecord.access_token.substring(0, 20) + '...',
-          tokenLength: tokenRecord.access_token.length
+          connectionId,
+          tokenPrefix: tokenData.access_token.substring(0, 20) + '...',
+          tokenLength: tokenData.access_token.length
         });
 
         // Verifica se o token parece estar criptografado (tokens Meta começam com EAA)
-        const looksEncrypted = !tokenRecord.access_token.startsWith('EAA');
+        const looksEncrypted = !tokenData.access_token.startsWith('EAA');
 
         if (looksEncrypted) {
           try {
             // Descriptografa o token antes de usar
             logger.info('Token parece estar criptografado, tentando descriptografar');
-            this.accessToken = decryptData(tokenRecord.access_token).trim();
+            this.accessToken = decryptData(tokenData.access_token).trim();
             logger.info('Token descriptografado com sucesso', {
               tokenLength: this.accessToken.length,
               tokenPrefix: this.accessToken.substring(0, 20) + '...'
@@ -228,14 +207,14 @@ export class MetaSyncService {
           } catch (decryptError: any) {
             logger.error('Erro ao descriptografar token', {
               error: decryptError.message,
-              tokenPrefix: tokenRecord.access_token.substring(0, 20) + '...'
+              tokenPrefix: tokenData.access_token.substring(0, 20) + '...'
             });
             throw new Error(`Falha ao descriptografar token: ${decryptError.message}`);
           }
         } else {
           // Token não está criptografado, usa direto
           logger.info('Token não parece estar criptografado, usando diretamente');
-          this.accessToken = tokenRecord.access_token.trim();
+          this.accessToken = tokenData.access_token.trim();
         }
       }
 
@@ -250,21 +229,17 @@ export class MetaSyncService {
       if (!validation.valid) {
         const errorMsg = validation.error || 'Token inválido';
         logger.error('Validação do token falhou', { error: errorMsg });
-
-        // Marca token como inativo se for erro de autenticação
-        await supabase
-          .from('oauth_tokens')
-          .update({ is_active: false })
-          .eq('id', oauthTokenId);
-
         throw new Error(`Validação do token falhou: ${errorMsg}`);
       }
 
       logger.info('Token validado com sucesso, prosseguindo com sincronização');
 
+      const accountId = connection.config?.accountId;
+      if (!accountId) throw new Error('Account ID não encontrado');
+
       // 1. Busca campanhas ativas dos últimos 90 dias
       this.updateProgress('campaigns', 0, 1, 'Buscando campanhas...');
-      logger.info('Buscando campanhas Meta', { accountId });
+      logger.info('Buscando campanhas Meta');
       const allCampaigns = await this.fetchCampaigns(accountId);
 
       // Filtra apenas campanhas ativas ou recentes
@@ -284,11 +259,13 @@ export class MetaSyncService {
       if (campaigns.length === 0) {
         this.updateProgress('complete', 1, 1, 'Nenhuma campanha ativa encontrada');
 
-        // Atualiza last_sync_at do token
         await supabase
-          .from('oauth_tokens')
-          .update({ last_sync_at: new Date().toISOString() })
-          .eq('id', oauthTokenId);
+          .from('data_connections')
+          .update({
+            status: 'connected',
+            last_sync: new Date().toISOString()
+          })
+          .eq('id', connectionId);
 
         return;
       }
@@ -364,82 +341,26 @@ export class MetaSyncService {
               }
             }
 
-            // 7. Busca métricas da campanha (últimos 90 dias para garantir histórico completo)
+            // 7. Busca métricas da campanha (últimos 7 dias para primeira sincronização)
             this.updateProgress('metrics', 0, 1, `Buscando métricas da campanha "${campaign.name}"...`);
-
-            // Calcula datas usando UTC para evitar problemas de timezone
-            const now = new Date();
-            const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const startDate = new Date(endDate);
-            startDate.setDate(startDate.getDate() - 90);
-
-            const dateEnd = endDate.toISOString().split('T')[0];
-            const dateStart = startDate.toISOString().split('T')[0];
-
-            logger.info('Buscando métricas do período', {
-              campaignId: campaign.id,
-              campaignName: campaign.name,
-              dateStart,
-              dateEnd,
-              totalDays: 90,
-              currentDate: now.toISOString().split('T')[0]
-            });
+            const dateEnd = new Date().toISOString().split('T')[0];
+            const dateStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
             const insights = await this.fetchInsights(campaign.id, dateStart, dateEnd);
-            logger.info('Métricas encontradas da API Meta', {
-              campaignId: campaign.id,
-              campaignName: campaign.name,
-              count: insights.length,
-              hasData: insights.length > 0
-            });
+            logger.info('Métricas encontradas', { campaignId: campaign.id, count: insights.length });
 
-            // Valida se métricas foram retornadas
-            if (insights.length === 0) {
-              logger.warn('Nenhuma métrica retornada pela API Meta para esta campanha', {
-                campaignId: campaign.id,
-                campaignName: campaign.name,
-                period: `${dateStart} até ${dateEnd}`
-              });
-            }
-
-            // 8. Salva métricas no banco com validação
-            let metricsSaved = 0;
-            let metricsErrors = 0;
-
+            // 8. Salva métricas no banco
             for (let m = 0; m < insights.length; m++) {
               const insight = insights[m];
-              try {
-                await this.saveMetrics(connectionId, campaign.id, insight);
-                metricsSaved++;
+              await this.saveMetrics(connectionId, campaign.id, insight);
 
-                this.updateProgress(
-                  'metrics',
-                  m + 1,
-                  insights.length,
-                  `Métricas salvas (${m + 1}/${insights.length})`
-                );
-              } catch (metricError: any) {
-                metricsErrors++;
-                logger.error('Erro ao salvar métrica individual', {
-                  campaignId: campaign.id,
-                  date: insight.date_start,
-                  error: metricError.message,
-                  insightData: {
-                    impressions: insight.impressions,
-                    clicks: insight.clicks,
-                    spend: insight.spend
-                  }
-                });
-              }
+              this.updateProgress(
+                'metrics',
+                m + 1,
+                insights.length,
+                `Métricas salvas (${m + 1}/${insights.length})`
+              );
             }
-
-            logger.info('Resumo do salvamento de métricas', {
-              campaignId: campaign.id,
-              campaignName: campaign.name,
-              total: insights.length,
-              saved: metricsSaved,
-              errors: metricsErrors
-            });
 
           } catch (error: any) {
             logger.error(`Erro ao processar campanha ${campaign.id}`, {
@@ -472,17 +393,6 @@ export class MetaSyncService {
         }
       }
 
-      // Verifica quantas métricas foram realmente salvas no banco
-      const { count: totalMetrics } = await supabase
-        .from('ad_metrics')
-        .select('*', { count: 'exact', head: true })
-        .eq('connection_id', connectionId);
-
-      logger.info('Verificando métricas salvas no banco', {
-        connectionId,
-        totalMetricsInDatabase: totalMetrics
-      });
-
       // Atualiza status para conectado
       await supabase
         .from('data_connections')
@@ -493,14 +403,7 @@ export class MetaSyncService {
         .eq('id', connectionId);
 
       this.updateProgress('complete', totalCampaigns, totalCampaigns, 'Sincronização concluída com sucesso!');
-
-      logger.info('Sincronização Meta concluída com sucesso', {
-        connectionId,
-        campanhasProcessadas: processedCampaigns,
-        totalCampanhas: totalCampaigns,
-        metricasNoBank: totalMetrics,
-        status: 'success'
-      });
+      logger.info('Sincronização Meta concluída', { connectionId, campaignsProcessed: processedCampaigns });
 
     } catch (error: any) {
       logger.error('Erro na sincronização Meta', error, { connectionId });
@@ -552,93 +455,25 @@ export class MetaSyncService {
    * Solicita TODOS os campos disponíveis na Meta Ads API para garantir alinhamento total com o Gerenciador de Anúncios
    */
   private async fetchInsights(campaignId: string, dateStart: string, dateEnd: string): Promise<any[]> {
-    try {
-      // Valida datas antes de fazer requisição
-      const now = new Date();
-      const currentDateStr = now.toISOString().split('T')[0];
-      const startDateObj = new Date(dateStart);
-      const endDateObj = new Date(dateEnd);
+    // Lista completa de campos da Meta Ads API para insights
+    const fields = [
+      // Métricas básicas
+      'impressions', 'clicks', 'spend', 'reach', 'frequency',
+      // Métricas de taxa (já calculadas pela API)
+      'ctr', 'cpc', 'cpm', 'cpp',
+      // Cliques detalhados
+      'inline_link_clicks', 'cost_per_inline_link_click', 'outbound_clicks',
+      // Conversões e ações
+      'actions', 'action_values',
+      // Vídeo
+      'video_views', 'video_avg_time_watched_actions',
+      'video_p25_watched_actions', 'video_p50_watched_actions',
+      'video_p75_watched_actions', 'video_p100_watched_actions'
+    ].join(',');
 
-      // Ajusta dateEnd se estiver no futuro
-      if (endDateObj > now) {
-        dateEnd = currentDateStr;
-        logger.warn('Data final ajustada para hoje (estava no futuro)', {
-          originalDateEnd: dateEnd,
-          adjustedDateEnd: currentDateStr
-        });
-      }
-
-      // Valida se dateStart não é posterior a dateEnd
-      if (startDateObj > endDateObj) {
-        logger.error('Data inicial posterior à data final', {
-          dateStart,
-          dateEnd
-        });
-        return [];
-      }
-
-      // Lista completa de campos da Meta Ads API para insights
-      const fields = [
-        // Métricas básicas
-        'impressions', 'clicks', 'spend', 'reach', 'frequency',
-        // Métricas de taxa (já calculadas pela API)
-        'ctr', 'cpc', 'cpm', 'cpp',
-        // Cliques detalhados
-        'inline_link_clicks', 'cost_per_inline_link_click', 'outbound_clicks',
-        // Conversões e ações
-        'actions', 'action_values',
-        // Vídeo
-        'video_views', 'video_avg_time_watched_actions',
-        'video_p25_watched_actions', 'video_p50_watched_actions',
-        'video_p75_watched_actions', 'video_p100_watched_actions'
-      ].join(',');
-
-      const url = `${this.baseUrl}/${campaignId}/insights?fields=${fields}&time_range={"since":"${dateStart}","until":"${dateEnd}"}&time_increment=1&access_token=${this.accessToken}`;
-
-      logger.info('Requisitando insights da API Meta', {
-        campaignId,
-        dateStart,
-        dateEnd,
-        currentDate: currentDateStr,
-        fieldsCount: fields.split(',').length
-      });
-
-      const data = await this.fetchWithRetry(url);
-
-      // Valida resposta da API
-      if (!data || typeof data !== 'object') {
-        logger.error('Resposta inválida da API Meta', {
-          campaignId,
-          responseType: typeof data,
-          data: data
-        });
-        return [];
-      }
-
-      const insights = data.data || [];
-
-      logger.info('Insights recebidos da API Meta', {
-        campaignId,
-        count: insights.length,
-        hasData: insights.length > 0,
-        firstDate: insights[0]?.date_start,
-        lastDate: insights[insights.length - 1]?.date_start
-      });
-
-      return insights;
-    } catch (error: any) {
-      logger.error('Erro ao buscar insights da API Meta', {
-        campaignId,
-        dateStart,
-        dateEnd,
-        error: error.message,
-        stack: error.stack
-      });
-
-      // Retorna array vazio em vez de propagar erro
-      // para não interromper sincronização de outras campanhas
-      return [];
-    }
+    const url = `${this.baseUrl}/${campaignId}/insights?fields=${fields}&time_range={"since":"${dateStart}","until":"${dateEnd}"}&time_increment=1&access_token=${this.accessToken}`;
+    const data = await this.fetchWithRetry(url);
+    return data.data || [];
   }
 
   /**
@@ -782,71 +617,20 @@ export class MetaSyncService {
 
   /**
    * Salva métricas no banco de dados
-   * Extrai e armazena TODOS os campos retornados pela API Meta, incluindo JSONs brutos para auditoria
+   * Usa o helper compartilhado para extração consistente de métricas
    */
-  private async saveMetrics(connectionId: string, campaignId: string, insight: any): Promise<void> {
+  private async saveMetrics(connectionId: string, campaignId: string, insight: MetaInsightsRaw): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
-    // Validação básica dos dados de entrada
-    if (!insight.date_start) {
-      throw new Error('Métrica sem data - campo date_start ausente');
+    // Extrai todas as métricas usando helper compartilhado
+    const extractedMetrics = extractMetricsFromInsight(insight);
+
+    // Valida métricas antes de salvar
+    const warnings = validateExtractedMetrics(extractedMetrics);
+    if (warnings.length > 0) {
+      logger.warn('Avisos ao validar métricas da campanha', { campaignId, warnings });
     }
-
-    // Extrai conversões das actions - verifica múltiplos tipos de conversão
-    const actions = insight.actions || [];
-    const conversions = this.extractActionValue(actions, [
-      'offsite_conversion.fb_pixel_purchase',
-      'purchase',
-      'omni_purchase',
-      'app_custom_event.fb_mobile_purchase'
-    ]);
-
-    // Extrai valor REAL das conversões (não estimar!)
-    const actionValues = insight.action_values || [];
-    const conversionValue = this.extractActionValue(actionValues, [
-      'offsite_conversion.fb_pixel_purchase',
-      'purchase',
-      'omni_purchase',
-      'app_custom_event.fb_mobile_purchase'
-    ]);
-
-    // Extrai visualizações de vídeo
-    const videoViews = this.extractActionValue(actions, ['video_view']);
-
-    // Extrai cliques em links inline
-    const inlineLinkClicks = parseInt(insight.inline_link_clicks || '0');
-
-    // Extrai cliques outbound
-    const outboundClicks = parseInt(insight.outbound_clicks || '0');
-
-    const spend = parseFloat(insight.spend || '0');
-
-    // Calcula ROAS usando valor REAL de conversão (não estimativa)
-    const roas = conversionValue > 0 && spend > 0 ? conversionValue / spend : 0;
-
-    // Log detalhado para debugging e auditoria
-    logger.info('Preparando para salvar métricas', {
-      campaignId,
-      date: insight.date_start,
-      userId: user.id,
-      connectionId,
-      metrics: {
-        impressions: insight.impressions,
-        clicks: insight.clicks,
-        spend,
-        conversions,
-        conversionValue,
-        reach: insight.reach,
-        frequency: insight.frequency,
-        ctr: insight.ctr,
-        cpc: insight.cpc,
-        cpm: insight.cpm,
-        roas
-      },
-      hasActions: actions.length > 0,
-      hasActionValues: actionValues.length > 0
-    });
 
     // Verifica se a métrica já existe (usando a unique constraint)
     const { data: existing } = await supabase
@@ -858,137 +642,25 @@ export class MetaSyncService {
       .is('ad_id', null)
       .maybeSingle();
 
-    // Prepara dados para salvar - usa valores REAIS da API, não recalcula
-    const metricsData = {
-      // Métricas básicas
-      impressions: parseInt(insight.impressions || '0'),
-      clicks: parseInt(insight.clicks || '0'),
-      spend: spend,
-      reach: parseInt(insight.reach || '0'),
-      frequency: parseFloat(insight.frequency || '0'),
-
-      // Métricas de taxa - USA VALORES DA API, NÃO RECALCULA
-      ctr: parseFloat(insight.ctr || '0'),
-      cpc: parseFloat(insight.cpc || '0'),
-      cpm: parseFloat(insight.cpm || '0'),
-      cpp: parseFloat(insight.cpp || '0'),
-
-      // Conversões - USA VALOR REAL, NÃO ESTIMA
-      conversions: parseFloat(conversions),
-      conversion_value: parseFloat(conversionValue),
-      roas: roas,
-      cost_per_result: conversions > 0 ? spend / conversions : 0,
-
-      // Cliques detalhados
-      inline_link_clicks: inlineLinkClicks,
-      cost_per_inline_link_click: parseFloat(insight.cost_per_inline_link_click || '0'),
-      outbound_clicks: outboundClicks,
-
-      // Vídeo
-      video_views: videoViews,
-
-      // JSONs brutos para auditoria e recálculo futuro
-      actions_raw: actions.length > 0 ? actions : null,
-      action_values_raw: actionValues.length > 0 ? actionValues : null,
-    };
-
     if (existing) {
       // Atualiza métrica existente
-      logger.info('Atualizando métrica existente', {
-        metricId: existing.id,
-        campaignId,
-        date: insight.date_start
-      });
-
       const { error } = await supabase
         .from('ad_metrics')
-        .update(metricsData)
+        .update(extractedMetrics)
         .eq('id', existing.id);
-
-      if (error) {
-        logger.error('Erro ao atualizar métrica', {
-          metricId: existing.id,
-          error: error.message,
-          details: error
-        });
-        throw error;
-      }
-
-      logger.info('Métrica atualizada com sucesso', {
-        metricId: existing.id,
-        campaignId,
-        date: insight.date_start
-      });
+      if (error) throw error;
     } else {
       // Insere nova métrica
-      logger.info('Inserindo nova métrica', {
-        campaignId,
-        date: insight.date_start,
-        userId: user.id,
-        connectionId
-      });
-
-      const { data: insertedData, error } = await supabase
+      const { error } = await supabase
         .from('ad_metrics')
         .insert({
           connection_id: connectionId,
           user_id: user.id,
           campaign_id: campaignId,
           date: insight.date_start,
-          ...metricsData,
-        })
-        .select();
-
-      if (error) {
-        logger.error('Erro ao inserir métrica', {
-          campaignId,
-          date: insight.date_start,
-          error: error.message,
-          errorCode: error.code,
-          errorDetails: error.details,
-          errorHint: error.hint
+          ...extractedMetrics,
         });
-        throw error;
-      }
-
-      if (!insertedData || insertedData.length === 0) {
-        logger.error('Métrica inserida mas não retornou dados', {
-          campaignId,
-          date: insight.date_start
-        });
-        throw new Error('Falha ao confirmar inserção da métrica no banco');
-      }
-
-      logger.info('Métrica inserida com sucesso', {
-        metricId: insertedData[0].id,
-        campaignId,
-        date: insight.date_start,
-        spend: insertedData[0].spend,
-        impressions: insertedData[0].impressions,
-        clicks: insertedData[0].clicks
-      });
+      if (error) throw error;
     }
-  }
-
-  /**
-   * Extrai valor de uma ação específica do array actions ou action_values
-   * Suporta múltiplos tipos de ação (ex: purchase, omni_purchase, etc)
-   *
-   * @param actionsArray - Array de actions ou action_values da API Meta
-   * @param actionTypes - Array de tipos de ação para buscar (em ordem de prioridade)
-   * @returns Valor numérico da ação encontrada, ou 0 se não encontrar
-   */
-  private extractActionValue(actionsArray: any[], actionTypes: string[]): number {
-    if (!actionsArray || actionsArray.length === 0) return 0;
-
-    // Percorre tipos de ação em ordem de prioridade
-    for (const actionType of actionTypes) {
-      const action = actionsArray.find((a: any) => a.action_type === actionType);
-      if (action && action.value) {
-        return parseFloat(action.value);
-      }
-    }
-
-    return 0;
   }
 }

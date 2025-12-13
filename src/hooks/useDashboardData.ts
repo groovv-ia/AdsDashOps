@@ -2,13 +2,13 @@
  * Hook customizado para gerenciar dados do dashboard
  *
  * Este hook centraliza a lógica de busca e gerenciamento de dados.
- * Automaticamente usa dados reais do Supabase quando disponíveis,
- * ou retorna dados mockados como fallback para demonstração.
+ * ATUALIZADO: Métricas vem DIRETAMENTE DA API META em tempo real, sem usar banco de dados.
+ * Campanhas e estruturas continuam vindo do banco para referência.
+ * Usa dados mockados apenas como fallback para demonstração quando não há dados reais.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DashboardDataService } from '../lib/services/DashboardDataService';
-import { useClient } from '../contexts/ClientContext';
 import {
   mockCampaigns,
   mockMetrics,
@@ -17,6 +17,7 @@ import {
   mockAdAccounts
 } from '../data/mockData';
 import { Campaign, AdMetrics, AdSet, Ad, AdAccount } from '../types/advertising';
+import { logger } from '../lib/utils/logger';
 
 interface DashboardData {
   campaigns: Campaign[];
@@ -25,93 +26,98 @@ interface DashboardData {
   ads: Ad[];
   adAccounts: AdAccount[];
   isUsingRealData: boolean;
+  isUsingRealtimeMetrics: boolean; // Indica se métricas vem da API em tempo real
+  lastMetricsUpdate: Date | null; // Timestamp da última atualização de métricas
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  refreshMetrics: () => Promise<void>; // Força atualização de métricas da API
+  clearCache: () => void; // Limpa cache de métricas
 }
 
 /**
  * Hook principal para gerenciar dados do dashboard
  *
- * Retorna dados do Supabase quando disponíveis, ou dados mockados como fallback.
- * Filtra dados pelo cliente selecionado no ClientContext.
+ * ATUALIZADO: Métricas são buscadas DIRETAMENTE da API Meta em tempo real.
+ * Campanhas vem do banco de dados para referência.
+ * Mantém dados mockados apenas como fallback para demonstração.
  */
 export const useDashboardData = (): DashboardData => {
-  const { selectedClient } = useClient();
   const [campaigns, setCampaigns] = useState<Campaign[]>(mockCampaigns);
   const [metrics, setMetrics] = useState<AdMetrics[]>(mockMetrics);
   const [adSets, setAdSets] = useState<AdSet[]>(mockAdSets);
   const [ads, setAds] = useState<Ad[]>(mockAds);
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>(mockAdAccounts);
   const [isUsingRealData, setIsUsingRealData] = useState(false);
+  const [isUsingRealtimeMetrics, setIsUsingRealtimeMetrics] = useState(false);
+  const [lastMetricsUpdate, setLastMetricsUpdate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const dataService = DashboardDataService.getInstance();
 
-  // ID do cliente selecionado (null = todos os clientes)
-  const clientId = selectedClient?.id || null;
-
   /**
-   * Carrega dados do Supabase ou usa mocks como fallback
-   * ATUALIZADO: Agora exibe campanhas reais mesmo sem métricas
+   * Carrega dados do banco e da API Meta em tempo real
+   * ATUALIZADO: Métricas vem DIRETAMENTE da API Meta, não do banco de dados
    */
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      console.log('\n🔄 Iniciando carregamento de dados do dashboard...', {
-        clientId: clientId || 'todos',
-        clientName: selectedClient?.name || 'Todos os Clientes'
-      });
+      logger.info('Iniciando carregamento de dados do dashboard...');
 
-      // Busca todos os dados do banco em paralelo (filtrados por cliente)
-      const data = await dataService.fetchAllDashboardData(clientId);
+      // Busca dados: campanhas do banco + métricas da API Meta em tempo real
+      const data = await dataService.fetchAllDashboardData();
 
-      console.log('📄 Resultado da busca:', {
+      logger.info('Resultado da busca', {
         hasRealData: data.hasRealData,
         campanhas: data.campaigns.length,
-        métricas: data.metrics.length,
+        metricas: data.metrics.length,
+        metricsSource: 'API Meta (realtime)',
         adSets: data.adSets.length,
         ads: data.ads.length
       });
 
-      // Verifica se temos campanhas reais (métricas são opcionais)
+      // Verifica se temos campanhas reais
       if (data.hasRealData && data.campaigns.length > 0) {
-        // Usa dados reais do banco
+        // Usa dados reais: campanhas do banco + métricas da API
         setCampaigns(data.campaigns);
-        setMetrics(data.metrics); // Pode ser vazio, sem problema
+        setMetrics(data.metrics);
         setAdSets(data.adSets);
         setAds(data.ads);
         setAdAccounts(data.adAccounts);
         setIsUsingRealData(true);
+        setIsUsingRealtimeMetrics(data.metrics.length > 0);
+        setLastMetricsUpdate(new Date());
 
-        console.log('✅ Usando dados reais do Supabase!');
-        console.log(`   • ${data.campaigns.length} campanhas`);
-        console.log(`   • ${data.metrics.length} métricas`);
-        console.log(`   • ${data.adSets.length} ad sets`);
-        console.log(`   • ${data.ads.length} anúncios`);
+        logger.info('✅ Dashboard carregado com dados reais', {
+          campanhas: data.campaigns.length,
+          metricas: data.metrics.length,
+          source: 'API Meta (realtime)',
+          adSets: data.adSets.length,
+          ads: data.ads.length
+        });
 
         if (data.metrics.length === 0) {
-          console.log('⚠️ Atenção: Campanhas encontradas, mas sem métricas.');
-          console.log('   As campanhas serão exibidas com valores zero.');
-          console.log('   Execute uma nova sincronização para buscar métricas.');
+          logger.warn('Campanhas encontradas, mas sem métricas da API Meta');
+          logger.warn('Verifique se as campanhas têm dados no período selecionado');
         }
       } else {
-        // Usa dados mockados como fallback
+        // Usa dados mockados como fallback para demonstração
         setCampaigns(mockCampaigns);
         setMetrics(mockMetrics);
         setAdSets(mockAdSets);
         setAds(mockAds);
         setAdAccounts(mockAdAccounts);
         setIsUsingRealData(false);
+        setIsUsingRealtimeMetrics(false);
+        setLastMetricsUpdate(null);
 
-        console.log('📊 Usando dados de demonstração (mocks)');
-        console.log('   Nenhuma campanha encontrada no banco.');
+        logger.info('Usando dados de demonstração (mocks) - Nenhuma campanha encontrada');
       }
     } catch (err) {
-      console.error('❌ Erro ao carregar dados:', err);
+      logger.error('Erro ao carregar dados do dashboard', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
 
       // Em caso de erro, usa mocks como fallback
@@ -121,22 +127,62 @@ export const useDashboardData = (): DashboardData => {
       setAds(mockAds);
       setAdAccounts(mockAdAccounts);
       setIsUsingRealData(false);
+      setIsUsingRealtimeMetrics(false);
+      setLastMetricsUpdate(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [dataService]);
 
   /**
-   * Função para atualizar dados manualmente
+   * Atualiza todos os dados (campanhas + métricas da API)
    */
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     await loadData();
-  };
+  }, [loadData]);
 
-  // Carrega dados ao montar o componente e quando o cliente selecionado mudar
+  /**
+   * Atualiza apenas métricas da API Meta (força busca sem cache)
+   */
+  const refreshMetrics = useCallback(async () => {
+    try {
+      setLoading(true);
+      logger.info('Atualizando métricas da API Meta (forçando atualização)...');
+
+      const campaignIds = campaigns.map(c => c.id);
+      if (campaignIds.length === 0) {
+        logger.warn('Nenhuma campanha disponível para atualizar métricas');
+        return;
+      }
+
+      // Força busca sem cache (useCache = false)
+      const freshMetrics = await dataService.fetchMetrics(campaignIds, undefined, undefined, false);
+
+      setMetrics(freshMetrics);
+      setIsUsingRealtimeMetrics(freshMetrics.length > 0);
+      setLastMetricsUpdate(new Date());
+
+      logger.info(`Métricas atualizadas: ${freshMetrics.length} registros`);
+    } catch (err) {
+      logger.error('Erro ao atualizar métricas', err);
+      setError(err instanceof Error ? err.message : 'Erro ao atualizar métricas');
+    } finally {
+      setLoading(false);
+    }
+  }, [campaigns, dataService]);
+
+  /**
+   * Limpa o cache de métricas
+   */
+  const clearCache = useCallback(() => {
+    dataService.clearMetricsCache();
+    logger.info('Cache de métricas limpo');
+  }, [dataService]);
+
+  // Carrega dados ao montar o componente
   useEffect(() => {
     loadData();
-  }, [clientId]);
+  }, []);
 
   return {
     campaigns,
@@ -145,36 +191,56 @@ export const useDashboardData = (): DashboardData => {
     ads,
     adAccounts,
     isUsingRealData,
+    isUsingRealtimeMetrics,
+    lastMetricsUpdate,
     loading,
     error,
-    refresh
+    refresh,
+    refreshMetrics,
+    clearCache
   };
 };
 
 /**
- * Hook para buscar dados filtrados por período
- * Útil para análises e relatórios específicos
+ * Hook para buscar dados filtrados por período DIRETAMENTE DA API META
+ * Útil para análises e relatórios específicos com dados em tempo real
+ *
+ * @param startDate Data de início do período
+ * @param endDate Data de fim do período
+ * @param campaignIds Array opcional de IDs de campanhas
+ * @param useCache Se true, usa cache (padrão: true)
  */
 export const useDashboardDataForPeriod = (
   startDate: Date,
   endDate: Date,
-  campaignIds?: string[]
+  campaignIds?: string[],
+  useCache: boolean = true
 ) => {
   const [metrics, setMetrics] = useState<AdMetrics[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   const dataService = DashboardDataService.getInstance();
 
-  const loadMetrics = async () => {
+  const loadMetrics = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const data = await dataService.fetchMetricsForPeriod(startDate, endDate, campaignIds);
+      logger.info('Buscando métricas da API Meta para período', {
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+        campaignIds: campaignIds?.length || 'todas'
+      });
+
+      // Busca métricas DIRETAMENTE da API Meta
+      const data = await dataService.fetchMetricsForPeriod(startDate, endDate, campaignIds, useCache);
 
       if (data.length > 0) {
         setMetrics(data);
+        setLastUpdate(new Date());
+        logger.info(`Métricas do período carregadas: ${data.length} registros`);
       } else {
         // Fallback para mocks filtrados por data
         const filteredMocks = mockMetrics.filter(metric => {
@@ -182,24 +248,28 @@ export const useDashboardDataForPeriod = (
           return metricDate >= startDate && metricDate <= endDate;
         });
         setMetrics(filteredMocks);
+        setLastUpdate(null);
+        logger.warn('Sem métricas da API, usando dados de demonstração');
       }
     } catch (err) {
-      console.error('Erro ao carregar métricas do período:', err);
+      logger.error('Erro ao carregar métricas do período', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
       setMetrics([]);
+      setLastUpdate(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [startDate, endDate, campaignIds, useCache, dataService]);
 
   useEffect(() => {
     loadMetrics();
-  }, [startDate, endDate, campaignIds?.join(',')]);
+  }, [loadMetrics]);
 
   return {
     metrics,
     loading,
     error,
+    lastUpdate,
     refresh: loadMetrics
   };
 };

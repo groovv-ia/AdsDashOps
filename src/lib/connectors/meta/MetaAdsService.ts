@@ -15,6 +15,16 @@ import {
   MetaApiError
 } from './types';
 import { Campaign as CampaignType, AdSet as AdSetType, Ad as AdType, AdMetrics, AudienceInsight } from '../shared/types';
+import { extractMetricsFromInsight, MetaInsightsRaw } from '../../utils/metaMetricsExtractor';
+
+/**
+ * Cache para armazenar métricas em memória e evitar chamadas excessivas à API
+ */
+interface MetricsCacheEntry {
+  data: AdMetrics[];
+  timestamp: number;
+  expiresAt: number;
+}
 
 export class MetaAdsService {
   private api: FacebookAdsApi;
@@ -22,6 +32,10 @@ export class MetaAdsService {
   private rateLimiter: RateLimiter;
   private httpClient: AxiosInstance;
   private baseUrl = 'https://graph.facebook.com/v19.0';
+
+  // Cache em memória para métricas (5 minutos de TTL por padrão)
+  private metricsCache: Map<string, MetricsCacheEntry> = new Map();
+  private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
   constructor() {
     this.api = FacebookAdsApi.init('');
@@ -252,15 +266,47 @@ export class MetaAdsService {
     }
   }
 
-  async getInsights(
+  /**
+   * Busca métricas diretamente da API Meta em tempo real, SEM salvar no banco de dados
+   * Usa cache em memória para evitar chamadas excessivas à API
+   *
+   * @param connectionId ID da conexão do usuário
+   * @param objectId ID do objeto (campanha, ad set ou anúncio)
+   * @param objectType Tipo do objeto ('campaign', 'adset' ou 'ad')
+   * @param dateStart Data de início (formato YYYY-MM-DD)
+   * @param dateEnd Data de fim (formato YYYY-MM-DD)
+   * @param useCache Se true, usa cache em memória (padrão: true)
+   * @returns Array de métricas diretamente da API, sem passar pelo banco de dados
+   */
+  async getInsightsRealtime(
     connectionId: string,
     objectId: string,
     objectType: 'campaign' | 'adset' | 'ad',
     dateStart: string,
-    dateEnd: string
+    dateEnd: string,
+    useCache: boolean = true
   ): Promise<AdMetrics[]> {
     try {
+      // Gera chave única para o cache baseada nos parâmetros
+      const cacheKey = `${connectionId}-${objectId}-${objectType}-${dateStart}-${dateEnd}`;
+
+      // Verifica se existe cache válido
+      if (useCache) {
+        const cached = this.metricsCache.get(cacheKey);
+        if (cached && Date.now() < cached.expiresAt) {
+          logger.info('Using cached metrics', {
+            objectId,
+            objectType,
+            cacheAge: Math.round((Date.now() - cached.timestamp) / 1000)
+          });
+          return cached.data;
+        }
+      }
+
+      // Busca token de acesso
       const accessToken = await this.getAccessToken(connectionId);
+
+      // Respeita rate limit da API
       await this.rateLimiter.waitForRateLimit(`${objectId}/insights`);
 
       // Lista completa de campos - ALINHADA com MetaSyncService
@@ -279,6 +325,7 @@ export class MetaAdsService {
         'video_p75_watched_actions', 'video_p100_watched_actions'
       ].join(',');
 
+      // Busca métricas diretamente da API Meta
       const response = await this.httpClient.get(`/${objectId}/insights`, {
         params: {
           access_token: accessToken,
@@ -289,69 +336,158 @@ export class MetaAdsService {
         },
       });
 
+      // Registra requisição para rate limiting
       await this.rateLimiter.recordRequest(`${objectId}/insights`);
 
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('User not authenticated');
 
-      const metrics: AdMetrics[] = response.data.data.map((insight: any) => {
-        // Extrai conversões - verifica múltiplos tipos
-        const conversions = this.extractActionValueMultiple(
-          insight.actions,
-          ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase', 'app_custom_event.fb_mobile_purchase']
-        );
-
-        // Extrai valor REAL das conversões (não estimar)
-        const conversionValue = this.extractActionValueMultiple(
-          insight.action_values,
-          ['offsite_conversion.fb_pixel_purchase', 'purchase', 'omni_purchase', 'app_custom_event.fb_mobile_purchase']
-        );
-
-        // Extrai visualizações de vídeo
-        const videoViews = this.extractActionValueMultiple(insight.actions, ['video_view']);
-
-        // Extrai cliques em links inline
-        const inlineLinkClicks = parseInt(insight.inline_link_clicks || '0');
-
-        const spend = parseFloat(insight.spend || '0');
+      // Extrai métricas usando helper compartilhado
+      const metrics: AdMetrics[] = response.data.data.map((insight: MetaInsightsRaw) => {
+        const extracted = extractMetricsFromInsight(insight);
 
         return {
           connectionId,
           userId: userData.user!.id,
           [`${objectType}Id`]: objectId,
           date: insight.date_start,
-          // Métricas básicas
-          impressions: parseInt(insight.impressions || '0'),
-          clicks: parseInt(insight.clicks || '0'),
-          spend: spend,
-          reach: parseInt(insight.reach || '0'),
-          frequency: parseFloat(insight.frequency || '0'),
-          // Métricas de taxa - USA VALORES DA API
-          ctr: parseFloat(insight.ctr || '0'),
-          cpc: parseFloat(insight.cpc || '0'),
-          cpm: parseFloat(insight.cpm || '0'),
-          cpp: parseFloat(insight.cpp || '0'),
-          // Conversões - USA VALOR REAL
-          conversions: conversions,
-          conversionValue: conversionValue,
-          costPerResult: conversions > 0 ? spend / conversions : 0,
-          // Cliques detalhados
-          inlineLinkClicks: inlineLinkClicks,
-          costPerInlineLinkClick: parseFloat(insight.cost_per_inline_link_click || '0'),
-          outboundClicks: parseInt(insight.outbound_clicks || '0'),
-          // Vídeo
-          videoViews,
-          // ROAS - USA VALOR REAL DE CONVERSÃO
-          roas: conversionValue > 0 && spend > 0 ? conversionValue / spend : 0,
+          // Usa dados extraídos pelo helper
+          impressions: extracted.impressions,
+          clicks: extracted.clicks,
+          spend: extracted.spend,
+          reach: extracted.reach,
+          frequency: extracted.frequency,
+          ctr: extracted.ctr,
+          cpc: extracted.cpc,
+          cpm: extracted.cpm,
+          cpp: extracted.cpp,
+          conversions: extracted.conversions,
+          conversionValue: extracted.conversion_value,
+          costPerResult: extracted.cost_per_result,
+          inlineLinkClicks: extracted.inline_link_clicks,
+          costPerInlineLinkClick: extracted.cost_per_inline_link_click,
+          outboundClicks: extracted.outbound_clicks,
+          videoViews: extracted.video_views,
+          roas: extracted.roas,
         };
       });
 
-      logger.info('Meta insights retrieved', { objectId, objectType, count: metrics.length });
+      // Armazena no cache
+      if (useCache) {
+        this.metricsCache.set(cacheKey, {
+          data: metrics,
+          timestamp: Date.now(),
+          expiresAt: Date.now() + this.CACHE_TTL_MS
+        });
+
+        // Limpa cache antigo para evitar uso excessivo de memória
+        this.cleanExpiredCache();
+      }
+
+      logger.info('Meta insights retrieved from API (realtime)', {
+        objectId,
+        objectType,
+        count: metrics.length,
+        cached: useCache
+      });
+
       return metrics;
     } catch (error: any) {
-      logger.error('Failed to get Meta insights', error, { connectionId, objectId });
+      logger.error('Failed to get Meta insights (realtime)', error, { connectionId, objectId });
       throw this.handleApiError(error);
     }
+  }
+
+  /**
+   * Busca métricas de múltiplas campanhas em paralelo para otimizar performance
+   *
+   * @param connectionId ID da conexão do usuário
+   * @param campaignIds Array de IDs de campanhas
+   * @param dateStart Data de início (formato YYYY-MM-DD)
+   * @param dateEnd Data de fim (formato YYYY-MM-DD)
+   * @param useCache Se true, usa cache em memória (padrão: true)
+   * @returns Array de métricas agregadas de todas as campanhas
+   */
+  async getMultipleCampaignInsightsRealtime(
+    connectionId: string,
+    campaignIds: string[],
+    dateStart: string,
+    dateEnd: string,
+    useCache: boolean = true
+  ): Promise<AdMetrics[]> {
+    try {
+      logger.info('Fetching insights for multiple campaigns', {
+        connectionId,
+        campaignCount: campaignIds.length
+      });
+
+      // Busca métricas de todas as campanhas em paralelo
+      const metricsPromises = campaignIds.map(campaignId =>
+        this.getInsightsRealtime(connectionId, campaignId, 'campaign', dateStart, dateEnd, useCache)
+      );
+
+      // Aguarda todas as requisições completarem
+      const metricsArrays = await Promise.all(metricsPromises);
+
+      // Combina todos os arrays em um único array
+      const allMetrics = metricsArrays.flat();
+
+      logger.info('Multi-campaign insights retrieved', {
+        campaignCount: campaignIds.length,
+        totalMetrics: allMetrics.length
+      });
+
+      return allMetrics;
+    } catch (error: any) {
+      logger.error('Failed to get multi-campaign insights', error, {
+        connectionId,
+        campaignCount: campaignIds.length
+      });
+      throw this.handleApiError(error);
+    }
+  }
+
+  /**
+   * Limpa entradas expiradas do cache para evitar uso excessivo de memória
+   */
+  private cleanExpiredCache(): void {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const [key, entry] of this.metricsCache.entries()) {
+      if (now >= entry.expiresAt) {
+        this.metricsCache.delete(key);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      logger.info('Cleaned expired cache entries', { count: cleanedCount });
+    }
+  }
+
+  /**
+   * Limpa todo o cache manualmente
+   */
+  clearCache(): void {
+    const size = this.metricsCache.size;
+    this.metricsCache.clear();
+    logger.info('Cache cleared manually', { entriesCleared: size });
+  }
+
+  /**
+   * @deprecated Use getInsightsRealtime() para buscar métricas direto da API
+   * Mantido apenas para compatibilidade com código legado que salva no banco
+   */
+  async getInsights(
+    connectionId: string,
+    objectId: string,
+    objectType: 'campaign' | 'adset' | 'ad',
+    dateStart: string,
+    dateEnd: string
+  ): Promise<AdMetrics[]> {
+    // Redireciona para o método de tempo real
+    return this.getInsightsRealtime(connectionId, objectId, objectType, dateStart, dateEnd, true);
   }
 
   async getInsightsWithBreakdown(
@@ -410,32 +546,14 @@ export class MetaAdsService {
     }
   }
 
+  /**
+   * @deprecated Use extractActionValue from metaMetricsExtractor helper instead
+   * Mantido para compatibilidade com código legado
+   */
   private extractActionValue(actions: any[] | undefined, actionType: string): number {
     if (!actions) return 0;
     const action = actions.find((a: any) => a.action_type === actionType);
     return action ? parseFloat(action.value) : 0;
-  }
-
-  /**
-   * Extrai valor de uma ação específica do array actions ou action_values
-   * Suporta múltiplos tipos de ação (ex: purchase, omni_purchase, etc)
-   *
-   * @param actionsArray - Array de actions ou action_values da API Meta
-   * @param actionTypes - Array de tipos de ação para buscar (em ordem de prioridade)
-   * @returns Valor numérico da ação encontrada, ou 0 se não encontrar
-   */
-  private extractActionValueMultiple(actionsArray: any[] | undefined, actionTypes: string[]): number {
-    if (!actionsArray || actionsArray.length === 0) return 0;
-
-    // Percorre tipos de ação em ordem de prioridade
-    for (const actionType of actionTypes) {
-      const action = actionsArray.find((a: any) => a.action_type === actionType);
-      if (action && action.value) {
-        return parseFloat(action.value);
-      }
-    }
-
-    return 0;
   }
 
   private handleApiError(error: any): Error {
