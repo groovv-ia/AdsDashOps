@@ -316,9 +316,9 @@ export class MetaAdsService {
         const spend = parseFloat(insight.spend || '0');
 
         return {
-          connectionId,
-          userId: userData.user!.id,
-          [`${objectType}Id`]: objectId,
+          connection_id: connectionId,
+          user_id: userData.user!.id,
+          [`${objectType}_id`]: objectId,
           date: insight.date_start,
           // Métricas básicas
           impressions: parseInt(insight.impressions || '0'),
@@ -333,14 +333,14 @@ export class MetaAdsService {
           cpp: parseFloat(insight.cpp || '0'),
           // Conversões - USA VALOR REAL
           conversions: conversions,
-          conversionValue: conversionValue,
-          costPerResult: conversions > 0 ? spend / conversions : 0,
+          conversion_value: conversionValue,
+          cost_per_result: conversions > 0 ? spend / conversions : 0,
           // Cliques detalhados
-          inlineLinkClicks: inlineLinkClicks,
-          costPerInlineLinkClick: parseFloat(insight.cost_per_inline_link_click || '0'),
-          outboundClicks: parseInt(insight.outbound_clicks || '0'),
+          inline_link_clicks: inlineLinkClicks,
+          cost_per_inline_link_click: parseFloat(insight.cost_per_inline_link_click || '0'),
+          outbound_clicks: parseInt(insight.outbound_clicks || '0'),
           // Vídeo
-          videoViews,
+          video_views: videoViews,
           // ROAS - USA VALOR REAL DE CONVERSÃO
           roas: conversionValue > 0 && spend > 0 ? conversionValue / spend : 0,
         };

@@ -104,11 +104,11 @@ export interface Ad {
 
 export interface AdMetrics {
   id?: string;
-  campaignId?: string;
-  adSetId?: string;
-  adId?: string;
-  connectionId: string;
-  userId: string;
+  campaign_id?: string;
+  ad_set_id?: string;
+  ad_id?: string;
+  connection_id: string;
+  user_id: string;
   date: string;
   // Métricas básicas
   impressions: number;
@@ -123,19 +123,19 @@ export interface AdMetrics {
   cpm?: number;
   cpp?: number;
   // Conversões - NOVOS CAMPOS
-  conversionValue?: number; // Valor real das conversões (action_values)
+  conversion_value?: number; // Valor real das conversões (action_values)
   roas?: number;
-  costPerResult?: number;
+  cost_per_result?: number;
   // Cliques detalhados - NOVOS CAMPOS
-  inlineLinkClicks?: number;
-  costPerInlineLinkClick?: number;
-  outboundClicks?: number;
+  inline_link_clicks?: number;
+  cost_per_inline_link_click?: number;
+  outbound_clicks?: number;
   // Vídeo
-  videoViews?: number;
-  videoAvgTimeWatched?: number;
+  video_views?: number;
+  video_avg_time_watched?: number;
   // Engajamento
-  engagementRate?: number;
-  qualityScore?: number;
+  engagement_rate?: number;
+  quality_score?: number;
 }
 
 export interface AdCreative {

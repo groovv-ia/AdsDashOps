@@ -588,7 +588,8 @@ export class MetaSyncService {
         'video_p75_watched_actions', 'video_p100_watched_actions'
       ].join(',');
 
-      const url = `${this.baseUrl}/${campaignId}/insights?fields=${fields}&time_range={"since":"${dateStart}","until":"${dateEnd}"}&time_increment=1&access_token=${this.accessToken}`;
+      const timeRange = encodeURIComponent(JSON.stringify({ since: dateStart, until: dateEnd }));
+      const url = `${this.baseUrl}/${campaignId}/insights?fields=${fields}&time_range=${timeRange}&time_increment=1&access_token=${this.accessToken}`;
 
       logger.info('Requisitando insights da API Meta', {
         campaignId,
