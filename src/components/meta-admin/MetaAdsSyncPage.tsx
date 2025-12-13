@@ -154,14 +154,21 @@ export const MetaAdsSyncPage: React.FC = () => {
       const status = await getMetaSyncStatus(selectedClient?.id);
       setSyncStatus(status);
 
+      // Usa o UUID interno (id) em vez do meta_id textual
       if (status.ad_accounts.length > 0 && !selectedAdAccount) {
-        setSelectedAdAccount(status.ad_accounts[0].meta_id);
+        setSelectedAdAccount(status.ad_accounts[0].id);
       }
     } catch (err) {
       console.error('Erro ao carregar status:', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Encontra a ad account selecionada para obter o meta_id para a API
+  const getSelectedAdAccountMetaId = (): string => {
+    const account = syncStatus?.ad_accounts.find((acc) => acc.id === selectedAdAccount);
+    return account?.meta_id || '';
   };
 
   const loadInsights = async () => {
@@ -233,10 +240,13 @@ export const MetaAdsSyncPage: React.FC = () => {
       const preset = DATE_PRESETS.find((p) => p.value === selectedPeriod);
       const daysBack = preset?.days === -1 ? 30 : preset?.days || 7;
 
+      // Usa o meta_id textual para a API do Meta
+      const metaId = getSelectedAdAccountMetaId();
+
       const result = await runMetaSync({
         mode: selectedPeriod === 'today' ? 'intraday' : 'backfill',
         clientId: selectedClient?.id,
-        metaAdAccountId: selectedAdAccount,
+        metaAdAccountId: metaId,
         daysBack: Math.max(daysBack, 1),
         levels: [selectedLevel],
       });
@@ -398,7 +408,7 @@ export const MetaAdsSyncPage: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               {syncStatus.ad_accounts.map((acc) => (
-                <option key={acc.id} value={acc.meta_id}>
+                <option key={acc.id} value={acc.id}>
                   {acc.name} ({acc.meta_id})
                 </option>
               ))}
