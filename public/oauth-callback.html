@@ -57,50 +57,28 @@
             const code = urlParams.get('code');
             const error = urlParams.get('error');
             const state = urlParams.get('state');
-            
+
             const statusEl = document.getElementById('status');
-            
-            if (error) {
-                statusEl.textContent = `Erro na autenticação: ${error}`;
-                statusEl.className = 'error';
-                
-                // Send error to parent window
-                if (window.opener) {
-                    window.opener.postMessage({
-                        type: 'oauth-callback',
-                        error: error,
-                        platform: getPlatformFromUrl()
-                    }, window.location.origin);
+
+            // Funcao para detectar a plataforma de origem
+            // Prioriza o state parameter que contem o prefixo da plataforma
+            function getPlatformFromState() {
+                if (state) {
+                    // Verifica prefixos conhecidos no state (ex: 'meta_123456', 'google_123456')
+                    if (state.startsWith('meta_')) return 'meta';
+                    if (state.startsWith('google_')) return 'google';
+                    if (state.startsWith('tiktok_')) return 'tiktok';
+
+                    // Tenta decodificar se for base64/JSON
+                    try {
+                        const stateData = JSON.parse(atob(state));
+                        if (stateData.platform) return stateData.platform;
+                    } catch (e) {
+                        // Nao e base64/JSON, continua
+                    }
                 }
-                
-                setTimeout(() => window.close(), 3000);
-                return;
-            }
-            
-            if (code) {
-                statusEl.textContent = 'Autenticação bem-sucedida! Fechando janela...';
-                statusEl.className = 'success';
-                
-                // Send success to parent window
-                if (window.opener) {
-                    window.opener.postMessage({
-                        type: 'oauth-callback',
-                        code: code,
-                        state: state,
-                        platform: getPlatformFromUrl()
-                    }, window.location.origin);
-                }
-                
-                setTimeout(() => window.close(), 2000);
-                return;
-            }
-            
-            // No code or error - something went wrong
-            statusEl.textContent = 'Resposta OAuth inválida. Tente novamente.';
-            statusEl.className = 'error';
-            setTimeout(() => window.close(), 3000);
-            
-            function getPlatformFromUrl() {
+
+                // Fallback: verifica referrer
                 const referrer = document.referrer;
                 if (referrer.includes('facebook.com') || referrer.includes('meta.com')) {
                     return 'meta';
@@ -109,19 +87,60 @@
                 } else if (referrer.includes('tiktok.com')) {
                     return 'tiktok';
                 }
-                
-                // Fallback: try to determine from state parameter or URL
-                if (state) {
-                    try {
-                        const stateData = JSON.parse(atob(state));
-                        return stateData.platform;
-                    } catch (e) {
-                        // Ignore parsing errors
-                    }
-                }
-                
+
                 return 'unknown';
             }
+
+            const platform = getPlatformFromState();
+            console.log('[OAuth Callback] Plataforma detectada:', platform, 'State:', state);
+
+            if (error) {
+                statusEl.textContent = 'Erro na autenticacao: ' + error;
+                statusEl.className = 'error';
+
+                // Envia erro para janela pai
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'oauth-callback',
+                        error: error,
+                        state: state,
+                        platform: platform
+                    }, window.location.origin);
+                    console.log('[OAuth Callback] Erro enviado para janela pai');
+                }
+
+                setTimeout(() => window.close(), 3000);
+                return;
+            }
+
+            if (code) {
+                statusEl.textContent = 'Autenticacao bem-sucedida! Fechando janela...';
+                statusEl.className = 'success';
+
+                // Envia sucesso para janela pai
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'oauth-callback',
+                        code: code,
+                        state: state,
+                        platform: platform
+                    }, window.location.origin);
+                    console.log('[OAuth Callback] Codigo enviado para janela pai:', { code: code.substring(0, 10) + '...', platform });
+                } else {
+                    console.warn('[OAuth Callback] window.opener nao disponivel!');
+                    statusEl.textContent = 'Erro: Janela principal nao encontrada. Feche e tente novamente.';
+                    statusEl.className = 'error';
+                }
+
+                setTimeout(() => window.close(), 2000);
+                return;
+            }
+
+            // Sem codigo ou erro - algo deu errado
+            statusEl.textContent = 'Resposta OAuth invalida. Tente novamente.';
+            statusEl.className = 'error';
+            console.error('[OAuth Callback] Resposta invalida - sem code ou error');
+            setTimeout(() => window.close(), 3000);
         })();
     </script>
 </body>
