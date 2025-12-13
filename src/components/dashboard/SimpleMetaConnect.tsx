@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CheckCircle, AlertCircle, Loader, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -6,15 +6,12 @@ import { supabase } from '../../lib/supabase';
 import { MetaSyncService, SyncProgress } from '../../lib/services/MetaSyncService';
 
 /**
- * Componente simplificado para conexao com Meta Ads
- * Fluxo: Clicar -> Autorizar no popup -> Selecionar conta -> Pronto!
+ * Componente simplificado para conexão com Meta Ads
+ * Fluxo: Clicar → Autorizar no popup → Selecionar conta → Pronto!
  */
 export const SimpleMetaConnect: React.FC = () => {
   // Estados para controle do fluxo
   const [status, setStatus] = useState<'disconnected' | 'connecting' | 'selecting' | 'connected' | 'syncing'>('disconnected');
-
-  // Ref para rastrear se o callback OAuth foi processado (evita problema de closure)
-  const oauthProcessedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -83,79 +80,53 @@ export const SimpleMetaConnect: React.FC = () => {
 
   /**
    * Inicia o fluxo OAuth do Meta
-   * Abre popup com tela de autorizacao do Facebook
+   * Abre popup com tela de autorização do Facebook
    */
   const handleConnect = () => {
     setLoading(true);
     setError(null);
     setStatus('connecting');
 
-    // Reseta flag de processamento
-    oauthProcessedRef.current = false;
-
-    // Configuracoes do OAuth
+    // Configurações do OAuth
     const clientId = import.meta.env.VITE_META_APP_ID;
     const redirectUri = import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
     const scope = 'ads_read,ads_management,business_management';
-    // State com prefixo 'meta_' para identificar a plataforma no callback
     const state = `meta_${Date.now()}`;
 
-    // Constroi URL de autorizacao do Facebook
+    // Constrói URL de autorização do Facebook
     const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${state}`;
 
-    console.log('[Meta OAuth] Iniciando com URL:', authUrl);
+    console.log('Iniciando OAuth Meta com URL:', authUrl);
 
-    // Abre popup para autorizacao
+    // Abre popup para autorização
     const popup = window.open(authUrl, 'meta-oauth', 'width=600,height=700');
 
-    // Listener para receber mensagem do popup apos autorizacao
-    // IMPORTANTE: O callback envia tipo 'oauth-callback', nao 'oauth-success'
+    // Listener para receber mensagem do popup após autorização
     const handleMessage = async (event: MessageEvent) => {
-      // Verifica origem por seguranca
+      // Verifica origem por segurança
       if (event.origin !== window.location.origin) return;
 
-      console.log('[Meta OAuth] Mensagem recebida:', event.data);
-
-      // Verifica se e um callback OAuth (tipo 'oauth-callback')
-      // E se e para a plataforma Meta (state comeca com 'meta_' ou platform === 'meta')
-      const isOAuthCallback = event.data.type === 'oauth-callback';
-      const isMetaPlatform = event.data.state?.startsWith('meta_') ||
-                             event.data.platform === 'meta' ||
-                             event.data.platform === 'unknown'; // Fallback: se unknown, assumir Meta se state bater
-
-      if (isOAuthCallback && isMetaPlatform) {
-        // Evita processar multiplas vezes
-        if (oauthProcessedRef.current) {
-          console.log('[Meta OAuth] Callback ja processado, ignorando');
-          return;
-        }
-        oauthProcessedRef.current = true;
-
+      if (event.data.type === 'oauth-success' && event.data.platform === 'meta') {
         window.removeEventListener('message', handleMessage);
-        console.log('[Meta OAuth] Callback processado com sucesso');
 
-        const { code, accessToken, error: oauthError } = event.data;
+        const { code, accessToken } = event.data;
 
-        // Verifica se houve erro no callback
-        if (oauthError) {
-          setError(oauthError || 'Erro ao autorizar com Meta');
-          setStatus('disconnected');
-          setLoading(false);
-          if (popup && !popup.closed) popup.close();
-          return;
-        }
-
-        // Se ja recebeu o access token, busca contas
+        // Se já recebeu o access token, busca contas
         if (accessToken) {
           await fetchAccounts(accessToken);
         } else if (code) {
-          // Se recebeu apenas o codigo, precisa trocar por token
+          // Se recebeu apenas o código, precisa trocar por token
           await exchangeCodeForToken(code);
-        } else {
-          setError('Resposta OAuth invalida: sem codigo ou token');
-          setStatus('disconnected');
-          setLoading(false);
         }
+
+        if (popup && !popup.closed) {
+          popup.close();
+        }
+      } else if (event.data.type === 'oauth-error') {
+        window.removeEventListener('message', handleMessage);
+        setError(event.data.error || 'Erro ao autorizar com Meta');
+        setStatus('disconnected');
+        setLoading(false);
 
         if (popup && !popup.closed) {
           popup.close();
@@ -170,11 +141,10 @@ export const SimpleMetaConnect: React.FC = () => {
       if (popup?.closed) {
         clearInterval(checkPopupClosed);
         window.removeEventListener('message', handleMessage);
-        // Usa ref para verificar se callback foi processado (evita problema de closure)
-        if (!oauthProcessedRef.current) {
+        if (status === 'connecting') {
           setStatus('disconnected');
           setLoading(false);
-          setError('Autorizacao cancelada ou popup fechado');
+          setError('Autorização cancelada');
         }
       }
     }, 1000);
