@@ -21,6 +21,7 @@ import { CookiePreferencesModal } from './components/legal/CookiePreferencesModa
 import { CookieSettingsButton } from './components/legal/CookieSettingsButton';
 import { CookieConsentProvider } from './contexts/CookieConsentContext';
 import { ClientProvider } from './contexts/ClientContext';
+import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { ClientsPage } from './components/clients/ClientsPage';
@@ -495,9 +496,11 @@ function App() {
   return (
     <ThemeProvider>
       <CookieConsentProvider>
-        <ClientProvider>
-          <AppContent />
-        </ClientProvider>
+        <WorkspaceProvider>
+          <ClientProvider>
+            <AppContent />
+          </ClientProvider>
+        </WorkspaceProvider>
       </CookieConsentProvider>
     </ThemeProvider>
   );
