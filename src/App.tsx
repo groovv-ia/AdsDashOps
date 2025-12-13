@@ -20,8 +20,10 @@ import { DataDeletionPolicy } from './components/legal/DataDeletionPolicy';
 import { CookiePreferencesModal } from './components/legal/CookiePreferencesModal';
 import { CookieSettingsButton } from './components/legal/CookieSettingsButton';
 import { CookieConsentProvider } from './contexts/CookieConsentContext';
+import { ClientProvider } from './contexts/ClientContext';
 import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
+import { ClientsPage } from './components/clients/ClientsPage';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -300,6 +302,8 @@ function AppContent() {
 
   const renderPageContent = () => {
     switch (currentPage) {
+      case 'clients':
+        return <ClientsPage />;
       case 'campaigns':
         return (
           <CampaignsPage
@@ -491,7 +495,9 @@ function App() {
   return (
     <ThemeProvider>
       <CookieConsentProvider>
-        <AppContent />
+        <ClientProvider>
+          <AppContent />
+        </ClientProvider>
       </CookieConsentProvider>
     </ThemeProvider>
   );
