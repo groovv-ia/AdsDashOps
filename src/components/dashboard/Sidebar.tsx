@@ -10,11 +10,11 @@ interface SidebarProps {
 
 // Itens do menu de navegacao principal
 const menuItems = [
+  { icon: Link2, label: 'Conexao Meta', page: 'meta-admin' },
   { icon: BarChart3, label: 'Dashboard', page: 'overview' },
   { icon: Target, label: 'Campanhas', page: 'campaigns' },
   { icon: RefreshCw, label: 'Meta Ads Sync', page: 'meta-sync' },
   { icon: Sparkles, label: 'Analise com IA', page: 'ai-insights' },
-  { icon: Link2, label: 'Conexao Meta', page: 'meta-admin' },
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configuracoes', page: 'settings' },
 ];
