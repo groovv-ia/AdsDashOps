@@ -31,35 +31,62 @@ export const SimpleMetaConnect: React.FC = () => {
   // Processa callback OAuth quando usuário retorna do fluxo de autorização
   useEffect(() => {
     const processOAuthReturn = async () => {
-      // Verifica se há um código de autorização aguardando processamento
-      const code = localStorage.getItem('meta_oauth_code');
-      const platform = localStorage.getItem('meta_oauth_platform');
-      const error = localStorage.getItem('meta_oauth_error');
+      try {
+        // Verifica se há um código de autorização aguardando processamento
+        const code = localStorage.getItem('meta_oauth_code');
+        const platform = localStorage.getItem('meta_oauth_platform');
+        const error = localStorage.getItem('meta_oauth_error');
 
-      if (error) {
-        console.error('❌ [Meta Connect] Erro no OAuth:', error);
-        setError(error);
+        console.log('🔍 [Meta Connect] Verificando retorno do OAuth:', {
+          hasCode: !!code,
+          platform,
+          hasError: !!error,
+        });
+
+        if (error) {
+          console.error('❌ [Meta Connect] Erro no OAuth recebido:', error);
+
+          // Mapeamento de erros comuns do Facebook
+          let userFriendlyError = error;
+          if (error.includes('redirect_uri')) {
+            userFriendlyError = 'Erro de configuração: URL de redirecionamento não autorizada no Facebook. Verifique as configurações do App no Facebook Developer Console.';
+          } else if (error.includes('access_denied')) {
+            userFriendlyError = 'Autorização cancelada. Você precisa autorizar o aplicativo para continuar.';
+          } else if (error.includes('invalid_scope')) {
+            userFriendlyError = 'Erro de permissões: As permissões solicitadas não estão configuradas no App do Facebook.';
+          }
+
+          setError(userFriendlyError);
+          setStatus('disconnected');
+          setLoading(false);
+
+          // Limpa localStorage
+          localStorage.removeItem('meta_oauth_error');
+          localStorage.removeItem('meta_oauth_flow');
+          localStorage.removeItem('meta_oauth_state');
+          return;
+        }
+
+        if (code && platform === 'meta') {
+          console.log('✅ [Meta Connect] Código OAuth detectado, iniciando processamento...');
+          setStatus('connecting');
+          setLoading(true);
+          setError(null);
+
+          // Limpa localStorage
+          localStorage.removeItem('meta_oauth_code');
+          localStorage.removeItem('meta_oauth_platform');
+          localStorage.removeItem('meta_oauth_flow');
+          localStorage.removeItem('meta_oauth_state');
+
+          // Processa o código
+          await exchangeCodeForToken(code);
+        }
+      } catch (err: any) {
+        console.error('❌ [Meta Connect] Erro ao processar retorno OAuth:', err);
+        setError(err.message || 'Erro ao processar autorização');
         setStatus('disconnected');
         setLoading(false);
-
-        // Limpa localStorage
-        localStorage.removeItem('meta_oauth_error');
-        localStorage.removeItem('meta_oauth_flow');
-        return;
-      }
-
-      if (code && platform === 'meta') {
-        console.log('🔄 [Meta Connect] Código OAuth detectado, processando...');
-        setStatus('connecting');
-        setLoading(true);
-
-        // Limpa localStorage
-        localStorage.removeItem('meta_oauth_code');
-        localStorage.removeItem('meta_oauth_platform');
-        localStorage.removeItem('meta_oauth_flow');
-
-        // Processa o código
-        await exchangeCodeForToken(code);
       }
     };
 
@@ -184,16 +211,24 @@ export const SimpleMetaConnect: React.FC = () => {
 
       console.log('🔄 [Exchange Token] Fazendo requisição para Graph API...');
 
-      const response = await fetch('https://graph.facebook.com/v19.0/oauth/access_token', {
+      // Monta a URL completa para debug
+      const tokenUrl = 'https://graph.facebook.com/v19.0/oauth/access_token';
+      const params = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        code: code,
+      });
+
+      console.log('🔄 [Exchange Token] URL completa:', `${tokenUrl}?${params.toString().replace(clientSecret, '***')}`);
+
+      const response = await fetch(tokenUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          redirect_uri: redirectUri,
-          code: code,
-        }),
+        body: params,
       });
+
+      console.log('🔄 [Exchange Token] Status da resposta:', response.status, response.statusText);
 
       const data = await response.json();
 
@@ -201,16 +236,29 @@ export const SimpleMetaConnect: React.FC = () => {
         hasAccessToken: !!data.access_token,
         hasError: !!data.error,
         tokenType: data.token_type,
+        responseStatus: response.status,
       });
 
       if (data.error) {
-        console.error('❌ [Exchange Token] Erro na resposta:', data.error);
-        throw new Error(data.error.message || 'Erro ao obter token');
+        console.error('❌ [Exchange Token] Erro na resposta do Facebook:', JSON.stringify(data.error, null, 2));
+
+        // Mapeia erros comuns para mensagens mais amigáveis
+        let errorMessage = data.error.message || 'Erro ao obter token';
+
+        if (data.error.code === 100) {
+          errorMessage = 'Parâmetros inválidos. Verifique as configurações do App no Facebook.';
+        } else if (data.error.message?.includes('redirect_uri')) {
+          errorMessage = 'URL de redirecionamento inválida. Configure no Facebook: Settings > Basic > Add Platform > Website.';
+        } else if (data.error.message?.includes('code')) {
+          errorMessage = 'Código de autorização inválido ou expirado. Tente conectar novamente.';
+        }
+
+        throw new Error(errorMessage);
       }
 
       if (!data.access_token) {
-        console.error('❌ [Exchange Token] Token não recebido na resposta');
-        throw new Error('Token de acesso não recebido');
+        console.error('❌ [Exchange Token] Token não recebido na resposta:', JSON.stringify(data, null, 2));
+        throw new Error('Token de acesso não recebido. Resposta inesperada do servidor.');
       }
 
       console.log('✅ [Exchange Token] Token obtido com sucesso!');
@@ -220,6 +268,7 @@ export const SimpleMetaConnect: React.FC = () => {
       await fetchAccounts(data.access_token);
     } catch (err: any) {
       console.error('❌ [Exchange Token] Erro ao trocar código por token:', err);
+      console.error('❌ [Exchange Token] Stack trace:', err.stack);
       setError(err.message || 'Erro ao obter token de acesso');
       setStatus('disconnected');
       setLoading(false);
@@ -493,6 +542,37 @@ export const SimpleMetaConnect: React.FC = () => {
           </span>
         )}
       </div>
+
+      {/* Exibição de erro */}
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-start">
+            <XCircle className="w-5 h-5 text-red-600 mr-3 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h4 className="text-sm font-semibold text-red-900 mb-1">Erro na Conexão</h4>
+              <p className="text-sm text-red-800">{error}</p>
+              {error.includes('redirect_uri') && (
+                <div className="mt-2 p-2 bg-red-100 rounded text-xs text-red-900">
+                  <strong>Como corrigir:</strong>
+                  <ol className="list-decimal ml-4 mt-1 space-y-1">
+                    <li>Acesse: <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer" className="underline">Facebook Developers</a></li>
+                    <li>Selecione seu App</li>
+                    <li>Vá em: Settings → Basic → Add Platform → Website</li>
+                    <li>Adicione: <code className="bg-white px-1 rounded">{import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`}</code></li>
+                    <li>Salve e tente novamente</li>
+                  </ol>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="ml-2 text-red-600 hover:text-red-800"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Estado: Desconectado */}
       {status === 'disconnected' && (
