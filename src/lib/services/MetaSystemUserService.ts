@@ -410,3 +410,77 @@ export async function getInsightsFromDatabase(options: {
 
   return { data: data || [] };
 }
+
+/**
+ * Busca IDs de anuncios que pertencem a um adset especifico
+ * Utiliza a tabela meta_entities_cache para fazer o mapeamento
+ */
+export async function getAdIdsByAdset(adsetId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('meta_entities_cache')
+    .select('entity_id')
+    .eq('entity_type', 'ad')
+    .eq('adset_id', adsetId);
+
+  if (error || !data) {
+    console.error('Erro ao buscar ads por adset:', error);
+    return [];
+  }
+
+  return data.map((row) => row.entity_id);
+}
+
+/**
+ * Busca insights de anuncios filtrados por adset
+ * Primeiro busca os IDs dos ads que pertencem ao adset, depois busca os insights
+ */
+export async function getAdInsightsByAdset(options: {
+  clientId?: string;
+  metaAdAccountId?: string;
+  adsetId: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+}): Promise<{
+  data: any[];
+  error?: string;
+}> {
+  // Busca os IDs dos ads que pertencem ao adset
+  const adIds = await getAdIdsByAdset(options.adsetId);
+
+  if (adIds.length === 0) {
+    return { data: [], error: undefined };
+  }
+
+  // Busca os insights apenas para esses ads
+  let query = supabase
+    .from('meta_insights_daily')
+    .select('*')
+    .eq('level', 'ad')
+    .in('entity_id', adIds)
+    .order('date', { ascending: false });
+
+  if (options.clientId) {
+    query = query.eq('client_id', options.clientId);
+  }
+  if (options.metaAdAccountId) {
+    query = query.eq('meta_ad_account_id', options.metaAdAccountId);
+  }
+  if (options.dateFrom) {
+    query = query.gte('date', options.dateFrom);
+  }
+  if (options.dateTo) {
+    query = query.lte('date', options.dateTo);
+  }
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return { data: [], error: error.message };
+  }
+
+  return { data: data || [] };
+}

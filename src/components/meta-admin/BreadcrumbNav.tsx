@@ -84,13 +84,16 @@ export const BreadcrumbNav: React.FC<BreadcrumbNavProps> = ({
 
 /**
  * Hook para gerenciar estado do breadcrumb
+ * Suporta navegacao hierarquica: Contas > Conta > Adset > Anuncios
  */
 export interface NavigationState {
-  currentView: 'accounts' | 'account-detail' | 'campaign-detail';
+  currentView: 'accounts' | 'account-detail' | 'adset-detail';
   selectedAccountId: string | null;
   selectedAccountName: string | null;
   selectedCampaignId: string | null;
   selectedCampaignName: string | null;
+  selectedAdsetId: string | null;
+  selectedAdsetName: string | null;
 }
 
 export const createBreadcrumbItems = (state: NavigationState): BreadcrumbItem[] => {
@@ -117,6 +120,15 @@ export const createBreadcrumbItems = (state: NavigationState): BreadcrumbItem[] 
       id: state.selectedCampaignId,
       label: state.selectedCampaignName,
       type: 'campaign',
+    });
+  }
+
+  // Se um adset (conjunto de anuncios) esta selecionado
+  if (state.selectedAdsetId && state.selectedAdsetName) {
+    items.push({
+      id: state.selectedAdsetId,
+      label: state.selectedAdsetName,
+      type: 'adset',
     });
   }
 

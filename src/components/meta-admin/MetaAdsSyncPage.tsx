@@ -22,6 +22,8 @@ import {
   Filter,
   Sparkles,
   ExternalLink,
+  ChevronRight,
+  Layers,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -33,6 +35,7 @@ import {
   runMetaSync,
   getMetaSyncStatus,
   getInsightsFromDatabase,
+  getAdInsightsByAdset,
   SyncStatusResponse,
   SyncResult,
 } from '../../lib/services/MetaSystemUserService';
@@ -94,13 +97,15 @@ const LEVELS = [
 export const MetaAdsSyncPage: React.FC = () => {
   const { selectedClient } = useClient();
 
-  // Estado de navegacao
+  // Estado de navegacao (suporta drill-down: Contas > Conta > Adset > Anuncios)
   const [navigationState, setNavigationState] = useState<NavigationState>({
     currentView: 'accounts',
     selectedAccountId: null,
     selectedAccountName: null,
     selectedCampaignId: null,
     selectedCampaignName: null,
+    selectedAdsetId: null,
+    selectedAdsetName: null,
   });
 
   // Estado de sincronizacao
@@ -153,11 +158,11 @@ export const MetaAdsSyncPage: React.FC = () => {
     if (
       syncStatus?.connection?.status === 'connected' &&
       navigationState.selectedAccountId &&
-      navigationState.currentView === 'account-detail'
+      (navigationState.currentView === 'account-detail' || navigationState.currentView === 'adset-detail')
     ) {
       loadInsights();
     }
-  }, [selectedLevel, selectedPeriod, navigationState.selectedAccountId, navigationState.currentView]);
+  }, [selectedLevel, selectedPeriod, navigationState.selectedAccountId, navigationState.currentView, navigationState.selectedAdsetId]);
 
   // ============================================================
   // FUNCOES DE CARREGAMENTO
@@ -184,18 +189,34 @@ export const MetaAdsSyncPage: React.FC = () => {
   );
 
   // Carrega insights do banco de dados
+  // Se estiver na view adset-detail, busca apenas anuncios do adset selecionado
   const loadInsights = async () => {
     if (!navigationState.selectedAccountId) return;
 
     try {
-      const result = await getInsightsFromDatabase({
-        clientId: selectedClient?.id,
-        metaAdAccountId: navigationState.selectedAccountId,
-        level: selectedLevel,
-        dateFrom: dateRange.dateFrom,
-        dateTo: dateRange.dateTo,
-        limit: 1000,
-      });
+      let result;
+
+      // Se estiver visualizando anuncios de um adset especifico
+      if (navigationState.currentView === 'adset-detail' && navigationState.selectedAdsetId) {
+        result = await getAdInsightsByAdset({
+          clientId: selectedClient?.id,
+          metaAdAccountId: navigationState.selectedAccountId,
+          adsetId: navigationState.selectedAdsetId,
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
+          limit: 1000,
+        });
+      } else {
+        // Busca normal por nivel
+        result = await getInsightsFromDatabase({
+          clientId: selectedClient?.id,
+          metaAdAccountId: navigationState.selectedAccountId,
+          level: selectedLevel,
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
+          limit: 1000,
+        });
+      }
 
       if (result.error) {
         setError(result.error);
@@ -321,20 +342,44 @@ export const MetaAdsSyncPage: React.FC = () => {
       selectedAccountName: account.name,
       selectedCampaignId: null,
       selectedCampaignName: null,
+      selectedAdsetId: null,
+      selectedAdsetName: null,
     });
+  };
+
+  // Seleciona um adset e navega para ver os anuncios dentro dele
+  const handleSelectAdset = (adsetId: string, adsetName: string) => {
+    setNavigationState((prev) => ({
+      ...prev,
+      currentView: 'adset-detail',
+      selectedAdsetId: adsetId,
+      selectedAdsetName: adsetName,
+    }));
   };
 
   // Navega via breadcrumb
   const handleBreadcrumbNavigate = (item: BreadcrumbItem) => {
     if (item.type === 'home') {
+      // Volta para lista de contas
       setNavigationState({
         currentView: 'accounts',
         selectedAccountId: null,
         selectedAccountName: null,
         selectedCampaignId: null,
         selectedCampaignName: null,
+        selectedAdsetId: null,
+        selectedAdsetName: null,
       });
       setInsights([]);
+    } else if (item.type === 'account') {
+      // Volta para detalhes da conta (sai da visualizacao de adset)
+      setNavigationState((prev) => ({
+        ...prev,
+        currentView: 'account-detail',
+        selectedAdsetId: null,
+        selectedAdsetName: null,
+      }));
+      setSelectedLevel('adset');
     }
   };
 
@@ -346,10 +391,23 @@ export const MetaAdsSyncPage: React.FC = () => {
       selectedAccountName: null,
       selectedCampaignId: null,
       selectedCampaignName: null,
+      selectedAdsetId: null,
+      selectedAdsetName: null,
     });
     setInsights([]);
     setSyncResult(null);
     setError(null);
+  };
+
+  // Volta para visualizacao de adsets (sai da visualizacao de anuncios do adset)
+  const handleBackToAdsets = () => {
+    setNavigationState((prev) => ({
+      ...prev,
+      currentView: 'account-detail',
+      selectedAdsetId: null,
+      selectedAdsetName: null,
+    }));
+    setSelectedLevel('adset');
   };
 
   // Handler de mudanca de periodo
@@ -364,8 +422,13 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Abre o modal de detalhes do anuncio
   // Passa o meta_id (formato act_XXXXX) para as Edge Functions e o ID interno para consultas no banco
+  // Funciona tanto na visualizacao geral de ads quanto dentro de um adset especifico
   const handleOpenAdDetail = (row: { entity_id: string; entity_name: string }) => {
-    if (selectedLevel !== 'ad') return;
+    // Permite abrir detalhes quando estiver em nivel de ads OU dentro de um adset (adset-detail)
+    const isAdLevel = selectedLevel === 'ad';
+    const isAdsetDetail = navigationState.currentView === 'adset-detail';
+
+    if (!isAdLevel && !isAdsetDetail) return;
 
     // Busca a conta selecionada para obter o meta_id correto
     const account = getAccountById(navigationState.selectedAccountId || '');
@@ -763,28 +826,40 @@ export const MetaAdsSyncPage: React.FC = () => {
             />
           </div>
 
-          {/* Nivel */}
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Nivel</label>
-            <div className="flex space-x-1">
-              {LEVELS.map((level) => (
-                <button
-                  key={level.value}
-                  onClick={() => setSelectedLevel(level.value)}
-                  className={`
-                    flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors
-                    ${
-                      selectedLevel === level.value
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }
-                  `}
-                >
-                  {level.label}
-                </button>
-              ))}
+          {/* Nivel - esconde quando estiver visualizando anuncios de um adset especifico */}
+          {navigationState.currentView !== 'adset-detail' && (
+            <div className="flex-1 min-w-[150px]">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nivel</label>
+              <div className="flex space-x-1">
+                {LEVELS.map((level) => (
+                  <button
+                    key={level.value}
+                    onClick={() => setSelectedLevel(level.value)}
+                    className={`
+                      flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                      ${
+                        selectedLevel === level.value
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }
+                    `}
+                  >
+                    {level.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Indicador quando estiver dentro de um adset */}
+          {navigationState.currentView === 'adset-detail' && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
+              <Layers className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-700">
+                Visualizando anuncios do conjunto
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Mensagem de erro */}
@@ -943,16 +1018,41 @@ export const MetaAdsSyncPage: React.FC = () => {
       {/* Tabela de Entidades */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-900">
-            {LEVELS.find((l) => l.value === selectedLevel)?.label} ({tableData.length})
-          </h3>
+          <div>
+            {/* Mostra titulo diferente se estiver dentro de um adset */}
+            {navigationState.currentView === 'adset-detail' ? (
+              <>
+                <div className="flex items-center gap-2 mb-1">
+                  <Layers className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm text-gray-500">Anuncios do conjunto:</span>
+                </div>
+                <h3 className="font-semibold text-gray-900">
+                  {navigationState.selectedAdsetName} ({tableData.length})
+                </h3>
+              </>
+            ) : (
+              <h3 className="font-semibold text-gray-900">
+                {LEVELS.find((l) => l.value === selectedLevel)?.label} ({tableData.length})
+              </h3>
+            )}
+          </div>
 
-          {tableData.length > 0 && (
-            <Button variant="outline" size="sm">
-              <Download className="w-4 h-4 mr-2" />
-              Exportar
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Botao para voltar para lista de adsets quando estiver em adset-detail */}
+            {navigationState.currentView === 'adset-detail' && (
+              <Button variant="outline" size="sm" onClick={handleBackToAdsets}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Voltar para Conjuntos
+              </Button>
+            )}
+
+            {tableData.length > 0 && (
+              <Button variant="outline" size="sm">
+                <Download className="w-4 h-4 mr-2" />
+                Exportar
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -966,7 +1066,8 @@ export const MetaAdsSyncPage: React.FC = () => {
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CTR</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPC</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPM</th>
-                {selectedLevel === 'ad' && (
+                {/* Mostra coluna de acoes para ads ou adsets */}
+                {(selectedLevel === 'ad' || selectedLevel === 'adset' || navigationState.currentView === 'adset-detail') && (
                   <th className="text-center py-3 px-4 text-sm font-medium text-gray-700">Acoes</th>
                 )}
               </tr>
@@ -974,64 +1075,105 @@ export const MetaAdsSyncPage: React.FC = () => {
             <tbody>
               {tableData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-gray-500">
+                  <td colSpan={8} className="text-center py-12 text-gray-500">
                     <div className="flex flex-col items-center">
                       <BarChart3 className="w-12 h-12 text-gray-300 mb-4" />
                       <p className="font-medium">Nenhum dado encontrado</p>
                       <p className="text-sm mt-1">
-                        Clique em "Sincronizar" para extrair metricas do Meta Ads
+                        {navigationState.currentView === 'adset-detail'
+                          ? 'Nenhum anuncio encontrado neste conjunto'
+                          : 'Clique em "Sincronizar" para extrair metricas do Meta Ads'}
                       </p>
                     </div>
                   </td>
                 </tr>
               ) : (
-                tableData.map((row) => (
-                  <tr
-                    key={row.entity_id}
-                    className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                      selectedLevel === 'ad' ? 'cursor-pointer' : ''
-                    }`}
-                    onClick={selectedLevel === 'ad' ? () => handleOpenAdDetail(row) : undefined}
-                  >
-                    <td className="py-3 px-4">
-                      <span className="text-sm font-medium text-gray-900">{row.entity_name}</span>
-                      <span className="block text-xs text-gray-500 font-mono">{row.entity_id}</span>
-                    </td>
-                    <td className="text-right py-3 px-4 text-sm font-medium text-gray-900">
-                      {formatCurrency(row.spend)}
-                    </td>
-                    <td className="text-right py-3 px-4 text-sm text-gray-600">
-                      {formatNumber(row.impressions)}
-                    </td>
-                    <td className="text-right py-3 px-4 text-sm text-gray-600">
-                      {formatNumber(row.clicks)}
-                    </td>
-                    <td className="text-right py-3 px-4 text-sm text-gray-600">
-                      {formatPercent(row.ctr)}
-                    </td>
-                    <td className="text-right py-3 px-4 text-sm text-gray-600">
-                      {formatCurrency(row.cpc)}
-                    </td>
-                    <td className="text-right py-3 px-4 text-sm text-gray-600">
-                      {formatCurrency(row.cpm)}
-                    </td>
-                    {selectedLevel === 'ad' && (
-                      <td className="text-center py-3 px-4">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenAdDetail(row);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Ver detalhes e analisar com IA"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          Detalhes
-                        </button>
+                tableData.map((row) => {
+                  // Determina se a linha e clicavel (ads ou adsets)
+                  const isAdRow = selectedLevel === 'ad' || navigationState.currentView === 'adset-detail';
+                  const isAdsetRow = selectedLevel === 'adset' && navigationState.currentView !== 'adset-detail';
+
+                  return (
+                    <tr
+                      key={row.entity_id}
+                      className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                        isAdRow || isAdsetRow ? 'cursor-pointer' : ''
+                      }`}
+                      onClick={() => {
+                        if (isAdRow) {
+                          handleOpenAdDetail(row);
+                        } else if (isAdsetRow) {
+                          handleSelectAdset(row.entity_id, row.entity_name);
+                        }
+                      }}
+                    >
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          {/* Icone indicando que e um adset clicavel */}
+                          {isAdsetRow && (
+                            <Layers className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          )}
+                          <div>
+                            <span className="text-sm font-medium text-gray-900">{row.entity_name}</span>
+                            <span className="block text-xs text-gray-500 font-mono">{row.entity_id}</span>
+                          </div>
+                        </div>
                       </td>
-                    )}
-                  </tr>
-                ))
+                      <td className="text-right py-3 px-4 text-sm font-medium text-gray-900">
+                        {formatCurrency(row.spend)}
+                      </td>
+                      <td className="text-right py-3 px-4 text-sm text-gray-600">
+                        {formatNumber(row.impressions)}
+                      </td>
+                      <td className="text-right py-3 px-4 text-sm text-gray-600">
+                        {formatNumber(row.clicks)}
+                      </td>
+                      <td className="text-right py-3 px-4 text-sm text-gray-600">
+                        {formatPercent(row.ctr)}
+                      </td>
+                      <td className="text-right py-3 px-4 text-sm text-gray-600">
+                        {formatCurrency(row.cpc)}
+                      </td>
+                      <td className="text-right py-3 px-4 text-sm text-gray-600">
+                        {formatCurrency(row.cpm)}
+                      </td>
+
+                      {/* Coluna de acoes para adsets - botao para ver anuncios */}
+                      {isAdsetRow && (
+                        <td className="text-center py-3 px-4">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectAdset(row.entity_id, row.entity_name);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Ver anuncios deste conjunto"
+                          >
+                            Ver Anuncios
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      )}
+
+                      {/* Coluna de acoes para ads - botao de detalhes */}
+                      {isAdRow && (
+                        <td className="text-center py-3 px-4">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAdDetail(row);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Ver detalhes e analisar com IA"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            Detalhes
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
