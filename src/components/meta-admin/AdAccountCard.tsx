@@ -138,18 +138,29 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     return value.toLocaleString('pt-BR');
   };
 
-  // Retorna cor da borda lateral baseado no status e metricas
+  // Retorna cor da borda lateral baseado no status de sincronização
   const getPerformanceColor = (): string => {
-    if (!account.metrics) return 'border-l-4 border-l-gray-300';
+    // Se está sincronizado, borda verde
+    if (account.syncStatus === 'synced') {
+      return 'border-l-4 border-l-green-500';
+    }
 
-    const hasMetrics = account.metrics.impressions > 0 || account.metrics.spend > 0;
-    if (!hasMetrics) return 'border-l-4 border-l-gray-300';
+    // Se está sincronizando, borda azul
+    if (account.syncStatus === 'syncing') {
+      return 'border-l-4 border-l-blue-500';
+    }
 
-    // Baseado no CTR para indicar performance
-    const ctr = account.metrics.ctr;
-    if (ctr >= 2) return 'border-l-4 border-l-green-500';
-    if (ctr >= 1) return 'border-l-4 border-l-yellow-500';
-    if (ctr > 0) return 'border-l-4 border-l-orange-500';
+    // Se tem erro, borda vermelha
+    if (account.syncStatus === 'error') {
+      return 'border-l-4 border-l-red-500';
+    }
+
+    // Se está desatualizado, borda amarela
+    if (account.syncStatus === 'stale') {
+      return 'border-l-4 border-l-yellow-500';
+    }
+
+    // Nunca sincronizado ou sem métricas, borda cinza
     return 'border-l-4 border-l-gray-300';
   };
 
