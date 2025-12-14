@@ -45,12 +45,35 @@ export function WorkspaceSelector({ onNavigateToWorkspaces, compact = false }: W
     }
   };
 
-  if (isLoading || !currentWorkspace) {
+  // Mostra skeleton apenas enquanto carrega
+  if (isLoading) {
     return (
       <div className={`flex items-center gap-2 ${compact ? 'px-2 py-1.5' : 'px-3 py-2'} bg-gray-100 rounded-lg animate-pulse`}>
         <div className="w-6 h-6 bg-gray-200 rounded" />
         <div className="w-20 h-4 bg-gray-200 rounded" />
       </div>
+    );
+  }
+
+  // Se nao ha workspace, mostra botao para criar
+  if (!currentWorkspace || workspaces.length === 0) {
+    return (
+      <button
+        onClick={onNavigateToWorkspaces}
+        className={`
+          flex items-center gap-2 w-full
+          ${compact ? 'px-2 py-1.5' : 'px-3 py-2'}
+          bg-blue-50 hover:bg-blue-100 border border-blue-200
+          rounded-lg transition-colors text-left
+        `}
+      >
+        <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white flex-shrink-0">
+          <Plus className="w-4 h-4" />
+        </div>
+        <span className={`font-medium text-blue-600 ${compact ? 'text-sm' : ''}`}>
+          Criar Workspace
+        </span>
+      </button>
     );
   }
 
