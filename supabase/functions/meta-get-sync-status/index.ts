@@ -91,6 +91,31 @@ Deno.serve(async (req: Request) => {
       .select("id, meta_ad_account_id, name, currency, timezone, account_status")
       .eq("workspace_id", workspace.id);
 
+    // 2.5 Busca vínculos de cliente para cada conta
+    const { data: clientBindings } = await supabaseAdmin
+      .from("client_meta_ad_accounts")
+      .select(`
+        meta_ad_account_id,
+        status,
+        clients (
+          id,
+          name
+        )
+      `);
+
+    // Cria mapa de cliente por meta_ad_account_id (UUID interno)
+    const clientByAccountId: Record<string, { client_id: string; client_name: string }> = {};
+    if (clientBindings) {
+      for (const binding of clientBindings) {
+        if (binding.clients && binding.status === "active") {
+          clientByAccountId[binding.meta_ad_account_id] = {
+            client_id: binding.clients.id,
+            client_name: binding.clients.name,
+          };
+        }
+      }
+    }
+
     // 3. Busca sync states
     let syncStatesQuery = supabaseAdmin
       .from("meta_sync_state")
@@ -213,6 +238,8 @@ Deno.serve(async (req: Request) => {
         const syncState = syncStates?.find((s) => s.meta_ad_account_id === acc.meta_ad_account_id);
         // Busca métricas do último job completado
         const lastJobMetrics = lastCompletedJobsByAccount[acc.meta_ad_account_id];
+        // Busca informações de cliente
+        const clientInfo = clientByAccountId[acc.id];
 
         return {
           id: acc.id,
@@ -226,6 +253,9 @@ Deno.serve(async (req: Request) => {
           last_sync_at: syncState?.last_success_at || null,
           last_sync_duration: lastJobMetrics?.duration_seconds || null,
           last_sync_records_count: lastJobMetrics?.total_records_synced || null,
+          // Informações de cliente vinculado
+          client_id: clientInfo?.client_id || null,
+          client_name: clientInfo?.client_name || null,
         };
       }) || [],
       sync_states: syncStates?.map((state) => ({

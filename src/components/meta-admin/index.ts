@@ -12,3 +12,4 @@ export { BreadcrumbNav, createBreadcrumbItems } from './BreadcrumbNav';
 export type { BreadcrumbItem, NavigationState } from './BreadcrumbNav';
 export { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
 export type { PeriodPreset } from './PeriodSelector';
+export { MetaAccountClientBinder } from './MetaAccountClientBinder';

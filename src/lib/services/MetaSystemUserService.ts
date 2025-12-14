@@ -134,6 +134,8 @@ export interface SyncStatusResponse {
     last_sync_at: string | null;
     last_sync_duration: number | null;
     last_sync_records_count: number | null;
+    client_id: string | null;
+    client_name: string | null;
   }>;
   sync_states: SyncState[];
   recent_jobs: SyncJob[];
