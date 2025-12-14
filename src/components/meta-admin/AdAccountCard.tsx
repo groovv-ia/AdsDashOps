@@ -277,8 +277,7 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     <Card
       className={`
         hover:shadow-xl transition-all duration-300 ${getPerformanceColor()} overflow-hidden
-        cursor-pointer hover:scale-[1.02] active:scale-[0.98]
-        hover:ring-2 hover:ring-blue-300 hover:bg-gray-50/50
+        cursor-pointer hover:scale-[1.02] active:scale-[0.98] hover:bg-gray-50/50
         ${isSelected ? 'ring-2 ring-blue-400 shadow-lg bg-blue-50/30' : ''}
       `}
       onClick={() => onSelect(account.id)}
