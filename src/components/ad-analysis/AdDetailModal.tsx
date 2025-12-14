@@ -45,7 +45,7 @@ import {
   AreaChart,
   Area,
 } from 'recharts';
-import { useAdDetailData } from '../../hooks/useAdDetails';
+import { useAdDetailData, type PreloadedMetricsData } from '../../hooks/useAdDetails';
 import { ScoreCircle } from './ScoreCircle';
 import { RecommendationCard } from './RecommendationCard';
 import { ImageZoomModal } from './ImageZoomModal';
@@ -94,7 +94,56 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   const startDate = dateRange?.start || defaultStartDate;
   const endDate = dateRange?.end || defaultEndDate;
 
-  // Hook combinado para todos os dados
+  // Verifica se ha dados pre-carregados
+  const hasPreloadedData = preloadedMetrics.length > 0;
+
+  // Prepara dados pre-carregados para o hook de analise de metricas com IA
+  // Este formato e necessario para evitar nova query ao banco durante analise
+  const preloadedMetricsForAI: PreloadedMetricsData | null = useMemo(() => {
+    if (!hasPreloadedData || !adData?.entity_name) return null;
+
+    const totals = preloadedMetrics.reduce(
+      (acc, row) => ({
+        impressions: acc.impressions + (row.impressions || 0),
+        reach: acc.reach + (row.reach || 0),
+        clicks: acc.clicks + (row.clicks || 0),
+        spend: acc.spend + (row.spend || 0),
+      }),
+      { impressions: 0, reach: 0, clicks: 0, spend: 0 }
+    );
+
+    const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+    const avgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
+    const avgCpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
+    const avgFrequency = totals.reach > 0 ? totals.impressions / totals.reach : 0;
+
+    const dailyMetrics = [...preloadedMetrics]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((row) => ({
+        date: row.date,
+        impressions: row.impressions || 0,
+        clicks: row.clicks || 0,
+        spend: row.spend || 0,
+        ctr: row.ctr || 0,
+        cpc: row.cpc || 0,
+        cpm: row.cpm || 0,
+      }));
+
+    return {
+      entityName: adData.entity_name,
+      totalSpend: totals.spend,
+      totalImpressions: totals.impressions,
+      totalReach: totals.reach,
+      totalClicks: totals.clicks,
+      avgCtr,
+      avgCpc,
+      avgCpm,
+      avgFrequency,
+      dailyMetrics,
+    };
+  }, [hasPreloadedData, preloadedMetrics, adData?.entity_name]);
+
+  // Hook combinado para todos os dados - passa dados pre-carregados para analise de metricas
   const {
     creative,
     creativeLoading,
@@ -107,7 +156,6 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     hasAnalysis,
     metrics: fetchedMetrics,
     metricsLoading,
-    // Novos dados de analise de metricas com IA
     metricsAnalysis,
     metricsAnalysisLoading,
     isAnalyzingMetrics,
@@ -118,13 +166,11 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     adData?.entity_name || null,
     adData?.meta_ad_account_id || null,
     startDate,
-    endDate
+    endDate,
+    preloadedMetricsForAI
   );
 
-  // Usa metricas pre-carregadas se disponiveis, senao usa as buscadas do banco
-  const hasPreloadedData = preloadedMetrics.length > 0;
-
-  // Agrega metricas pre-carregadas no formato esperado
+  // Agrega metricas pre-carregadas no formato para exibicao na aba de metricas
   const aggregatedPreloadedMetrics = useMemo(() => {
     if (!hasPreloadedData) return null;
 
@@ -138,13 +184,11 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
       { impressions: 0, reach: 0, clicks: 0, spend: 0 }
     );
 
-    // Calcula metricas derivadas
     const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
     const avgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
     const avgCpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
     const avgFrequency = totals.reach > 0 ? totals.impressions / totals.reach : 0;
 
-    // Metricas diarias ordenadas por data
     const dailyMetrics = [...preloadedMetrics]
       .sort((a, b) => a.date.localeCompare(b.date))
       .map((row) => ({

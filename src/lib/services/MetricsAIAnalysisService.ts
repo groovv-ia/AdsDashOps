@@ -21,6 +21,69 @@ import type {
 // URL base das Edge Functions
 const FUNCTIONS_URL = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
 
+// Interface para dados pre-carregados (vindos do modal)
+export interface PreloadedMetricsData {
+  entityName: string;
+  totalSpend: number;
+  totalImpressions: number;
+  totalReach: number;
+  totalClicks: number;
+  avgCtr: number;
+  avgCpc: number;
+  avgCpm: number;
+  avgFrequency: number;
+  dailyMetrics: Array<{
+    date: string;
+    impressions: number;
+    clicks: number;
+    spend: number;
+    ctr: number;
+    cpc: number;
+    cpm: number;
+  }>;
+}
+
+/**
+ * Constroi MetricsInputData a partir de dados pre-carregados
+ */
+function buildMetricsInputFromPreloaded(
+  entityId: string,
+  entityLevel: AnalysisLevel,
+  startDate: string,
+  endDate: string,
+  data: PreloadedMetricsData
+): MetricsInputData {
+  return {
+    entity_id: entityId,
+    entity_name: data.entityName,
+    entity_level: entityLevel,
+    start_date: startDate,
+    end_date: endDate,
+    days_count: data.dailyMetrics.length,
+    total_impressions: data.totalImpressions,
+    total_reach: data.totalReach,
+    total_clicks: data.totalClicks,
+    total_spend: data.totalSpend,
+    total_conversions: 0,
+    avg_ctr: data.avgCtr,
+    avg_cpc: data.avgCpc,
+    avg_cpm: data.avgCpm,
+    avg_frequency: data.avgFrequency,
+    avg_conversion_rate: 0,
+    avg_cost_per_conversion: 0,
+    daily_metrics: data.dailyMetrics.map(d => ({
+      date: d.date,
+      impressions: d.impressions,
+      clicks: d.clicks,
+      spend: d.spend,
+      ctr: d.ctr,
+      cpc: d.cpc,
+      cpm: d.cpm,
+      conversions: 0,
+    })),
+  };
+}
+
 /**
  * Solicita análise de métricas com IA via Edge Function
  */
@@ -103,13 +166,20 @@ export async function getMetricsAnalysisHistory(
 /**
  * Prepara dados de métricas do banco para análise
  * Busca métricas diárias e calcula agregados
+ * Tambem aceita dados pre-carregados para evitar nova query
  */
 export async function prepareMetricsDataForAnalysis(
   entityId: string,
   entityLevel: AnalysisLevel,
   startDate: string,
-  endDate: string
+  endDate: string,
+  preloadedData?: PreloadedMetricsData
 ): Promise<MetricsInputData | null> {
+  // Se dados pre-carregados foram fornecidos, usa eles
+  if (preloadedData && preloadedData.dailyMetrics.length > 0) {
+    return buildMetricsInputFromPreloaded(entityId, entityLevel, startDate, endDate, preloadedData);
+  }
+
   // Busca métricas diárias da entidade
   const { data: dailyData, error } = await supabase
     .from('meta_insights_daily')

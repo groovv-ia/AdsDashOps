@@ -18,7 +18,11 @@ import {
   requestMetricsAnalysis,
   getLatestMetricsAnalysis,
   prepareMetricsDataForAnalysis,
+  type PreloadedMetricsData,
 } from '../lib/services/MetricsAIAnalysisService';
+
+// Re-exporta o tipo para uso externo
+export type { PreloadedMetricsData };
 import type {
   MetaAdCreative,
   AdAIAnalysis,
@@ -210,6 +214,7 @@ export function useAdAIAnalysis(adId: string | null) {
 /**
  * Hook para gerenciar análise de MÉTRICAS com IA de um anúncio/campanha
  * Esta é a nova análise focada em performance de métricas, não em criativos
+ * Aceita dados pre-carregados para evitar nova query ao banco
  */
 export function useMetricsAIAnalysis(
   entityId: string | null,
@@ -217,7 +222,8 @@ export function useMetricsAIAnalysis(
   entityLevel: AnalysisLevel,
   metaAdAccountId: string | null,
   startDate: string | null,
-  endDate: string | null
+  endDate: string | null,
+  preloadedMetricsData?: PreloadedMetricsData | null
 ) {
   const [state, setState] = useState<AsyncState<MetricsAIAnalysis>>({
     data: null,
@@ -254,16 +260,17 @@ export function useMetricsAIAnalysis(
     setState(prev => ({ ...prev, error: null }));
 
     try {
-      // Prepara dados de métricas para análise
+      // Prepara dados de métricas para análise (usa pre-carregados se disponíveis)
       const metricsData = await prepareMetricsDataForAnalysis(
         entityId,
         entityLevel,
         startDate,
-        endDate
+        endDate,
+        preloadedMetricsData || undefined
       );
 
       if (!metricsData) {
-        throw new Error('Não foi possível obter dados de métricas para análise');
+        throw new Error('Não foi possível obter dados de métricas para análise. Verifique se há métricas disponíveis para este período.');
       }
 
       // Solicita análise via Edge Function
@@ -284,7 +291,7 @@ export function useMetricsAIAnalysis(
       setIsAnalyzing(false);
       throw err;
     }
-  }, [entityId, entityName, entityLevel, metaAdAccountId, startDate, endDate]);
+  }, [entityId, entityName, entityLevel, metaAdAccountId, startDate, endDate, preloadedMetricsData]);
 
   // Effect para buscar análise existente quando parâmetros mudam
   useEffect(() => {
@@ -360,20 +367,23 @@ export function useAdDetailData(
   adName: string | null,
   metaAdAccountId: string | null,
   startDate: string | null,
-  endDate: string | null
+  endDate: string | null,
+  preloadedMetrics?: PreloadedMetricsData | null
 ) {
   const creative = useAdCreative(adId, metaAdAccountId);
   const analysis = useAdAIAnalysis(adId);
   const metrics = useAdMetrics(adId, startDate, endDate);
 
   // Análise de métricas com IA (nova funcionalidade)
+  // Passa dados pre-carregados para evitar nova query ao banco
   const metricsAI = useMetricsAIAnalysis(
     adId,
     adName,
     'ad',
     metaAdAccountId,
     startDate,
-    endDate
+    endDate,
+    preloadedMetrics
   );
 
   // Loading geral (qualquer um carregando)
