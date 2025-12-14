@@ -407,22 +407,50 @@ export async function fetchAdCreativesBatch(
     throw new Error('Usuário não autenticado');
   }
 
-  const response = await fetch(`${FUNCTIONS_URL}/meta-fetch-ad-creatives-batch`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session.access_token}`,
-      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify(payload),
+  console.log('[AdCreativeService] Buscando criativos em lote:', {
+    ad_count: payload.ad_ids.length,
+    meta_ad_account_id: payload.meta_ad_account_id,
   });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Erro ao buscar criativos em lote');
-  }
+  try {
+    const response = await fetch(`${FUNCTIONS_URL}/meta-fetch-ad-creatives-batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify(payload),
+    });
 
-  return response.json();
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[AdCreativeService] Erro na resposta:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+      });
+
+      try {
+        const errorJson = JSON.parse(errorText);
+        throw new Error(errorJson.error || errorJson.details || 'Erro ao buscar criativos em lote');
+      } catch (parseError) {
+        throw new Error(`Erro HTTP ${response.status}: ${errorText || response.statusText}`);
+      }
+    }
+
+    const result = await response.json();
+    console.log('[AdCreativeService] Criativos recebidos:', {
+      fetched_count: result.fetched_count,
+      cached_count: result.cached_count,
+      error_count: Object.keys(result.errors || {}).length,
+    });
+
+    return result;
+  } catch (error) {
+    console.error('[AdCreativeService] Erro ao buscar criativos:', error);
+    throw error;
+  }
 }
 
 /**
@@ -433,13 +461,20 @@ export async function getCreativesFromCacheBatch(
 ): Promise<Record<string, MetaAdCreative>> {
   if (adIds.length === 0) return {};
 
+  console.log(`[AdCreativeService] Buscando ${adIds.length} criativos do cache...`);
+
   const { data, error } = await supabase
     .from('meta_ad_creatives')
     .select('*')
     .in('ad_id', adIds);
 
   if (error) {
-    console.error('Erro ao buscar criativos do cache em lote:', error);
+    console.error('[AdCreativeService] Erro ao buscar criativos do cache:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
     return {};
   }
 
@@ -450,6 +485,8 @@ export async function getCreativesFromCacheBatch(
       creativesMap[creative.ad_id] = creative;
     }
   }
+
+  console.log(`[AdCreativeService] Encontrados ${Object.keys(creativesMap).length} criativos no cache`);
 
   return creativesMap;
 }
@@ -469,6 +506,8 @@ export async function prefetchCreativesForAds(
     return { creatives: {}, errors: {} };
   }
 
+  console.log(`[AdCreativeService] Prefetch iniciado para ${adIds.length} ads`);
+
   // Verifica cache primeiro
   const cached = await getCreativesFromCacheBatch(adIds);
   const cachedIds = new Set(Object.keys(cached));
@@ -476,13 +515,17 @@ export async function prefetchCreativesForAds(
   // Filtra os que precisam ser buscados
   const idsToFetch = adIds.filter(id => !cachedIds.has(id));
 
+  console.log(`[AdCreativeService] ${cachedIds.size} em cache, ${idsToFetch.length} para buscar`);
+
   // Se todos estao em cache, retorna
   if (idsToFetch.length === 0) {
+    console.log('[AdCreativeService] Todos os criativos estão em cache');
     return { creatives: cached, errors: {} };
   }
 
   // Busca os faltantes
   try {
+    console.log(`[AdCreativeService] Buscando ${idsToFetch.length} criativos faltantes...`);
     const result = await fetchAdCreativesBatch({
       ad_ids: idsToFetch,
       meta_ad_account_id: metaAdAccountId,
@@ -494,12 +537,14 @@ export async function prefetchCreativesForAds(
       ...result.creatives,
     };
 
+    console.log(`[AdCreativeService] Prefetch concluído. Total: ${Object.keys(allCreatives).length} criativos`);
+
     return {
       creatives: allCreatives,
       errors: result.errors,
     };
   } catch (error) {
-    console.error('Erro ao buscar criativos em lote:', error);
+    console.error('[AdCreativeService] Erro ao buscar criativos em lote:', error);
 
     // Retorna pelo menos o cache
     return {

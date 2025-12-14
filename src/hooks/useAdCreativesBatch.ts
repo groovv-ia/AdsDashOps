@@ -79,8 +79,16 @@ export function useAdCreativesBatch(
     }
 
     // Evita busca duplicada
-    if (fetchingRef.current) return;
+    if (fetchingRef.current) {
+      console.log('[useAdCreativesBatch] Busca já em andamento, ignorando...');
+      return;
+    }
     fetchingRef.current = true;
+
+    console.log('[useAdCreativesBatch] Iniciando busca de criativos:', {
+      ad_count: adIds.length,
+      meta_ad_account_id: metaAdAccountId,
+    });
 
     // Define loading para todos os ads
     const initialLoadingStates: Record<string, LoadingState> = {};
@@ -97,6 +105,11 @@ export function useAdCreativesBatch(
 
     try {
       const result = await prefetchCreativesForAds(adIds, metaAdAccountId);
+
+      console.log('[useAdCreativesBatch] Resultado do prefetch:', {
+        creatives_count: Object.keys(result.creatives).length,
+        errors_count: Object.keys(result.errors).length,
+      });
 
       // Atualiza estados de loading individuais
       const newLoadingStates: Record<string, LoadingState> = {};
@@ -128,8 +141,14 @@ export function useAdCreativesBatch(
         fetchedCount: Object.keys(result.creatives).length - cachedCount,
         cachedCount,
       }));
+
+      console.log('[useAdCreativesBatch] Estado atualizado com sucesso');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      console.error('[useAdCreativesBatch] Erro ao buscar criativos:', {
+        message: errorMessage,
+        error,
+      });
 
       // Marca todos como erro
       const errorLoadingStates: Record<string, LoadingState> = {};
