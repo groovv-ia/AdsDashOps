@@ -4,10 +4,6 @@ import { EmailConfirmationCallback } from './components/auth/EmailConfirmationCa
 import { OAuthCallback } from './components/dashboard/OAuthCallback';
 import { DashboardHeader } from './components/dashboard/DashboardHeader';
 import { Sidebar } from './components/dashboard/Sidebar';
-import { FilterBar } from './components/dashboard/FilterBar';
-import { MetricsOverview } from './components/dashboard/MetricsOverview';
-import { PerformanceChart } from './components/dashboard/PerformanceChart';
-import { CampaignTable } from './components/dashboard/CampaignTable';
 import { SettingsPage } from './components/settings/SettingsPage';
 import { AIInsightsPanel } from './components/insights/AIInsightsPanel';
 import { SupportPage } from './components/support/SupportPage';
@@ -31,8 +27,7 @@ import { useDashboardData } from './hooks/useDashboardData';
 import { isDemoMode } from './lib/supabase';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
-import { Card } from './components/ui/Card';
-import { BarChart3, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 function AppContent() {
   // Todos os hooks devem vir ANTES de qualquer early return
@@ -52,7 +47,7 @@ function AppContent() {
   } = useDashboardData();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState('overview');
+  const [currentPage, setCurrentPage] = useState('meta-admin');
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [filters, setFilters] = useState({
@@ -349,110 +344,8 @@ function AppContent() {
         );
       case 'support':
         return <SupportPage />;
-      case 'overview':
       default:
-        return (
-          <>
-            {/* Header with Icon */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <div className="p-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg">
-                  <BarChart3 className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-                  <p className="text-gray-600">Visão geral das suas campanhas de publicidade</p>
-                </div>
-              </div>
-
-              {/* Indicador discreto de fonte de dados */}
-              <div className="group relative">
-                <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
-                  isUsingRealData
-                    ? 'bg-green-100 text-green-700 border border-green-200'
-                    : 'bg-blue-100 text-blue-700 border border-blue-200'
-                }`}>
-                  <span className={`w-2 h-2 rounded-full mr-2 ${
-                    isUsingRealData ? 'bg-green-500' : 'bg-blue-500'
-                  }`}></span>
-                  {isUsingRealData ? 'Dados Reais' : 'Modo Demonstração'}
-                </span>
-
-                {/* Tooltip explicativo */}
-                <div className="absolute right-0 top-full mt-2 w-64 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                  <div className="bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg">
-                    <p className="font-medium mb-1">
-                      {isUsingRealData ? '✓ Dados Reais' : '⚡ Modo Demonstração'}
-                    </p>
-                    <p>
-                      {isUsingRealData
-                        ? 'Você está visualizando dados das suas campanhas conectadas.'
-                        : 'Você está visualizando dados de exemplo. Conecte suas fontes de dados para ver suas campanhas reais.'}
-                    </p>
-                    <div className="absolute -top-1 right-4 w-2 h-2 bg-gray-900 transform rotate-45"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <FilterBar
-              onFilterChange={handleFilterChange}
-              onExport={handleExport}
-              onRefresh={handleRefresh}
-            />
-            
-            <MetricsOverview
-              metrics={summaryMetrics}
-              loading={dashboardLoading}
-            />
-            
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <PerformanceChart
-                data={filteredMetrics}
-                metric="impressions"
-                title="Impressões"
-                chartType="line"
-              />
-              <PerformanceChart
-                data={filteredMetrics}
-                metric="spend"
-                title="Gasto"
-                chartType="bar"
-              />
-              <PerformanceChart
-                data={filteredMetrics}
-                metric="conversions"
-                title="Conversões"
-                chartType="line"
-              />
-              <PerformanceChart
-                data={filteredMetrics}
-                metric="roas"
-                title="ROAS"
-                chartType="line"
-              />
-            </div>
-            
-            <CampaignTable
-              campaigns={filteredCampaigns}
-              metrics={filteredMetrics}
-            />
-
-            {/* Debug Info */}
-            {(filters.platforms.length > 0 || filters.campaigns.length > 0 || filters.adSets.length > 0 || filters.ads.length > 0) && (
-              <Card className="bg-gray-50">
-                <h4 className="font-medium text-gray-900 mb-2">Filtros Aplicados:</h4>
-                <div className="text-sm text-gray-600 space-y-1">
-                  <div>Plataformas: {filters.platforms.length > 0 ? filters.platforms.join(', ') : 'Todas'}</div>
-                  <div>Campanhas: {filters.campaigns.length > 0 ? `${filters.campaigns.length} selecionadas` : 'Todas'}</div>
-                  <div>Conjuntos: {filters.adSets.length > 0 ? `${filters.adSets.length} selecionados` : 'Todos'}</div>
-                  <div>Anúncios: {filters.ads.length > 0 ? `${filters.ads.length} selecionados` : 'Todos'}</div>
-                  <div>Resultados: {filteredCampaigns.length} campanhas, {filteredMetrics.length} métricas</div>
-                </div>
-              </Card>
-            )}
-          </>
-        );
+        return <MetaAdminPage />;
     }
   };
 

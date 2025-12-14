@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Settings, Sparkles, Headphones, Target, Link2, RefreshCw } from 'lucide-react';
+import { Settings, Sparkles, Headphones, Target, Link2, RefreshCw } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -11,7 +11,6 @@ interface SidebarProps {
 // Itens do menu de navegacao principal
 const menuItems = [
   { icon: Link2, label: 'Conexao Meta', page: 'meta-admin' },
-  { icon: BarChart3, label: 'Dashboard', page: 'overview' },
   { icon: Target, label: 'Campanhas', page: 'campaigns' },
   { icon: RefreshCw, label: 'Meta Ads Sync', page: 'meta-sync' },
   { icon: Sparkles, label: 'Analise com IA', page: 'ai-insights' },
@@ -19,11 +18,11 @@ const menuItems = [
   { icon: Settings, label: 'Configuracoes', page: 'settings' },
 ];
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
-  isOpen, 
-  onClose, 
-  currentPage = 'overview',
-  onPageChange 
+export const Sidebar: React.FC<SidebarProps> = ({
+  isOpen,
+  onClose,
+  currentPage = 'meta-admin',
+  onPageChange
 }) => {
   const handlePageClick = (page: string) => {
     if (onPageChange) {
