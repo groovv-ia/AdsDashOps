@@ -13,6 +13,7 @@ export interface Workspace {
   id: string;
   name: string;
   owner_id: string;
+  logo_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,6 +39,7 @@ export interface CreateWorkspaceInput {
 
 export interface UpdateWorkspaceInput {
   name?: string;
+  logo_url?: string | null;
 }
 
 export interface InviteMemberInput {
@@ -244,13 +246,23 @@ export async function updateWorkspace(
     return { data: null, error: 'Sem permissao para editar este workspace' };
   }
 
+  // Prepara dados para atualizar
+  const updateData: Record<string, any> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.name !== undefined) {
+    updateData.name = input.name.trim();
+  }
+
+  if (input.logo_url !== undefined) {
+    updateData.logo_url = input.logo_url;
+  }
+
   // Atualiza o workspace
   const { data: updated, error: updateError } = await supabase
     .from('workspaces')
-    .update({
-      name: input.name?.trim(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(updateData)
     .eq('id', workspaceId)
     .select()
     .single();
@@ -540,6 +552,121 @@ export async function updateMemberRole(
     .from('workspace_members')
     .update({ role: newRole })
     .eq('id', memberId);
+
+  if (updateError) {
+    return { success: false, error: updateError.message };
+  }
+
+  return { success: true };
+}
+
+/**
+ * Faz upload do logo do workspace e retorna a URL publica
+ */
+export async function uploadWorkspaceLogo(
+  workspaceId: string,
+  file: File
+): Promise<{
+  url: string | null;
+  error?: string;
+}> {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { url: null, error: 'Usuario nao autenticado' };
+  }
+
+  // Verifica se e owner ou admin do workspace
+  const { data: membership } = await supabase
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const { data: workspace } = await supabase
+    .from('workspaces')
+    .select('owner_id')
+    .eq('id', workspaceId)
+    .maybeSingle();
+
+  const isOwner = workspace?.owner_id === user.id;
+  const isAdmin = membership?.role === 'admin' || membership?.role === 'owner';
+
+  if (!isOwner && !isAdmin) {
+    return { url: null, error: 'Sem permissao para alterar o logo' };
+  }
+
+  // Valida tipo do arquivo
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowedTypes.includes(file.type)) {
+    return { url: null, error: 'Tipo de arquivo nao permitido. Use JPG, PNG, WEBP ou GIF.' };
+  }
+
+  // Valida tamanho (max 2MB)
+  if (file.size > 2 * 1024 * 1024) {
+    return { url: null, error: 'Arquivo muito grande. Maximo 2MB.' };
+  }
+
+  // Gera nome unico para o arquivo
+  const fileExt = file.name.split('.').pop()?.toLowerCase() || 'png';
+  const fileName = `${workspaceId}/logo_${Date.now()}.${fileExt}`;
+
+  // Faz upload do arquivo
+  const { error: uploadError } = await supabase.storage
+    .from('workspace-logos')
+    .upload(fileName, file, {
+      cacheControl: '3600',
+      upsert: true,
+    });
+
+  if (uploadError) {
+    return { url: null, error: uploadError.message };
+  }
+
+  // Obtem URL publica
+  const { data: urlData } = supabase.storage
+    .from('workspace-logos')
+    .getPublicUrl(fileName);
+
+  return { url: urlData.publicUrl, error: undefined };
+}
+
+/**
+ * Remove o logo do workspace
+ */
+export async function removeWorkspaceLogo(workspaceId: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: 'Usuario nao autenticado' };
+  }
+
+  // Verifica se e owner do workspace
+  const { data: workspace } = await supabase
+    .from('workspaces')
+    .select('owner_id, logo_url')
+    .eq('id', workspaceId)
+    .maybeSingle();
+
+  if (!workspace || workspace.owner_id !== user.id) {
+    return { success: false, error: 'Sem permissao para remover o logo' };
+  }
+
+  // Remove arquivo do storage se existir
+  if (workspace.logo_url) {
+    const fileName = workspace.logo_url.split('/').slice(-2).join('/');
+    await supabase.storage.from('workspace-logos').remove([fileName]);
+  }
+
+  // Atualiza workspace para remover referencia
+  const { error: updateError } = await supabase
+    .from('workspaces')
+    .update({ logo_url: null, updated_at: new Date().toISOString() })
+    .eq('id', workspaceId);
 
   if (updateError) {
     return { success: false, error: updateError.message };

@@ -2,10 +2,10 @@
  * WorkspacesPage
  *
  * Pagina para gerenciamento de workspaces do usuario.
- * Permite criar, editar, deletar workspaces e gerenciar membros.
+ * Permite criar, editar, deletar workspaces, gerenciar membros e fazer upload de logo.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Building2,
   Plus,
@@ -20,6 +20,8 @@ import {
   UserPlus,
   Loader2,
   AlertCircle,
+  Camera,
+  Upload,
 } from 'lucide-react';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import {
@@ -28,6 +30,9 @@ import {
   addWorkspaceMember,
   removeWorkspaceMember,
   updateMemberRole,
+  uploadWorkspaceLogo,
+  removeWorkspaceLogo,
+  updateWorkspace as updateWorkspaceService,
 } from '../../lib/services/WorkspaceService';
 
 // Componente para icone de role
@@ -60,6 +65,145 @@ function RoleBadge({ role }: { role: string }) {
     <span className={`px-2 py-0.5 text-xs font-medium rounded-full border ${colors[role as keyof typeof colors] || colors.member}`}>
       {labels[role as keyof typeof labels] || role}
     </span>
+  );
+}
+
+// Componente de upload de logo
+interface LogoUploaderProps {
+  workspaceId: string;
+  currentLogoUrl?: string | null;
+  workspaceName: string;
+  onLogoUpdated: () => void;
+}
+
+function LogoUploader({ workspaceId, currentLogoUrl, workspaceName, onLogoUpdated }: LogoUploaderProps) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setError('');
+
+    try {
+      const { url, error: uploadError } = await uploadWorkspaceLogo(workspaceId, file);
+
+      if (uploadError) {
+        setError(uploadError);
+        return;
+      }
+
+      if (url) {
+        // Salva a URL do logo no workspace
+        await updateWorkspaceService(workspaceId, { logo_url: url });
+        onLogoUpdated();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Erro ao fazer upload');
+    } finally {
+      setIsUploading(false);
+      // Limpa o input para permitir selecionar o mesmo arquivo novamente
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!confirm('Tem certeza que deseja remover o logo?')) return;
+
+    setIsUploading(true);
+    setError('');
+
+    try {
+      const result = await removeWorkspaceLogo(workspaceId);
+      if (!result.success) {
+        setError(result.error || 'Erro ao remover logo');
+        return;
+      }
+      onLogoUpdated();
+    } catch (err: any) {
+      setError(err.message || 'Erro ao remover logo');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-3">
+      {/* Preview do logo */}
+      <div className="relative group">
+        <div className="w-20 h-20 rounded-xl overflow-hidden bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+          {currentLogoUrl ? (
+            <img
+              src={currentLogoUrl}
+              alt={workspaceName}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <Building2 className="w-10 h-10 text-white" />
+          )}
+        </div>
+
+        {/* Overlay de edicao */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"
+        >
+          {isUploading ? (
+            <Loader2 className="w-6 h-6 text-white animate-spin" />
+          ) : (
+            <Camera className="w-6 h-6 text-white" />
+          )}
+        </button>
+      </div>
+
+      {/* Input de arquivo oculto */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+
+      {/* Botoes de acao */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors disabled:opacity-50"
+        >
+          <Upload className="w-4 h-4" />
+          {currentLogoUrl ? 'Alterar' : 'Upload'}
+        </button>
+
+        {currentLogoUrl && (
+          <button
+            onClick={handleRemoveLogo}
+            disabled={isUploading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" />
+            Remover
+          </button>
+        )}
+      </div>
+
+      {/* Erro */}
+      {error && (
+        <p className="text-sm text-red-600 text-center">{error}</p>
+      )}
+
+      {/* Dica */}
+      <p className="text-xs text-gray-500 text-center">
+        JPG, PNG, WEBP ou GIF. Max 2MB.
+      </p>
+    </div>
   );
 }
 
@@ -379,6 +523,14 @@ export function WorkspacesPage() {
     loadWorkspaceDetails(workspace.id);
   };
 
+  // Callback quando logo e atualizado
+  const handleLogoUpdated = async () => {
+    await refreshWorkspaces();
+    if (selectedWorkspace) {
+      await loadWorkspaceDetails(selectedWorkspace.id);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -447,13 +599,25 @@ export function WorkspacesPage() {
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                        currentWorkspace?.id === workspace.id
+                      {/* Logo ou icone padrao */}
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden ${
+                        !workspace.logo_url && currentWorkspace?.id === workspace.id
                           ? 'bg-blue-100 text-blue-600'
-                          : 'bg-gray-100 text-gray-600'
+                          : !workspace.logo_url
+                            ? 'bg-gray-100 text-gray-600'
+                            : ''
                       }`}>
-                        <Building2 className="w-5 h-5" />
+                        {workspace.logo_url ? (
+                          <img
+                            src={workspace.logo_url}
+                            alt={workspace.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Building2 className="w-5 h-5" />
+                        )}
                       </div>
+
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 truncate">
                           {workspace.name}
@@ -484,38 +648,47 @@ export function WorkspacesPage() {
               {/* Header do workspace */}
               <div className="p-6 border-b border-gray-100">
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white">
-                      <Building2 className="w-7 h-7" />
-                    </div>
+                  <div className="flex items-start gap-6">
+                    {/* Upload de logo */}
+                    <LogoUploader
+                      workspaceId={selectedWorkspace.id}
+                      currentLogoUrl={selectedWorkspace.logo_url}
+                      workspaceName={selectedWorkspace.name}
+                      onLogoUpdated={handleLogoUpdated}
+                    />
+
                     <div>
                       <h2 className="text-xl font-semibold text-gray-900">
                         {selectedWorkspace.name}
                       </h2>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-gray-500 mt-1">
                         {selectedWorkspace.member_count} membro(s)
                       </p>
+
+                      {/* Botao de ativar */}
+                      {currentWorkspace?.id !== selectedWorkspace.id && (
+                        <button
+                          onClick={() => handleActivate(selectedWorkspace)}
+                          className="mt-3 px-3 py-1.5 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+                        >
+                          Ativar este workspace
+                        </button>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {currentWorkspace?.id !== selectedWorkspace.id && (
-                      <button
-                        onClick={() => handleActivate(selectedWorkspace)}
-                        className="px-3 py-1.5 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
-                      >
-                        Ativar
-                      </button>
-                    )}
                     <button
                       onClick={() => setShowEditModal(true)}
                       className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                      title="Editar nome"
                     >
                       <Edit2 className="w-5 h-5" />
                     </button>
                     <button
                       onClick={() => handleDelete(selectedWorkspace.id)}
                       className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Deletar workspace"
                     >
                       <Trash2 className="w-5 h-5" />
                     </button>

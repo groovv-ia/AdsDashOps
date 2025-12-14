@@ -3,4 +3,4 @@
  */
 
 export { WorkspacesPage } from './WorkspacesPage';
-export { WorkspaceSelector } from './WorkspaceSelector';
+export { WorkspaceSelector, WorkspaceLogo } from './WorkspaceSelector';

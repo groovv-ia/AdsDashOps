@@ -2,16 +2,75 @@
  * WorkspaceSelector
  *
  * Componente dropdown para selecionar e trocar entre workspaces.
- * Pode ser usado no header ou sidebar.
+ * Exibe o logo do workspace se disponivel, caso contrario usa icone padrao.
  */
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Building2, ChevronDown, Check, Plus, Settings } from 'lucide-react';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
+import { Workspace } from '../../lib/services/WorkspaceService';
 
 interface WorkspaceSelectorProps {
   onNavigateToWorkspaces?: () => void;
   compact?: boolean;
+}
+
+/**
+ * Componente para exibir logo ou icone padrao do workspace
+ */
+function WorkspaceLogo({
+  workspace,
+  size = 'md',
+  isActive = false,
+}: {
+  workspace: Workspace;
+  size?: 'sm' | 'md' | 'lg';
+  isActive?: boolean;
+}) {
+  const sizeClasses = {
+    sm: 'w-7 h-7',
+    md: 'w-8 h-8',
+    lg: 'w-10 h-10',
+  };
+
+  const iconSizes = {
+    sm: 'w-4 h-4',
+    md: 'w-4 h-4',
+    lg: 'w-5 h-5',
+  };
+
+  // Se tem logo, exibe a imagem
+  if (workspace.logo_url) {
+    return (
+      <div className={`${sizeClasses[size]} rounded-md overflow-hidden flex-shrink-0`}>
+        <img
+          src={workspace.logo_url}
+          alt={workspace.name}
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            // Se falhar ao carregar, esconde a imagem e mostra fallback
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Fallback: icone padrao com gradiente
+  return (
+    <div
+      className={`
+        ${sizeClasses[size]} rounded-md flex items-center justify-center flex-shrink-0
+        ${isActive
+          ? 'bg-blue-100 text-blue-600'
+          : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
+        }
+      `}
+    >
+      <Building2 className={iconSizes[size]} />
+    </div>
+  );
 }
 
 export function WorkspaceSelector({ onNavigateToWorkspaces, compact = false }: WorkspaceSelectorProps) {
@@ -49,7 +108,7 @@ export function WorkspaceSelector({ onNavigateToWorkspaces, compact = false }: W
   if (isLoading) {
     return (
       <div className={`flex items-center gap-2 ${compact ? 'px-2 py-1.5' : 'px-3 py-2'} bg-gray-100 rounded-lg animate-pulse`}>
-        <div className="w-6 h-6 bg-gray-200 rounded" />
+        <div className="w-7 h-7 bg-gray-200 rounded-md" />
         <div className="w-20 h-4 bg-gray-200 rounded" />
       </div>
     );
@@ -89,9 +148,7 @@ export function WorkspaceSelector({ onNavigateToWorkspaces, compact = false }: W
           rounded-lg transition-colors text-left
         `}
       >
-        <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white flex-shrink-0">
-          <Building2 className="w-4 h-4" />
-        </div>
+        <WorkspaceLogo workspace={currentWorkspace} size="sm" />
 
         <div className="flex-1 min-w-0">
           <p className={`font-medium text-gray-900 truncate ${compact ? 'text-sm' : ''}`}>
@@ -121,15 +178,11 @@ export function WorkspaceSelector({ onNavigateToWorkspaces, compact = false }: W
                   ${currentWorkspace.id === workspace.id ? 'bg-blue-50' : ''}
                 `}
               >
-                <div className={`
-                  w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0
-                  ${currentWorkspace.id === workspace.id
-                    ? 'bg-blue-100 text-blue-600'
-                    : 'bg-gray-100 text-gray-600'
-                  }
-                `}>
-                  <Building2 className="w-4 h-4" />
-                </div>
+                <WorkspaceLogo
+                  workspace={workspace}
+                  size="md"
+                  isActive={currentWorkspace.id === workspace.id && !workspace.logo_url}
+                />
 
                 <span className={`flex-1 truncate ${
                   currentWorkspace.id === workspace.id ? 'font-medium text-blue-600' : 'text-gray-700'
@@ -164,6 +217,9 @@ export function WorkspaceSelector({ onNavigateToWorkspaces, compact = false }: W
     </div>
   );
 }
+
+// Export do componente auxiliar para uso em outros lugares
+export { WorkspaceLogo };
 
 // Export do index
 export { WorkspaceSelector as default };
