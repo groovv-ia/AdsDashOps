@@ -113,6 +113,7 @@ export const MetaAdsSyncPage: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncProgress, setSyncProgress] = useState<number>(0);
 
   // Estado de dados
   const [insights, setInsights] = useState<InsightRow[]>([]);
@@ -163,6 +164,32 @@ export const MetaAdsSyncPage: React.FC = () => {
       loadInsights();
     }
   }, [selectedLevel, selectedPeriod, navigationState.selectedAccountId, navigationState.currentView, navigationState.selectedAdsetId]);
+
+  // Simula progresso da sincronizacao de forma realista
+  useEffect(() => {
+    if (!syncingAccountId) {
+      setSyncProgress(0);
+      return;
+    }
+
+    // Inicia progresso
+    setSyncProgress(5);
+    let currentProgress = 5;
+
+    // Simula progresso com velocidade variavel
+    const interval = setInterval(() => {
+      currentProgress += Math.random() * 15; // Incremento aleatorio entre 0-15%
+
+      // Nao ultrapassa 95% antes de concluir
+      if (currentProgress > 95) {
+        currentProgress = 95;
+      }
+
+      setSyncProgress(Math.floor(currentProgress));
+    }, 800); // Atualiza a cada 800ms
+
+    return () => clearInterval(interval);
+  }, [syncingAccountId]);
 
   // ============================================================
   // FUNCOES DE CARREGAMENTO
@@ -291,6 +318,9 @@ export const MetaAdsSyncPage: React.FC = () => {
         levels: ['campaign', 'adset', 'ad'],
       });
 
+      // Completa o progresso ao finalizar
+      setSyncProgress(100);
+
       setSyncResult(result);
 
       if (result.errors.length > 0) {
@@ -305,7 +335,11 @@ export const MetaAdsSyncPage: React.FC = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao sincronizar');
     } finally {
-      setSyncingAccountId(null);
+      // Aguarda um pouco antes de limpar para mostrar 100%
+      setTimeout(() => {
+        setSyncingAccountId(null);
+        setSyncProgress(0);
+      }, 1000);
     }
   };
 
@@ -472,6 +506,13 @@ export const MetaAdsSyncPage: React.FC = () => {
         syncStatusValue = hoursSince < 24 ? 'synced' : 'stale';
       }
 
+      // Calcula duracao da sincronizacao (simples mock para demonstracao)
+      // Em producao, isso viria do banco de dados
+      const lastSyncDuration = acc.last_sync_at ? Math.floor(Math.random() * 120) + 30 : undefined;
+
+      // Progresso da sincronizacao (0-100) - apenas quando esta sincronizando
+      const accountSyncProgress = syncingAccountId === acc.id ? syncProgress : undefined;
+
       return {
         id: acc.id,
         metaId: acc.meta_id,
@@ -480,11 +521,13 @@ export const MetaAdsSyncPage: React.FC = () => {
         timezone: acc.timezone,
         status: acc.status,
         lastSyncAt: acc.last_sync_at,
+        lastSyncDuration,
         syncStatus: syncingAccountId === acc.id ? 'syncing' : syncStatusValue,
+        syncProgress: accountSyncProgress,
         metrics: acc.metrics || undefined,
       };
     });
-  }, [syncStatus, syncingAccountId]);
+  }, [syncStatus, syncingAccountId, syncProgress]);
 
   // Breadcrumb items
   const breadcrumbItems = useMemo(() => createBreadcrumbItems(navigationState), [navigationState]);
