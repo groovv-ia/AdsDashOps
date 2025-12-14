@@ -43,7 +43,7 @@ interface UseAdCreativesBatchReturn extends UseAdCreativesBatchState {
  * Busca automaticamente quando ads mudam
  */
 export function useAdCreativesBatch(
-  ads: Array<{ entity_id: string; meta_ad_account_id: string }>,
+  ads: Array<{ entity_id: string; meta_ad_account_id: string }> | undefined,
   autoFetch = true
 ): UseAdCreativesBatchReturn {
   // Estado principal
@@ -60,16 +60,28 @@ export function useAdCreativesBatch(
   const fetchingRef = useRef(false);
   const lastAdsRef = useRef<string>('');
 
-  // Extrai IDs unicos e meta_ad_account_id
-  const adIds = ads.map(ad => ad.entity_id);
-  const metaAdAccountId = ads.length > 0 ? ads[0].meta_ad_account_id : '';
+  // Proteção contra undefined: garante que ads sempre seja um array válido
+  const safeAds = Array.isArray(ads) ? ads : [];
+
+  // Extrai IDs unicos e meta_ad_account_id com proteção contra undefined
+  const adIds = safeAds
+    .filter(ad => ad && typeof ad === 'object' && ad.entity_id)
+    .map(ad => ad.entity_id);
+  const metaAdAccountId = safeAds.length > 0 && safeAds[0]?.meta_ad_account_id
+    ? safeAds[0].meta_ad_account_id
+    : '';
   const adsKey = adIds.sort().join(',');
 
   /**
    * Busca criativos em lote
    */
   const fetchCreatives = useCallback(async () => {
-    if (adIds.length === 0 || !metaAdAccountId) {
+    // Recalcula adIds dentro do callback para garantir que sempre está atualizado
+    const currentAdIds = safeAds
+      .filter(ad => ad && typeof ad === 'object' && ad.entity_id)
+      .map(ad => ad.entity_id);
+
+    if (currentAdIds.length === 0 || !metaAdAccountId) {
       setState(prev => ({
         ...prev,
         globalLoading: false,
@@ -86,13 +98,13 @@ export function useAdCreativesBatch(
     fetchingRef.current = true;
 
     console.log('[useAdCreativesBatch] Iniciando busca de criativos:', {
-      ad_count: adIds.length,
+      ad_count: currentAdIds.length,
       meta_ad_account_id: metaAdAccountId,
     });
 
     // Define loading para todos os ads
     const initialLoadingStates: Record<string, LoadingState> = {};
-    for (const adId of adIds) {
+    for (const adId of currentAdIds) {
       initialLoadingStates[adId] = { isLoading: true, hasError: false };
     }
 
@@ -104,7 +116,7 @@ export function useAdCreativesBatch(
     }));
 
     try {
-      const result = await prefetchCreativesForAds(adIds, metaAdAccountId);
+      const result = await prefetchCreativesForAds(currentAdIds, metaAdAccountId);
 
       console.log('[useAdCreativesBatch] Resultado do prefetch:', {
         creatives_count: Object.keys(result.creatives).length,
@@ -113,7 +125,7 @@ export function useAdCreativesBatch(
 
       // Atualiza estados de loading individuais
       const newLoadingStates: Record<string, LoadingState> = {};
-      for (const adId of adIds) {
+      for (const adId of currentAdIds) {
         if (result.errors[adId]) {
           newLoadingStates[adId] = {
             isLoading: false,
@@ -152,7 +164,7 @@ export function useAdCreativesBatch(
 
       // Marca todos como erro
       const errorLoadingStates: Record<string, LoadingState> = {};
-      for (const adId of adIds) {
+      for (const adId of currentAdIds) {
         errorLoadingStates[adId] = {
           isLoading: false,
           hasError: true,
@@ -169,17 +181,17 @@ export function useAdCreativesBatch(
     } finally {
       fetchingRef.current = false;
     }
-  }, [adIds, metaAdAccountId]);
+  }, [adsKey, metaAdAccountId, safeAds]); // Usando adsKey + safeAds para ter acesso aos dados completos
 
   // Carrega automaticamente quando ads mudam
   useEffect(() => {
     if (!autoFetch) return;
     if (adsKey === lastAdsRef.current) return;
-    if (adIds.length === 0) return;
+    if (!adsKey || adsKey.length === 0) return;
 
     lastAdsRef.current = adsKey;
     fetchCreatives();
-  }, [adsKey, autoFetch, fetchCreatives, adIds.length]);
+  }, [adsKey, autoFetch, fetchCreatives]);
 
   /**
    * Retorna criativo de um ad especifico

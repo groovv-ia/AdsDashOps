@@ -66,19 +66,28 @@ function AppContent() {
   // Handle OAuth callback
   useEffect(() => {
     const handleOAuthCallback = () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      
-      const accessToken = urlParams.get('access_token') || hashParams.get('access_token');
-      const error = urlParams.get('error') || hashParams.get('error');
-      
-      if (accessToken) {
-        console.log('OAuth callback detected, cleaning URL...');
-        window.history.replaceState({}, document.title, window.location.pathname);
+      // Proteção contra SSR ou contextos onde window pode não estar disponível
+      if (typeof window === 'undefined' || !window.location) {
+        return;
       }
-      
-      if (error) {
-        console.error('OAuth error:', error);
+
+      try {
+        const urlParams = new URLSearchParams(window.location.search || '');
+        const hashParams = new URLSearchParams(window.location.hash ? window.location.hash.substring(1) : '');
+
+        const accessToken = urlParams.get('access_token') || hashParams.get('access_token');
+        const error = urlParams.get('error') || hashParams.get('error');
+
+        if (accessToken) {
+          console.log('OAuth callback detected, cleaning URL...');
+          window.history?.replaceState({}, document.title, window.location.pathname);
+        }
+
+        if (error) {
+          console.error('OAuth error:', error);
+        }
+      } catch (err) {
+        console.error('Erro ao processar callback OAuth:', err);
       }
     };
 
