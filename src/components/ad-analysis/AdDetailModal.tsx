@@ -458,9 +458,8 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
               </div>
             </div>
           ) : (
-            <div className="h-32 flex flex-col items-center justify-center bg-gray-100 rounded-lg text-gray-400">
-              <Image className="w-8 h-8 mb-2" />
-              <p className="text-xs text-gray-500">Sem preview disponível</p>
+            <div className="h-32 flex items-center justify-center bg-gray-100 rounded-lg text-gray-400">
+              <Image className="w-8 h-8" />
             </div>
           )}
         </div>
@@ -652,20 +651,9 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
   if (!creative) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-center max-w-md">
+        <div className="text-center">
           <Image className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-900 font-medium mb-2">Criativo não encontrado</p>
-          <p className="text-sm text-gray-500 mb-4">
-            O criativo deste anúncio ainda não foi sincronizado. Isso pode acontecer com anúncios
-            mais antigos ou que foram criados recentemente.
-          </p>
-          <button
-            onClick={onRefresh}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Buscar criativo agora
-          </button>
+          <p className="text-gray-500">Nenhum criativo disponível</p>
         </div>
       </div>
     );

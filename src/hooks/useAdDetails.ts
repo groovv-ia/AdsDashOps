@@ -89,33 +89,11 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
   }, [adId]);
 
   // Effect para buscar criativo quando IDs mudam
-  // Primeiro tenta carregar do cache, depois busca se não encontrar
   useEffect(() => {
-    if (!adId || !metaAdAccountId) return;
-
-    let cancelled = false;
-
-    async function loadCreative() {
-      // Tenta carregar do cache local primeiro
-      const cached = await getAdCreativeFromCache(adId);
-
-      if (cancelled) return;
-
-      if (cached) {
-        setState({ data: cached, loading: false, error: null });
-        setIsCached(true);
-      } else {
-        // Se não encontrou no cache, busca da API
-        fetchCreative();
-      }
+    if (adId && metaAdAccountId) {
+      fetchCreative();
     }
-
-    loadCreative();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [adId, metaAdAccountId]);
+  }, [adId, metaAdAccountId, fetchCreative]);
 
   return {
     creative: state.data,
