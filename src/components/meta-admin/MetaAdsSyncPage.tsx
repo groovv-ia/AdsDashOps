@@ -40,8 +40,9 @@ import {
   SyncResult,
 } from '../../lib/services/MetaSystemUserService';
 import { useClient } from '../../contexts/ClientContext';
-import { AdDetailModal } from '../ad-analysis';
+import { AdDetailModal, AdCreativeThumbnail } from '../ad-analysis';
 import type { AdDetailModalState } from '../../types/adAnalysis';
+import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
 import {
   LineChart,
   Line,
@@ -633,6 +634,27 @@ export const MetaAdsSyncPage: React.FC = () => {
       .sort((a, b) => b.spend - a.spend);
   }, [insights]);
 
+  // Prepara lista de ads para busca de criativos - apenas quando estiver na aba de anuncios
+  const adsForCreatives = useMemo(() => {
+    const isAdLevel = selectedLevel === 'ad' || navigationState.currentView === 'adset-detail';
+    if (!isAdLevel || !navigationState.selectedAccountId) return [];
+
+    // Busca a conta selecionada para obter o meta_id correto
+    const account = getAccountById(navigationState.selectedAccountId);
+    if (!account) return [];
+
+    return tableData.map((row) => ({
+      entity_id: row.entity_id,
+      meta_ad_account_id: account.meta_id,
+    }));
+  }, [tableData, selectedLevel, navigationState.currentView, navigationState.selectedAccountId, getAccountById]);
+
+  // Hook para busca em lote de criativos de ads
+  const {
+    getCreative,
+    getLoadingState,
+  } = useAdCreativesBatch(adsForCreatives);
+
   // ============================================================
   // FUNCOES DE FORMATACAO
   // ============================================================
@@ -1151,6 +1173,10 @@ export const MetaAdsSyncPage: React.FC = () => {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
+                {/* Coluna de thumbnail para ads */}
+                {(selectedLevel === 'ad' || navigationState.currentView === 'adset-detail') && (
+                  <th className="text-center py-3 px-4 text-sm font-medium text-gray-700 w-16">Criativo</th>
+                )}
                 <th className="text-left py-3 px-4 text-sm font-medium text-gray-700">Nome</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">Gasto</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">Impressoes</th>
@@ -1167,7 +1193,7 @@ export const MetaAdsSyncPage: React.FC = () => {
             <tbody>
               {tableData.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-gray-500">
+                  <td colSpan={9} className="text-center py-12 text-gray-500">
                     <div className="flex flex-col items-center">
                       <BarChart3 className="w-12 h-12 text-gray-300 mb-4" />
                       <p className="font-medium">Nenhum dado encontrado</p>
@@ -1185,6 +1211,10 @@ export const MetaAdsSyncPage: React.FC = () => {
                   const isAdRow = selectedLevel === 'ad' || navigationState.currentView === 'adset-detail';
                   const isAdsetRow = selectedLevel === 'adset' && navigationState.currentView !== 'adset-detail';
 
+                  // Busca criativo e estado de loading para ads
+                  const creative = isAdRow ? getCreative(row.entity_id) : null;
+                  const loadingState = isAdRow ? getLoadingState(row.entity_id) : { isLoading: false, hasError: false };
+
                   return (
                     <tr
                       key={row.entity_id}
@@ -1199,6 +1229,20 @@ export const MetaAdsSyncPage: React.FC = () => {
                         }
                       }}
                     >
+                      {/* Celula de thumbnail para ads */}
+                      {isAdRow && (
+                        <td className="py-3 px-4">
+                          <div className="flex justify-center">
+                            <AdCreativeThumbnail
+                              creative={creative}
+                              loading={loadingState.isLoading}
+                              error={loadingState.hasError ? loadingState.errorMessage : null}
+                              size="sm"
+                              onClick={() => handleOpenAdDetail(row)}
+                            />
+                          </div>
+                        </td>
+                      )}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
                           {/* Icone indicando que e um adset clicavel */}
