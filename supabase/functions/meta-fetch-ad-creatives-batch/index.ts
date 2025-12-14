@@ -666,6 +666,16 @@ Deno.serve(async (req: Request) => {
 
     // Salva no banco
     if (recordsToUpsert.length > 0) {
+      console.log(`Salvando ${recordsToUpsert.length} criativos no banco...`);
+
+      // Log dos tipos de criativos
+      const typesSummary = recordsToUpsert.reduce((acc: Record<string, number>, record) => {
+        const type = (record.creative_type as string) || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {});
+      console.log('Tipos de criativos:', typesSummary);
+
       const { error: upsertError } = await supabaseAdmin
         .from("meta_ad_creatives")
         .upsert(recordsToUpsert, {
@@ -673,9 +683,14 @@ Deno.serve(async (req: Request) => {
         });
 
       if (upsertError) {
-        console.error("Batch upsert error:", upsertError);
+        console.error("ERRO no batch upsert:", {
+          message: upsertError.message,
+          code: upsertError.code,
+          details: upsertError.details,
+          hint: upsertError.hint,
+        });
       } else {
-        console.log(`Successfully saved ${recordsToUpsert.length} creatives`);
+        console.log(`✓ ${recordsToUpsert.length} criativos salvos com sucesso`);
       }
     }
 

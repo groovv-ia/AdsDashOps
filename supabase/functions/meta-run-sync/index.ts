@@ -686,9 +686,11 @@ Deno.serve(async (req: Request) => {
 
                 // Determina tipo do criativo
                 const creativeType = determineCreativeType(creative);
+                console.log(`[Ad ${adId}] Tipo do criativo determinado: ${creativeType}`);
 
                 // Extrai URL da imagem
                 const imageUrl = await extractImageUrl(creative, accountMetaId);
+                console.log(`[Ad ${adId}] Image URL extraida: ${imageUrl ? 'Sim' : 'Nao'}`);
 
                 // Video ID e URL
                 const videoId = creative.video_id || videoData.video_id || assetFeed.videos?.[0]?.video_id || null;
@@ -698,6 +700,7 @@ Deno.serve(async (req: Request) => {
                 let thumbnailUrl = imageUrl;
                 if (creativeType === "video" && videoId && !thumbnailUrl) {
                   thumbnailUrl = await fetchVideoThumbnail(videoId);
+                  console.log(`[Ad ${adId}] Thumbnail de video buscado: ${thumbnailUrl ? 'Sim' : 'Nao'}`);
                 }
 
                 // Monta registro do criativo
@@ -735,8 +738,16 @@ Deno.serve(async (req: Request) => {
                   });
 
                 if (upsertError) {
-                  console.error(`Erro ao salvar criativo do ad ${adId}:`, upsertError);
+                  console.error(`[Ad ${adId}] ERRO ao salvar criativo:`, {
+                    message: upsertError.message,
+                    code: upsertError.code,
+                    details: upsertError.details,
+                    hint: upsertError.hint,
+                    creative_type: creativeType,
+                  });
                 } else {
+                  console.log(`[Ad ${adId}] Criativo salvo com sucesso (tipo: ${creativeType})`);
+
                   syncResult.creatives_synced++;
                 }
               } catch (parseErr) {
