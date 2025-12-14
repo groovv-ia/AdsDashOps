@@ -348,7 +348,6 @@ export class MetaInsightsDataService {
 
   /**
    * Busca AdSets de uma campanha especifica
-   * Busca diretamente em meta_insights_daily usando o campo campaign_id
    */
   async fetchCampaignAdSets(
     campaignId: string,
@@ -360,13 +359,29 @@ export class MetaInsightsDataService {
       const workspaceId = options.workspaceId || await this.getUserWorkspaceId();
       if (!workspaceId) return [];
 
-      // Busca insights dos adsets diretamente usando campaign_id
+      // Primeiro busca os adsets da campanha no cache de entidades
+      const { data: adsetEntities, error: entitiesError } = await supabase
+        .from('meta_entities_cache')
+        .select('*')
+        .eq('workspace_id', workspaceId)
+        .eq('entity_type', 'adset')
+        .eq('campaign_id', campaignId);
+
+      if (entitiesError) throw entitiesError;
+
+      const adsetIds = (adsetEntities || []).map((e: CachedEntity) => e.entity_id);
+      if (adsetIds.length === 0) {
+        logger.info('Nenhum adset encontrado para a campanha');
+        return [];
+      }
+
+      // Busca insights dos adsets
       let query = supabase
         .from('meta_insights_daily')
         .select('*')
         .eq('workspace_id', workspaceId)
         .eq('level', 'adset')
-        .eq('campaign_id', campaignId);
+        .in('entity_id', adsetIds);
 
       if (options.dateFrom) {
         query = query.gte('date', options.dateFrom);
@@ -378,20 +393,12 @@ export class MetaInsightsDataService {
       const { data: insights, error } = await query;
 
       if (error) throw error;
-      if (!insights || insights.length === 0) {
-        logger.info('Nenhum adset encontrado para a campanha');
-        return [];
-      }
-
-      // Busca entidades do cache para detalhes adicionais (status, budget)
-      const adsetIds = [...new Set(insights.map((i: RawInsight) => i.entity_id))];
-      const adsetEntities = await this.fetchEntityDetails(workspaceId, adsetIds, 'adset');
 
       // Agrega metricas por adset
       const adsetsMap = new Map<string, MetaCampaignData>();
 
-      for (const insight of insights as RawInsight[]) {
-        const entity = adsetEntities.find((e: CachedEntity) => e.entity_id === insight.entity_id);
+      for (const insight of (insights || []) as RawInsight[]) {
+        const entity = (adsetEntities || []).find((e: CachedEntity) => e.entity_id === insight.entity_id);
         const existing = adsetsMap.get(insight.entity_id);
         const conversions = extractConversions(insight.actions_json);
         const conversionValue = extractConversionValue(insight.action_values_json);
@@ -410,7 +417,7 @@ export class MetaInsightsDataService {
             entity_name: insight.entity_name || entity?.name || insight.entity_id,
             level: 'adset',
             meta_ad_account_id: insight.meta_ad_account_id,
-            status: entity?.effective_status || 'ACTIVE',
+            status: entity?.effective_status || 'UNKNOWN',
             daily_budget: entity?.daily_budget,
             lifetime_budget: entity?.lifetime_budget,
             campaign_id: campaignId,
@@ -442,8 +449,6 @@ export class MetaInsightsDataService {
 
       adsets.sort((a, b) => b.metrics.spend - a.metrics.spend);
 
-      logger.info('AdSets carregados', { count: adsets.length });
-
       return adsets;
     } catch (error) {
       logger.error('Erro ao buscar adsets da campanha', error);
@@ -453,7 +458,6 @@ export class MetaInsightsDataService {
 
   /**
    * Busca Ads de uma campanha especifica
-   * Busca diretamente em meta_insights_daily usando o campo campaign_id
    */
   async fetchCampaignAds(
     campaignId: string,
@@ -465,13 +469,29 @@ export class MetaInsightsDataService {
       const workspaceId = options.workspaceId || await this.getUserWorkspaceId();
       if (!workspaceId) return [];
 
-      // Busca insights dos ads diretamente usando campaign_id
+      // Busca ads da campanha no cache de entidades
+      const { data: adEntities, error: entitiesError } = await supabase
+        .from('meta_entities_cache')
+        .select('*')
+        .eq('workspace_id', workspaceId)
+        .eq('entity_type', 'ad')
+        .eq('campaign_id', campaignId);
+
+      if (entitiesError) throw entitiesError;
+
+      const adIds = (adEntities || []).map((e: CachedEntity) => e.entity_id);
+      if (adIds.length === 0) {
+        logger.info('Nenhum ad encontrado para a campanha');
+        return [];
+      }
+
+      // Busca insights dos ads
       let query = supabase
         .from('meta_insights_daily')
         .select('*')
         .eq('workspace_id', workspaceId)
         .eq('level', 'ad')
-        .eq('campaign_id', campaignId);
+        .in('entity_id', adIds);
 
       if (options.dateFrom) {
         query = query.gte('date', options.dateFrom);
@@ -483,20 +503,12 @@ export class MetaInsightsDataService {
       const { data: insights, error } = await query;
 
       if (error) throw error;
-      if (!insights || insights.length === 0) {
-        logger.info('Nenhum ad encontrado para a campanha');
-        return [];
-      }
-
-      // Busca entidades do cache para detalhes adicionais (status)
-      const adIds = [...new Set(insights.map((i: RawInsight) => i.entity_id))];
-      const adEntities = await this.fetchEntityDetails(workspaceId, adIds, 'ad');
 
       // Agrega metricas por ad
       const adsMap = new Map<string, MetaCampaignData>();
 
-      for (const insight of insights as RawInsight[]) {
-        const entity = adEntities.find((e: CachedEntity) => e.entity_id === insight.entity_id);
+      for (const insight of (insights || []) as RawInsight[]) {
+        const entity = (adEntities || []).find((e: CachedEntity) => e.entity_id === insight.entity_id);
         const existing = adsMap.get(insight.entity_id);
         const conversions = extractConversions(insight.actions_json);
         const conversionValue = extractConversionValue(insight.action_values_json);
@@ -515,7 +527,7 @@ export class MetaInsightsDataService {
             entity_name: insight.entity_name || entity?.name || insight.entity_id,
             level: 'ad',
             meta_ad_account_id: insight.meta_ad_account_id,
-            status: entity?.effective_status || 'ACTIVE',
+            status: entity?.effective_status || 'UNKNOWN',
             campaign_id: campaignId,
             adset_id: entity?.adset_id,
             metrics: {
@@ -545,8 +557,6 @@ export class MetaInsightsDataService {
       });
 
       ads.sort((a, b) => b.metrics.spend - a.metrics.spend);
-
-      logger.info('Ads carregados', { count: ads.length });
 
       return ads;
     } catch (error) {
