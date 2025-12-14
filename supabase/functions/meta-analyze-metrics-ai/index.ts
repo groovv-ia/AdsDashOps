@@ -19,14 +19,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-// Headers CORS padrao
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Interface para dados de metricas de entrada
 interface MetricsInputData {
   entity_id: string;
   entity_name: string;
@@ -80,7 +78,6 @@ interface MetricsBenchmarks {
   avg_conversion_rate: number;
 }
 
-// Interface para payload da requisicao
 interface RequestPayload {
   entity_id: string;
   entity_name: string;
@@ -89,7 +86,6 @@ interface RequestPayload {
   metrics_data: MetricsInputData;
 }
 
-// Prompt do sistema para analise de metricas
 const SYSTEM_PROMPT = `Voce e um analista senior de marketing digital especializado em publicidade Meta Ads (Facebook/Instagram), com mais de 15 anos de experiencia em otimizacao de campanhas e analise de dados.
 
 Sua especialidade inclui:
@@ -112,9 +108,7 @@ Sempre responda em portugues brasileiro com linguagem profissional mas acessivel
 
 Retorne APENAS um JSON valido no formato especificado, sem texto adicional ou markdown.`;
 
-// Funcao para construir o prompt de analise
 function buildAnalysisPrompt(data: MetricsInputData): string {
-  // Secao de metricas principais
   const metricsSection = `
 === METRICAS DO PERIODO (${data.start_date} ate ${data.end_date} - ${data.days_count} dias) ===
 
@@ -138,7 +132,6 @@ function buildAnalysisPrompt(data: MetricsInputData): string {
 - Custo por Conversao: R$ ${data.avg_cost_per_conversion.toFixed(2)}
 ${data.roas ? `- ROAS: ${data.roas.toFixed(2)}` : ''}`;
 
-  // Secao de comparativo com periodo anterior
   let previousPeriodSection = '';
   if (data.previous_period) {
     const pp = data.previous_period;
@@ -154,7 +147,6 @@ ${data.roas ? `- ROAS: ${data.roas.toFixed(2)}` : ''}`;
 - Conversoes: ${formatChange(pp.conversions_change_percent)}`;
   }
 
-  // Secao de benchmarks
   let benchmarkSection = '';
   if (data.benchmarks) {
     const b = data.benchmarks;
@@ -166,7 +158,6 @@ ${data.roas ? `- ROAS: ${data.roas.toFixed(2)}` : ''}`;
 - CPM Medio: R$ ${b.avg_cpm.toFixed(2)}`;
   }
 
-  // Secao de tendencia diaria (resumida)
   let trendSection = '';
   if (data.daily_metrics && data.daily_metrics.length > 0) {
     const first3 = data.daily_metrics.slice(0, 3);
@@ -282,7 +273,6 @@ Retorne um JSON com esta estrutura:
 }`;
 }
 
-// Funcao para chamar a API do OpenAI
 async function analyzeWithGPT4(
   metricsData: MetricsInputData,
   openaiApiKey: string
@@ -311,7 +301,6 @@ async function analyzeWithGPT4(
     const errorMessage = errorData.error?.message || response.statusText;
     console.error("OpenAI API error:", errorMessage, "Status:", response.status);
 
-    // Mensagens de erro mais claras para o usuario
     if (response.status === 429) {
       throw new Error("Limite de requisicoes da IA atingido. Aguarde alguns minutos e tente novamente.");
     } else if (response.status === 401) {
@@ -330,7 +319,6 @@ async function analyzeWithGPT4(
     throw new Error("No response content from OpenAI");
   }
 
-  // Remove backticks de code block se presentes
   const cleanContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
 
   try {
@@ -343,13 +331,11 @@ async function analyzeWithGPT4(
 }
 
 Deno.serve(async (req: Request) => {
-  // Trata requisicoes OPTIONS para CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    // Valida metodo HTTP
     if (req.method !== "POST") {
       return new Response(
         JSON.stringify({ error: "Method not allowed" }),
@@ -357,7 +343,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Valida header de autorizacao
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -366,11 +351,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Parse do body da requisicao
     const payload: RequestPayload = await req.json();
     const { entity_id, entity_name, entity_level, meta_ad_account_id, metrics_data } = payload;
 
-    // Valida campos obrigatorios
     if (!entity_id || !entity_name || !entity_level || !metrics_data) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: entity_id, entity_name, entity_level, metrics_data" }),
@@ -378,7 +361,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Valida se metrics_data tem dados suficientes para analise
     if (!metrics_data.total_impressions || metrics_data.total_impressions === 0) {
       return new Response(
         JSON.stringify({
@@ -389,7 +371,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Valida periodo de datas
     if (!metrics_data.start_date || !metrics_data.end_date) {
       return new Response(
         JSON.stringify({
@@ -400,7 +381,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Verifica chave da API OpenAI
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {
       return new Response(
@@ -409,12 +389,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Inicializa clientes Supabase
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verifica usuario autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -429,26 +407,46 @@ Deno.serve(async (req: Request) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Busca o workspace do usuario
-    const { data: workspace } = await supabaseAdmin
+    let workspaceId: string | null = null;
+
+    const { data: ownedWorkspace } = await supabaseAdmin
       .from("workspaces")
       .select("id")
       .eq("owner_id", user.id)
+      .limit(1)
       .maybeSingle();
 
-    if (!workspace) {
+    if (ownedWorkspace) {
+      workspaceId = ownedWorkspace.id;
+    } else {
+      const { data: memberWorkspace } = await supabaseAdmin
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (memberWorkspace) {
+        workspaceId = memberWorkspace.workspace_id;
+      }
+    }
+
+    if (!workspaceId) {
       return new Response(
-        JSON.stringify({ error: "No workspace found" }),
+        JSON.stringify({
+          error: "Nenhum workspace encontrado",
+          details: "Voce precisa criar ou participar de um workspace para usar esta funcionalidade."
+        }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Executa analise com GPT-4
+    const workspace = { id: workspaceId };
+
     console.log("Starting metrics analysis with GPT-4...");
     const { analysis, tokensUsed } = await analyzeWithGPT4(metrics_data, openaiApiKey);
     console.log("Metrics analysis completed successfully");
 
-    // Prepara registro para salvar no banco
     const analysisRecord = {
       workspace_id: workspace.id,
       entity_id: entity_id,
@@ -473,7 +471,6 @@ Deno.serve(async (req: Request) => {
       analyzed_at: new Date().toISOString(),
     };
 
-    // Salva analise no banco
     const { data: savedAnalysis, error: insertError } = await supabaseAdmin
       .from("meta_metrics_ai_analyses")
       .insert(analysisRecord)
@@ -482,7 +479,6 @@ Deno.serve(async (req: Request) => {
 
     if (insertError) {
       console.error("Insert error:", insertError);
-      // Retorna analise mesmo se o save falhar
       return new Response(
         JSON.stringify({
           analysis: { ...analysisRecord, id: 'temp-' + Date.now() },

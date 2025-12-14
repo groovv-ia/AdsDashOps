@@ -12,21 +12,18 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-// Headers CORS padrao para todas as respostas
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Interface para o payload da requisicao
 interface RequestPayload {
   ad_id: string;
   meta_ad_account_id: string;
   force_refresh?: boolean;
 }
 
-// Interface para resposta de erro do Meta API
 interface MetaErrorResponse {
   error?: {
     message: string;
@@ -35,7 +32,6 @@ interface MetaErrorResponse {
   };
 }
 
-// Interface para dados do criativo retornado pelo Meta
 interface MetaCreativeData {
   id?: string;
   name?: string;
@@ -67,7 +63,6 @@ interface MetaCreativeData {
   effective_object_story_id?: string;
 }
 
-// Interface para resposta do Ad com criativo
 interface MetaAdResponse {
   id: string;
   name?: string;
@@ -77,7 +72,6 @@ interface MetaAdResponse {
   error?: MetaErrorResponse["error"];
 }
 
-// Interface para resposta de thumbnails de video
 interface MetaVideoThumbnailResponse {
   thumbnails?: {
     data: Array<{
@@ -89,7 +83,6 @@ interface MetaVideoThumbnailResponse {
   error?: MetaErrorResponse["error"];
 }
 
-// Funcao para determinar o tipo de criativo
 function determineCreativeType(creative: MetaCreativeData): string {
   if (creative.video_id || creative.object_story_spec?.video_data?.video_id) {
     return 'video';
@@ -100,7 +93,6 @@ function determineCreativeType(creative: MetaCreativeData): string {
   return 'unknown';
 }
 
-// Funcao para extrair dados do criativo de forma normalizada
 function extractCreativeData(creative: MetaCreativeData, previewUrl?: string) {
   const linkData = creative.object_story_spec?.link_data;
   const videoData = creative.object_story_spec?.video_data;
@@ -122,13 +114,11 @@ function extractCreativeData(creative: MetaCreativeData, previewUrl?: string) {
 }
 
 Deno.serve(async (req: Request) => {
-  // Trata requisicoes OPTIONS para CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    // Valida metodo HTTP
     if (req.method !== "POST") {
       return new Response(
         JSON.stringify({ error: "Method not allowed" }),
@@ -136,7 +126,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Valida header de autorizacao
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -145,11 +134,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Parse do body da requisicao
     const payload: RequestPayload = await req.json();
     const { ad_id, meta_ad_account_id, force_refresh = false } = payload;
 
-    // Valida campos obrigatorios
     if (!ad_id || !meta_ad_account_id) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: ad_id, meta_ad_account_id" }),
@@ -157,12 +144,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Inicializa clientes Supabase
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verifica usuario autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -177,21 +162,42 @@ Deno.serve(async (req: Request) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Busca o workspace do usuario
-    const { data: workspace } = await supabaseAdmin
+    let workspaceId: string | null = null;
+
+    const { data: ownedWorkspace } = await supabaseAdmin
       .from("workspaces")
       .select("id")
       .eq("owner_id", user.id)
+      .limit(1)
       .maybeSingle();
 
-    if (!workspace) {
+    if (ownedWorkspace) {
+      workspaceId = ownedWorkspace.id;
+    } else {
+      const { data: memberWorkspace } = await supabaseAdmin
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (memberWorkspace) {
+        workspaceId = memberWorkspace.workspace_id;
+      }
+    }
+
+    if (!workspaceId) {
       return new Response(
-        JSON.stringify({ error: "No workspace found" }),
+        JSON.stringify({
+          error: "Nenhum workspace encontrado",
+          details: "Voce precisa criar ou participar de um workspace para usar esta funcionalidade."
+        }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Verifica se ja existe cache e nao e refresh forcado
+    const workspace = { id: workspaceId };
+
     if (!force_refresh) {
       const { data: cachedCreative } = await supabaseAdmin
         .from("meta_ad_creatives")
@@ -211,7 +217,6 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Busca a conexao Meta do workspace
     const { data: metaConnection } = await supabaseAdmin
       .from("meta_connections")
       .select("id, access_token_encrypted, status")
@@ -225,13 +230,11 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Descriptografa o token de acesso
     const { data: decryptedToken } = await supabaseAdmin
       .rpc("decrypt_token", { p_encrypted_token: metaConnection.access_token_encrypted });
 
     const accessToken = decryptedToken || metaConnection.access_token_encrypted;
 
-    // Busca dados do anuncio e criativo do Meta API
     const adFields = "id,name,status,creative{id,name,title,body,image_url,thumbnail_url,video_id,call_to_action_type,object_story_spec,effective_object_story_id},preview_shareable_link";
     const adUrl = `https://graph.facebook.com/v21.0/${ad_id}?fields=${adFields}&access_token=${accessToken}`;
     
@@ -243,7 +246,6 @@ Deno.serve(async (req: Request) => {
       const errorCode = adData.error.code;
       const errorMessage = adData.error.message;
 
-      // Mensagens de erro mais claras para o usuario
       let userMessage = "Erro ao buscar dados do anuncio na Meta";
       if (errorCode === 100 || errorCode === 190) {
         userMessage = "Token de acesso expirado ou invalido. Reconecte sua conta Meta.";
@@ -265,7 +267,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Extrai dados do criativo
     const creativeData = adData.creative 
       ? extractCreativeData(adData.creative, adData.preview_shareable_link)
       : {
@@ -281,7 +282,6 @@ Deno.serve(async (req: Request) => {
           preview_url: adData.preview_shareable_link || null,
         };
 
-    // Se for video, busca thumbnail
     let thumbnailUrl = creativeData.image_url;
     if (creativeData.creative_type === 'video' && creativeData.video_id) {
       const videoUrl = `https://graph.facebook.com/v21.0/${creativeData.video_id}?fields=thumbnails&access_token=${accessToken}`;
@@ -289,13 +289,11 @@ Deno.serve(async (req: Request) => {
       const videoData: MetaVideoThumbnailResponse = await videoResponse.json();
       
       if (videoData.thumbnails?.data && videoData.thumbnails.data.length > 0) {
-        // Pega o thumbnail de maior resolucao
         const sortedThumbnails = videoData.thumbnails.data.sort((a, b) => b.width - a.width);
         thumbnailUrl = sortedThumbnails[0].uri;
       }
     }
 
-    // Prepara dados para salvar no banco
     const creativeRecord = {
       workspace_id: workspace.id,
       ad_id: ad_id,
@@ -320,7 +318,6 @@ Deno.serve(async (req: Request) => {
       fetched_at: new Date().toISOString(),
     };
 
-    // Upsert no banco de dados (atualiza se ja existir)
     const { data: savedCreative, error: upsertError } = await supabaseAdmin
       .from("meta_ad_creatives")
       .upsert(creativeRecord, {
@@ -331,7 +328,6 @@ Deno.serve(async (req: Request) => {
 
     if (upsertError) {
       console.error("Upsert error:", upsertError);
-      // Retorna os dados mesmo se o save falhar
       return new Response(
         JSON.stringify({ 
           creative: creativeRecord, 
