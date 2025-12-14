@@ -131,6 +131,9 @@ export interface SyncStatusResponse {
     timezone: string;
     status: string;
     freshness: AccountFreshness | null;
+    last_sync_at: string | null;
+    last_sync_duration: number | null;
+    last_sync_records_count: number | null;
   }>;
   sync_states: SyncState[];
   recent_jobs: SyncJob[];

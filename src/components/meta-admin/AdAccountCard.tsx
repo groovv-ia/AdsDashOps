@@ -400,26 +400,56 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
       <div className="mb-4">
         {/* Sincronizacao em progresso - com grafico circular */}
         {account.syncStatus === 'syncing' && account.syncProgress !== undefined && (
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg p-4 mb-3 border border-blue-200">
+          <div className={`rounded-lg p-4 mb-3 border transition-all duration-300 ${
+            account.syncProgress === 100
+              ? 'bg-gradient-to-br from-green-50 to-emerald-100/50 border-green-300'
+              : 'bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200'
+          }`}>
             <div className="flex items-center space-x-4">
-              {/* Grafico circular de progresso */}
+              {/* Grafico circular de progresso ou check verde */}
               <div className="flex-shrink-0">
-                <CircularProgress progress={account.syncProgress} size={56} />
+                {account.syncProgress === 100 ? (
+                  <div className="relative">
+                    {/* Animação de check verde */}
+                    <div className="w-14 h-14 rounded-full bg-green-500 flex items-center justify-center animate-pulse">
+                      <CheckCircle2 className="w-8 h-8 text-white" />
+                    </div>
+                    {/* Círculo de pulso */}
+                    <div className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75"></div>
+                  </div>
+                ) : (
+                  <CircularProgress progress={account.syncProgress} size={56} />
+                )}
               </div>
 
               {/* Informacoes da sincronizacao */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-2 mb-2">
-                  <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-                  <span className="text-sm font-semibold text-blue-900">
-                    Sincronizando dados...
-                  </span>
+                  {account.syncProgress === 100 ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-green-600" />
+                      <span className="text-sm font-semibold text-green-900">
+                        Sincronização concluída!
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                      <span className="text-sm font-semibold text-blue-900">
+                        Sincronizando dados...
+                      </span>
+                    </>
+                  )}
                 </div>
 
                 {/* Barra de progresso linear */}
                 <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
                   <div
-                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-500 ease-out relative overflow-hidden"
+                    className={`h-2 rounded-full transition-all duration-500 ease-out relative overflow-hidden ${
+                      account.syncProgress === 100
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600'
+                        : 'bg-gradient-to-r from-blue-500 to-blue-600'
+                    }`}
                     style={{ width: `${account.syncProgress}%` }}
                   >
                     {/* Animacao de brilho */}
@@ -428,8 +458,14 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
                 </div>
 
                 {/* Mensagem de status */}
-                <p className="text-xs text-blue-700 mt-2">
-                  Aguarde enquanto os dados são sincronizados com o Meta Ads
+                <p className={`text-xs mt-2 ${
+                  account.syncProgress === 100
+                    ? 'text-green-700 font-medium'
+                    : 'text-blue-700'
+                }`}>
+                  {account.syncProgress === 100
+                    ? 'Redirecionando para detalhes da conta...'
+                    : 'Aguarde enquanto os dados são sincronizados com o Meta Ads'}
                 </p>
               </div>
             </div>

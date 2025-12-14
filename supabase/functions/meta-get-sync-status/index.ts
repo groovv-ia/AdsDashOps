@@ -111,7 +111,36 @@ Deno.serve(async (req: Request) => {
       .order("created_at", { ascending: false })
       .limit(20);
 
-    // 5. Busca totais de insights
+    // 5. Busca último job completado de cada conta para obter métricas de sincronização
+    const lastCompletedJobsByAccount: Record<string, {
+      duration_seconds: number | null;
+      total_records_synced: number | null;
+      ended_at: string | null;
+    }> = {};
+
+    if (adAccounts) {
+      for (const account of adAccounts) {
+        const { data: lastJob } = await supabaseAdmin
+          .from("meta_sync_jobs")
+          .select("duration_seconds, total_records_synced, ended_at")
+          .eq("workspace_id", workspace.id)
+          .eq("meta_ad_account_id", account.meta_ad_account_id)
+          .eq("status", "completed")
+          .order("ended_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (lastJob) {
+          lastCompletedJobsByAccount[account.meta_ad_account_id] = {
+            duration_seconds: lastJob.duration_seconds,
+            total_records_synced: lastJob.total_records_synced,
+            ended_at: lastJob.ended_at,
+          };
+        }
+      }
+    }
+
+    // 6. Busca totais de insights
     const { data: insightsTotals } = await supabaseAdmin
       .from("meta_insights_daily")
       .select("meta_ad_account_id, level, date")
@@ -179,15 +208,26 @@ Deno.serve(async (req: Request) => {
         last_validated_at: metaConnection.last_validated_at,
       } : null,
       health_status: healthStatus,
-      ad_accounts: adAccounts?.map((acc) => ({
-        id: acc.id,
-        meta_id: acc.meta_ad_account_id,
-        name: acc.name,
-        currency: acc.currency,
-        timezone: acc.timezone,
-        status: acc.account_status,
-        freshness: accountFreshness[acc.id] || null,
-      })) || [],
+      ad_accounts: adAccounts?.map((acc) => {
+        // Busca o sync state correspondente para obter last_success_at
+        const syncState = syncStates?.find((s) => s.meta_ad_account_id === acc.meta_ad_account_id);
+        // Busca métricas do último job completado
+        const lastJobMetrics = lastCompletedJobsByAccount[acc.meta_ad_account_id];
+
+        return {
+          id: acc.id,
+          meta_id: acc.meta_ad_account_id,
+          name: acc.name,
+          currency: acc.currency,
+          timezone: acc.timezone,
+          status: acc.account_status,
+          freshness: accountFreshness[acc.id] || null,
+          // Informações detalhadas de última sincronização
+          last_sync_at: syncState?.last_success_at || null,
+          last_sync_duration: lastJobMetrics?.duration_seconds || null,
+          last_sync_records_count: lastJobMetrics?.total_records_synced || null,
+        };
+      }) || [],
       sync_states: syncStates?.map((state) => ({
         meta_ad_account_id: state.meta_ad_account_id,
         client_id: state.client_id,

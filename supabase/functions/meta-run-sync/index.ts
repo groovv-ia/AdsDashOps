@@ -247,6 +247,9 @@ Deno.serve(async (req: Request) => {
     // Processa cada ad account
     for (const adAccount of adAccounts) {
       try {
+        // Captura timestamp de início para calcular duração
+        const syncStartTime = new Date();
+
         // Cria job de sync
         const { data: syncJob } = await supabaseAdmin
           .from("meta_sync_jobs")
@@ -258,7 +261,7 @@ Deno.serve(async (req: Request) => {
             date_from: dateFrom,
             date_to: dateTo,
             status: "running",
-            started_at: new Date().toISOString(),
+            started_at: syncStartTime.toISOString(),
           })
           .select("id")
           .single();
@@ -363,13 +366,19 @@ Deno.serve(async (req: Request) => {
 
         // Atualiza job como sucesso
         if (syncJob) {
+          // Calcula duração da sincronização em segundos
+          const syncEndTime = new Date();
+          const durationSeconds = Math.floor((syncEndTime.getTime() - syncStartTime.getTime()) / 1000);
+
           await supabaseAdmin
             .from("meta_sync_jobs")
             .update({
               status: syncResult.errors.length > 0 ? "failed" : "completed",
               fetched_rows: totalRows,
+              total_records_synced: totalRows,
+              duration_seconds: durationSeconds,
               error_message: syncResult.errors.join("; ") || null,
-              ended_at: new Date().toISOString(),
+              ended_at: syncEndTime.toISOString(),
             })
             .eq("id", syncJob.id);
         }

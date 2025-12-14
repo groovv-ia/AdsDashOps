@@ -306,6 +306,8 @@ export const MetaAdsSyncPage: React.FC = () => {
     setError(null);
     setSyncResult(null);
 
+    let syncSuccessful = false;
+
     try {
       const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === selectedPeriod);
       const daysBack = preset?.days === -1 || preset?.days === -2 ? 30 : Math.max(preset?.days || 7, 1);
@@ -325,6 +327,9 @@ export const MetaAdsSyncPage: React.FC = () => {
 
       if (result.errors.length > 0) {
         setError(result.errors.join('; '));
+      } else {
+        // Marca sincronização como bem-sucedida se não houver erros
+        syncSuccessful = true;
       }
 
       // Recarrega dados
@@ -332,10 +337,26 @@ export const MetaAdsSyncPage: React.FC = () => {
       if (navigationState.selectedAccountId === accountId) {
         await loadInsights();
       }
+
+      // Se sincronização foi bem-sucedida, aguarda 2 segundos e navega automaticamente
+      if (syncSuccessful) {
+        setTimeout(() => {
+          // Navega para os detalhes da conta
+          handleSelectAccount(accountId);
+          // Limpa estado de sincronização
+          setSyncingAccountId(null);
+          setSyncProgress(0);
+        }, 2000);
+      } else {
+        // Se houve erro, apenas limpa o estado após 1 segundo
+        setTimeout(() => {
+          setSyncingAccountId(null);
+          setSyncProgress(0);
+        }, 1000);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao sincronizar');
-    } finally {
-      // Aguarda um pouco antes de limpar para mostrar 100%
+      // Em caso de erro, limpa estado após 1 segundo
       setTimeout(() => {
         setSyncingAccountId(null);
         setSyncProgress(0);
@@ -506,9 +527,8 @@ export const MetaAdsSyncPage: React.FC = () => {
         syncStatusValue = hoursSince < 24 ? 'synced' : 'stale';
       }
 
-      // Calcula duracao da sincronizacao (simples mock para demonstracao)
-      // Em producao, isso viria do banco de dados
-      const lastSyncDuration = acc.last_sync_at ? Math.floor(Math.random() * 120) + 30 : undefined;
+      // Usa duracao real da ultima sincronizacao do banco de dados
+      const lastSyncDuration = acc.last_sync_duration || undefined;
 
       // Progresso da sincronizacao (0-100) - apenas quando esta sincronizando
       const accountSyncProgress = syncingAccountId === acc.id ? syncProgress : undefined;
