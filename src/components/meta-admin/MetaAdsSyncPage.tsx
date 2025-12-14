@@ -71,6 +71,11 @@ interface InsightRow {
   ctr: number;
   cpc: number;
   cpm: number;
+  // Campos de conversao para ROAS
+  leads?: number;
+  conversions?: number;
+  conversion_value?: number;
+  purchase_value?: number;
 }
 
 interface KPIs {
@@ -81,6 +86,11 @@ interface KPIs {
   avgCtr: number;
   avgCpc: number;
   avgCpm: number;
+  // Metricas de conversao
+  totalLeads: number;
+  totalConversions: number;
+  totalConversionValue: number;
+  roas: number;
 }
 
 // Niveis de entidade disponiveis
@@ -126,6 +136,10 @@ export const MetaAdsSyncPage: React.FC = () => {
     avgCtr: 0,
     avgCpc: 0,
     avgCpm: 0,
+    totalLeads: 0,
+    totalConversions: 0,
+    totalConversionValue: 0,
+    roas: 0,
   });
 
   // Filtros
@@ -268,6 +282,10 @@ export const MetaAdsSyncPage: React.FC = () => {
         avgCtr: 0,
         avgCpc: 0,
         avgCpm: 0,
+        totalLeads: 0,
+        totalConversions: 0,
+        totalConversionValue: 0,
+        roas: 0,
       });
       return;
     }
@@ -278,9 +296,15 @@ export const MetaAdsSyncPage: React.FC = () => {
         impressions: acc.impressions + (row.impressions || 0),
         clicks: acc.clicks + (row.clicks || 0),
         reach: acc.reach + (row.reach || 0),
+        leads: acc.leads + (row.leads || 0),
+        conversions: acc.conversions + (row.conversions || 0),
+        conversionValue: acc.conversionValue + (row.conversion_value || 0),
       }),
-      { spend: 0, impressions: 0, clicks: 0, reach: 0 }
+      { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, conversions: 0, conversionValue: 0 }
     );
+
+    // Calcula ROAS: receita / gasto
+    const roas = totals.spend > 0 ? totals.conversionValue / totals.spend : 0;
 
     setKpis({
       totalSpend: totals.spend,
@@ -290,6 +314,10 @@ export const MetaAdsSyncPage: React.FC = () => {
       avgCtr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0,
       avgCpc: totals.clicks > 0 ? totals.spend / totals.clicks : 0,
       avgCpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0,
+      totalLeads: totals.leads,
+      totalConversions: totals.conversions,
+      totalConversionValue: totals.conversionValue,
+      roas: roas,
     });
   };
 
@@ -979,17 +1007,22 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* CTR */}
-        <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-100">
+        {/* ROAS */}
+        <Card className="bg-gradient-to-br from-teal-50 to-white border-teal-100">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-amber-600">CTR</p>
+              <p className="text-sm font-medium text-teal-600">ROAS Medio</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
-                {formatPercent(kpis.avgCtr)}
+                {kpis.roas.toFixed(2)}x
               </p>
+              {kpis.totalConversionValue > 0 && (
+                <p className="text-xs text-teal-500 mt-1">
+                  Receita: {formatCurrency(kpis.totalConversionValue)}
+                </p>
+              )}
             </div>
-            <div className="p-2 bg-amber-100 rounded-lg">
-              <TrendingUp className="w-5 h-5 text-amber-600" />
+            <div className="p-2 bg-teal-100 rounded-lg">
+              <TrendingUp className="w-5 h-5 text-teal-600" />
             </div>
           </div>
         </Card>
