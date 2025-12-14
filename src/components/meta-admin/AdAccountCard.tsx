@@ -41,7 +41,9 @@ export interface AdAccountData {
   timezone: string;
   status: string;
   lastSyncAt?: string;
+  lastSyncDuration?: number; // Duracao da ultima sincronizacao em segundos
   syncStatus?: 'synced' | 'syncing' | 'stale' | 'error' | 'never';
+  syncProgress?: number; // Progresso atual da sincronizacao (0-100)
   metrics?: {
     spend: number;
     impressions: number;
@@ -68,6 +70,54 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
   onSelect,
   onSync,
 }) => {
+  // Componente de progresso circular
+  const CircularProgress: React.FC<{ progress: number; size?: number }> = ({
+    progress,
+    size = 48
+  }) => {
+    const circumference = 2 * Math.PI * (size / 2 - 4);
+    const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+    return (
+      <div className="relative inline-flex items-center justify-center">
+        <svg
+          className="transform -rotate-90"
+          width={size}
+          height={size}
+        >
+          {/* Circulo de fundo */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={size / 2 - 4}
+            stroke="currentColor"
+            strokeWidth="4"
+            fill="none"
+            className="text-blue-100"
+          />
+          {/* Circulo de progresso */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={size / 2 - 4}
+            stroke="currentColor"
+            strokeWidth="4"
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            className="text-blue-600 transition-all duration-500 ease-out"
+          />
+        </svg>
+        {/* Porcentagem central */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-xs font-bold text-blue-900">
+            {progress}%
+          </span>
+        </div>
+      </div>
+    );
+  };
   // Formata valor monetario
   const formatCurrency = (value: number, currency: string = 'BRL') => {
     return new Intl.NumberFormat('pt-BR', {
@@ -171,7 +221,7 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
 
   // Formata a data da ultima sincronizacao
   const formatLastSync = () => {
-    if (!account.lastSyncAt) return 'Nunca';
+    if (!account.lastSyncAt) return 'Nunca sincronizado';
 
     const date = new Date(account.lastSyncAt);
     const now = new Date();
@@ -187,6 +237,33 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     if (diffDays < 7) return `Ha ${diffDays} dias`;
 
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  };
+
+  // Formata a data completa da ultima sincronizacao
+  const formatLastSyncFull = () => {
+    if (!account.lastSyncAt) return null;
+
+    const date = new Date(account.lastSyncAt);
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  // Formata a duracao da sincronizacao
+  const formatSyncDuration = () => {
+    if (!account.lastSyncDuration) return null;
+
+    if (account.lastSyncDuration < 60) {
+      return `${account.lastSyncDuration}s`;
+    }
+
+    const minutes = Math.floor(account.lastSyncDuration / 60);
+    const seconds = account.lastSyncDuration % 60;
+    return `${minutes}min ${seconds}s`;
   };
 
   // Calcula CPC e CPM se nao estiver presente
@@ -319,16 +396,72 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
         </div>
       )}
 
-      {/* Info de sincronizacao */}
-      <div className="flex items-center justify-between mb-4">
-        <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${syncInfo.color}`}>
-          {syncInfo.icon}
-          <span>{syncInfo.label}</span>
+      {/* Info de sincronizacao com progresso */}
+      <div className="mb-4">
+        {/* Sincronizacao em progresso - com grafico circular */}
+        {account.syncStatus === 'syncing' && account.syncProgress !== undefined && (
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg p-4 mb-3 border border-blue-200">
+            <div className="flex items-center space-x-4">
+              {/* Grafico circular de progresso */}
+              <div className="flex-shrink-0">
+                <CircularProgress progress={account.syncProgress} size={56} />
+              </div>
+
+              {/* Informacoes da sincronizacao */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                  <span className="text-sm font-semibold text-blue-900">
+                    Sincronizando dados...
+                  </span>
+                </div>
+
+                {/* Barra de progresso linear */}
+                <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-500 ease-out relative overflow-hidden"
+                    style={{ width: `${account.syncProgress}%` }}
+                  >
+                    {/* Animacao de brilho */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer"></div>
+                  </div>
+                </div>
+
+                {/* Mensagem de status */}
+                <p className="text-xs text-blue-700 mt-2">
+                  Aguarde enquanto os dados são sincronizados com o Meta Ads
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Status e ultima sincronizacao */}
+        <div className="flex items-center justify-between">
+          <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${syncInfo.color}`}>
+            {syncInfo.icon}
+            <span>{syncInfo.label}</span>
+          </div>
+          <div className="text-right">
+            <div className="flex items-center justify-end space-x-1 text-xs text-gray-500">
+              <Clock className="w-3 h-3" />
+              <span>{formatLastSync()}</span>
+            </div>
+            {formatLastSyncFull() && account.syncStatus !== 'syncing' && (
+              <div className="text-xs text-gray-400 mt-0.5">
+                {formatLastSyncFull()}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex items-center space-x-1 text-xs text-gray-500">
-          <Clock className="w-3 h-3" />
-          <span>{formatLastSync()}</span>
-        </div>
+
+        {/* Duracao da ultima sincronizacao */}
+        {formatSyncDuration() && account.syncStatus !== 'syncing' && (
+          <div className="mt-2 flex items-center justify-between text-xs">
+            <span className="text-gray-500">Ultima sincronizacao concluida em</span>
+            <span className="font-semibold text-blue-600">{formatSyncDuration()}</span>
+          </div>
+        )}
       </div>
 
       {/* Acoes */}

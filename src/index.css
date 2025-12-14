@@ -233,6 +233,20 @@ body {
   }
 }
 
+/* Animacao de brilho para barra de progresso */
+.animate-shimmer {
+  animation: shimmer-slide 2s infinite;
+}
+
+@keyframes shimmer-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 /* Print styles */
 @media print {
   .no-print {
