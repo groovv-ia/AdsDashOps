@@ -12,7 +12,7 @@
  * - Filtro por periodo
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowLeft,
   TrendingUp,
@@ -22,17 +22,13 @@ import {
   DollarSign,
   Target,
   BarChart3,
-  Calendar,
   RefreshCw,
   AlertCircle,
-  Users,
-  Percent,
   Layers,
   Image,
+  Loader2,
 } from 'lucide-react';
 import {
-  LineChart,
-  Line,
   BarChart,
   Bar,
   AreaChart,
@@ -41,7 +37,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts';
 import { Card } from '../ui/Card';
@@ -54,6 +49,9 @@ import {
 } from '../../lib/services/MetaInsightsDataService';
 import { useClient } from '../../contexts/ClientContext';
 import { logger } from '../../lib/utils/logger';
+import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
+import { AdCreativeThumbnail, AdDetailModal } from '../ad-analysis';
+import type { MetaAdCreative } from '../../types/adAnalysis';
 
 interface CampaignAnalysisPageProps {
   campaignId: string;
@@ -88,8 +86,29 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
   const [selectedPeriod, setSelectedPeriod] = useState<string>('last_30');
   const [activeTab, setActiveTab] = useState<'overview' | 'adsets' | 'ads'>('overview');
 
+  // Estados do modal de detalhes do anuncio
+  const [selectedAd, setSelectedAd] = useState<MetaCampaignData | null>(null);
+  const [isAdModalOpen, setIsAdModalOpen] = useState(false);
+
   // Servico de dados
   const metaInsightsService = new MetaInsightsDataService();
+
+  // Prepara lista de ads para busca de criativos em lote
+  const adsForCreatives = useMemo(() => {
+    return ads.map(ad => ({
+      entity_id: ad.entity_id,
+      meta_ad_account_id: ad.meta_ad_account_id,
+    }));
+  }, [ads]);
+
+  // Hook de busca em lote de criativos - dispara automaticamente quando aba de ads esta ativa
+  const {
+    creatives,
+    globalLoading: creativesLoading,
+    getCreative,
+    getLoadingState,
+    refetch: refetchCreatives,
+  } = useAdCreativesBatch(activeTab === 'ads' ? adsForCreatives : []);
 
   /**
    * Calcula datas baseado no preset selecionado
@@ -705,9 +724,17 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
 
       {activeTab === 'ads' && (
         <Card>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Performance por Anuncio
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Performance por Anuncio
+            </h3>
+            {creativesLoading && (
+              <div className="flex items-center gap-2 text-sm text-blue-600">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Carregando criativos...
+              </div>
+            )}
+          </div>
 
           {ads.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
@@ -722,6 +749,9 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Preview
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Nome
                     </th>
@@ -752,46 +782,91 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {ads.map((ad) => (
-                    <tr key={ad.entity_id} className="hover:bg-gray-50">
-                      <td className="px-4 py-4">
-                        <span className="text-sm font-medium text-gray-900">
-                          {ad.entity_name}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <Badge variant={getStatusVariant(ad.status || '')}>
-                          {ad.status || 'N/A'}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-4 text-sm text-right text-gray-900">
-                        {formatNumber(ad.metrics.impressions)}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-right text-gray-900">
-                        {formatNumber(ad.metrics.clicks)}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-right text-gray-900">
-                        {formatCurrency(ad.metrics.spend)}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-right text-gray-900">
-                        {ad.metrics.ctr.toFixed(2)}%
-                      </td>
-                      <td className="px-4 py-4 text-sm text-right text-gray-900">
-                        {formatCurrency(ad.metrics.cpc)}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-right text-gray-900">
-                        {formatCurrency(ad.metrics.cpm)}
-                      </td>
-                      <td className="px-4 py-4 text-sm text-right text-gray-900">
-                        {formatNumber(ad.metrics.conversions)}
-                      </td>
-                    </tr>
-                  ))}
+                  {ads.map((ad) => {
+                    const creative = getCreative(ad.entity_id);
+                    const loadingState = getLoadingState(ad.entity_id);
+
+                    return (
+                      <tr
+                        key={ad.entity_id}
+                        className="hover:bg-blue-50 cursor-pointer transition-colors"
+                        onClick={() => {
+                          setSelectedAd(ad);
+                          setIsAdModalOpen(true);
+                        }}
+                      >
+                        <td className="px-3 py-3">
+                          <AdCreativeThumbnail
+                            creative={creative}
+                            loading={loadingState.isLoading}
+                            error={loadingState.hasError ? loadingState.errorMessage : null}
+                            size="sm"
+                          />
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="text-sm font-medium text-gray-900">
+                            {ad.entity_name}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <Badge variant={getStatusVariant(ad.status || '')}>
+                            {ad.status || 'N/A'}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-4 text-sm text-right text-gray-900">
+                          {formatNumber(ad.metrics.impressions)}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-right text-gray-900">
+                          {formatNumber(ad.metrics.clicks)}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-right text-gray-900">
+                          {formatCurrency(ad.metrics.spend)}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-right text-gray-900">
+                          {ad.metrics.ctr.toFixed(2)}%
+                        </td>
+                        <td className="px-4 py-4 text-sm text-right text-gray-900">
+                          {formatCurrency(ad.metrics.cpc)}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-right text-gray-900">
+                          {formatCurrency(ad.metrics.cpm)}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-right text-gray-900">
+                          {formatNumber(ad.metrics.conversions)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </Card>
+      )}
+
+      {/* Modal de detalhes do anuncio */}
+      {selectedAd && (
+        <AdDetailModal
+          isOpen={isAdModalOpen}
+          onClose={() => {
+            setIsAdModalOpen(false);
+            setSelectedAd(null);
+          }}
+          adData={{
+            ad_id: selectedAd.entity_id,
+            entity_name: selectedAd.entity_name,
+            meta_ad_account_id: selectedAd.meta_ad_account_id,
+            status: selectedAd.status,
+            campaign_name: campaign?.entity_name,
+            campaign_id: campaignId,
+            adset_id: selectedAd.adset_id,
+          }}
+          dateRange={{
+            start: getDateRange().dateFrom,
+            end: getDateRange().dateTo,
+          }}
+          preloadedCreative={getCreative(selectedAd.entity_id)}
+        />
       )}
     </div>
   );

@@ -47,10 +47,9 @@ import {
 } from 'recharts';
 import { useAdDetailData, type PreloadedMetricsData } from '../../hooks/useAdDetails';
 import { ScoreCircle } from './ScoreCircle';
-import { RecommendationCard } from './RecommendationCard';
 import { ImageZoomModal } from './ImageZoomModal';
 import { AdDetailTab, getCreativeTypeLabel } from '../../types/adAnalysis';
-import type { AdDetailModalState, PreloadedInsightRow } from '../../types/adAnalysis';
+import type { AdDetailModalState, PreloadedInsightRow, MetaAdCreative } from '../../types/adAnalysis';
 import type { MetricsAIAnalysis } from '../../types/metricsAnalysis';
 import {
   getPerformanceScoreColor,
@@ -70,6 +69,8 @@ interface AdDetailModalProps {
   dateRange?: { start: string; end: string };
   // Metricas pre-carregadas da pagina pai (evita nova query)
   preloadedMetrics?: PreloadedInsightRow[];
+  // Criativo pre-carregado (evita nova busca)
+  preloadedCreative?: MetaAdCreative | null;
 }
 
 export const AdDetailModal: React.FC<AdDetailModalProps> = ({
@@ -78,6 +79,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   adData,
   dateRange,
   preloadedMetrics = [],
+  preloadedCreative,
 }) => {
   const [activeTab, setActiveTab] = useState<AdDetailTab>(AdDetailTab.OVERVIEW);
   const [imageZoomOpen, setImageZoomOpen] = useState(false);
@@ -145,8 +147,8 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
 
   // Hook combinado para todos os dados - passa dados pre-carregados para analise de metricas
   const {
-    creative,
-    creativeLoading,
+    creative: fetchedCreative,
+    creativeLoading: fetchedCreativeLoading,
     creativeError,
     refreshCreative,
     analysis,
@@ -170,6 +172,10 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     endDate,
     preloadedMetricsForAI
   );
+
+  // Usa criativo pre-carregado se disponivel, senao usa o buscado pelo hook
+  const creative = preloadedCreative !== undefined ? preloadedCreative : fetchedCreative;
+  const creativeLoading = preloadedCreative !== undefined ? false : fetchedCreativeLoading;
 
   // Agrega metricas pre-carregadas no formato para exibicao na aba de metricas
   const aggregatedPreloadedMetrics = useMemo(() => {

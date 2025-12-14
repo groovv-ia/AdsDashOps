@@ -380,3 +380,131 @@ export async function refreshAdCreative(
     force_refresh: true,
   });
 }
+
+// Interface para payload de busca em lote
+interface FetchCreativesBatchPayload {
+  ad_ids: string[];
+  meta_ad_account_id: string;
+}
+
+// Interface para resposta de busca em lote
+export interface FetchCreativesBatchResponse {
+  creatives: Record<string, MetaAdCreative>;
+  errors: Record<string, string>;
+  cached_count: number;
+  fetched_count: number;
+}
+
+/**
+ * Busca criativos de multiplos anuncios em lote
+ * Otimizado para buscar ate 50 ads por requisicao
+ */
+export async function fetchAdCreativesBatch(
+  payload: FetchCreativesBatchPayload
+): Promise<FetchCreativesBatchResponse> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('Usuário não autenticado');
+  }
+
+  const response = await fetch(`${FUNCTIONS_URL}/meta-fetch-ad-creatives-batch`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Erro ao buscar criativos em lote');
+  }
+
+  return response.json();
+}
+
+/**
+ * Busca criativos do cache local (Supabase) em lote
+ */
+export async function getCreativesFromCacheBatch(
+  adIds: string[]
+): Promise<Record<string, MetaAdCreative>> {
+  if (adIds.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from('meta_ad_creatives')
+    .select('*')
+    .in('ad_id', adIds);
+
+  if (error) {
+    console.error('Erro ao buscar criativos do cache em lote:', error);
+    return {};
+  }
+
+  // Mapeia por ad_id para acesso rapido
+  const creativesMap: Record<string, MetaAdCreative> = {};
+  if (data) {
+    for (const creative of data) {
+      creativesMap[creative.ad_id] = creative;
+    }
+  }
+
+  return creativesMap;
+}
+
+/**
+ * Pre-carrega criativos para uma lista de ads
+ * Primeiro verifica cache, depois busca os faltantes da API
+ */
+export async function prefetchCreativesForAds(
+  adIds: string[],
+  metaAdAccountId: string
+): Promise<{
+  creatives: Record<string, MetaAdCreative>;
+  errors: Record<string, string>;
+}> {
+  if (adIds.length === 0) {
+    return { creatives: {}, errors: {} };
+  }
+
+  // Verifica cache primeiro
+  const cached = await getCreativesFromCacheBatch(adIds);
+  const cachedIds = new Set(Object.keys(cached));
+
+  // Filtra os que precisam ser buscados
+  const idsToFetch = adIds.filter(id => !cachedIds.has(id));
+
+  // Se todos estao em cache, retorna
+  if (idsToFetch.length === 0) {
+    return { creatives: cached, errors: {} };
+  }
+
+  // Busca os faltantes
+  try {
+    const result = await fetchAdCreativesBatch({
+      ad_ids: idsToFetch,
+      meta_ad_account_id: metaAdAccountId,
+    });
+
+    // Combina cache com novos resultados
+    const allCreatives = {
+      ...cached,
+      ...result.creatives,
+    };
+
+    return {
+      creatives: allCreatives,
+      errors: result.errors,
+    };
+  } catch (error) {
+    console.error('Erro ao buscar criativos em lote:', error);
+
+    // Retorna pelo menos o cache
+    return {
+      creatives: cached,
+      errors: { _batch: error instanceof Error ? error.message : 'Erro desconhecido' },
+    };
+  }
+}
