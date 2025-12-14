@@ -51,6 +51,16 @@ import { RecommendationCard } from './RecommendationCard';
 import { ImageZoomModal } from './ImageZoomModal';
 import { AdDetailTab, getCreativeTypeLabel } from '../../types/adAnalysis';
 import type { AdDetailModalState, PreloadedInsightRow } from '../../types/adAnalysis';
+import type { MetricsAIAnalysis } from '../../types/metricsAnalysis';
+import {
+  getPerformanceScoreColor,
+  getPerformanceScoreLabel,
+  getImpactColor,
+  getImpactLabel,
+  getTrendInfo,
+  getBenchmarkStatusColor,
+  getBenchmarkStatusLabel,
+} from '../../types/metricsAnalysis';
 
 // Interface para props do modal
 interface AdDetailModalProps {
@@ -97,8 +107,15 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     hasAnalysis,
     metrics: fetchedMetrics,
     metricsLoading,
+    // Novos dados de analise de metricas com IA
+    metricsAnalysis,
+    metricsAnalysisLoading,
+    isAnalyzingMetrics,
+    analyzeMetrics,
+    hasMetricsAnalysis,
   } = useAdDetailData(
     adData?.ad_id || null,
+    adData?.entity_name || null,
     adData?.meta_ad_account_id || null,
     startDate,
     endDate
@@ -334,15 +351,14 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
               />
             )}
 
-            {/* AI Analysis Tab */}
+            {/* AI Analysis Tab - Focado em METRICAS de performance */}
             {activeTab === AdDetailTab.AI_ANALYSIS && (
-              <AIAnalysisTab
-                analysis={analysis}
-                loading={analysisLoading}
-                isAnalyzing={isAnalyzing}
-                hasCreative={!!creative}
-                hasImage={!!displayImageUrl}
-                onAnalyze={handleAnalyze}
+              <MetricsAIAnalysisTab
+                metricsAnalysis={metricsAnalysis}
+                loading={metricsAnalysisLoading}
+                isAnalyzing={isAnalyzingMetrics}
+                hasMetrics={!!metrics && metrics.total_impressions > 0}
+                onAnalyze={analyzeMetrics}
               />
             )}
           </div>
@@ -1137,415 +1153,393 @@ const MetricBadge: React.FC<{ label: string; value: string; trend?: 'up' | 'down
   </div>
 );
 
-// AI Analysis Tab Component
-interface AIAnalysisTabProps {
-  analysis: ReturnType<typeof useAdDetailData>['analysis'];
+// Metrics AI Analysis Tab Component - NOVO FOCO EM METRICAS DE PERFORMANCE
+interface MetricsAIAnalysisTabProps {
+  metricsAnalysis: MetricsAIAnalysis | null;
   loading: boolean;
   isAnalyzing: boolean;
-  hasCreative: boolean;
-  hasImage: boolean;
+  hasMetrics: boolean;
   onAnalyze: () => void;
 }
 
-const AIAnalysisTab: React.FC<AIAnalysisTabProps> = ({
-  analysis,
+const MetricsAIAnalysisTab: React.FC<MetricsAIAnalysisTabProps> = ({
+  metricsAnalysis,
   loading,
   isAnalyzing,
-  hasCreative,
-  hasImage,
+  hasMetrics,
   onAnalyze,
 }) => {
+  // Estado de loading
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-500">Carregando análise...</p>
+          <p className="text-gray-500">Carregando analise...</p>
         </div>
       </div>
     );
   }
 
+  // Estado de analisando
   if (isAnalyzing) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <div className="relative">
-            <Sparkles className="w-12 h-12 text-blue-500 animate-pulse mx-auto" />
+            <BarChart3 className="w-12 h-12 text-blue-500 animate-pulse mx-auto" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-16 h-16 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
             </div>
           </div>
-          <p className="text-gray-900 font-medium mt-6 mb-2">Analisando anúncio com IA...</p>
-          <p className="text-sm text-gray-500">Isso pode levar de 10 a 30 segundos</p>
+          <p className="text-gray-900 font-medium mt-6 mb-2">Analisando metricas com IA...</p>
+          <p className="text-sm text-gray-500">Isso pode levar de 15 a 45 segundos</p>
         </div>
       </div>
     );
   }
 
-  if (!analysis) {
+  // Estado sem analise - prompt para analisar
+  if (!metricsAnalysis) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-center max-w-sm">
+        <div className="text-center max-w-md">
           <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <Sparkles className="w-8 h-8 text-blue-600" />
+            <BarChart3 className="w-8 h-8 text-blue-600" />
           </div>
           <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            Análise de IA disponível
+            Analise de Metricas com IA
           </h3>
           <p className="text-gray-500 mb-6">
-            Obtenha insights detalhados sobre o criativo e a copy do seu anúncio
-            usando inteligência artificial.
+            Obtenha insights detalhados sobre a performance do seu anuncio, incluindo
+            tendencias, anomalias, comparativos com benchmarks e recomendacoes de otimizacao.
           </p>
-          {hasCreative && hasImage ? (
+          {hasMetrics ? (
             <button
               onClick={onAnalyze}
               className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-cyan-700 transition-all shadow-lg shadow-blue-500/25"
             >
               <Sparkles className="w-5 h-5" />
-              Analisar com IA
+              Analisar Metricas com IA
             </button>
           ) : (
             <p className="text-sm text-amber-600">
-              {!hasCreative
-                ? 'Carregue o criativo primeiro para analisar'
-                : 'Nenhuma imagem disponível para análise'}
+              Nenhuma metrica disponivel para analise neste periodo
             </p>
           )}
           <p className="text-xs text-gray-400 mt-4">
-            Usa GPT-4 Vision para análise avançada
+            Usa GPT-4 para analise estrategica de performance
           </p>
         </div>
       </div>
     );
   }
 
+  // Renderiza analise completa
+  const scores = metricsAnalysis.performance_scores;
+  const overallColor = getPerformanceScoreColor(scores.overall_score);
+
   return (
     <div className="space-y-6">
-      {/* Scores */}
-      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-6">
-        <h3 className="font-medium text-gray-900 mb-6 text-center">Pontuação Geral</h3>
-        <div className="flex items-center justify-center gap-8">
-          <ScoreCircle score={analysis.creative_score} size="md" label="Criativo" />
-          <ScoreCircle score={analysis.overall_score} size="lg" label="Geral" />
-          <ScoreCircle score={analysis.copy_score} size="md" label="Copy" />
+      {/* Scores de Performance */}
+      <div className={`rounded-xl p-6 border ${overallColor.border} ${overallColor.bg}`}>
+        <h3 className="font-medium text-gray-900 mb-4 text-center">Scores de Performance</h3>
+        <div className="flex items-center justify-center gap-6 flex-wrap">
+          <ScoreCircle score={scores.efficiency_score} size="sm" label="Eficiencia" />
+          <ScoreCircle score={scores.cost_score} size="sm" label="Custo" />
+          <ScoreCircle score={scores.overall_score} size="lg" label="Geral" />
+          <ScoreCircle score={scores.reach_score} size="sm" label="Alcance" />
+          <ScoreCircle score={scores.conversion_score} size="sm" label="Conversao" />
+        </div>
+        <div className="text-center mt-4">
+          <span className={`text-sm font-medium ${overallColor.text}`}>
+            Performance: {getPerformanceScoreLabel(scores.overall_score)}
+          </span>
         </div>
       </div>
 
-      {/* Visual Analysis - Expandida */}
+      {/* Resumo Executivo */}
+      <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <Target className="w-5 h-5 text-blue-600" />
+          <h3 className="font-medium text-gray-900">Resumo Executivo</h3>
+        </div>
+        <p className="text-gray-700">{metricsAnalysis.executive_summary}</p>
+      </div>
+
+      {/* Diagnostico Geral */}
       <div className="bg-white border border-gray-200 rounded-lg p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Image className="w-5 h-5 text-blue-600" />
-          <h3 className="font-medium text-gray-900">Análise Visual Detalhada</h3>
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart3 className="w-5 h-5 text-gray-600" />
+          <h3 className="font-medium text-gray-900">Diagnostico</h3>
         </div>
-
-        {/* Score de Composição */}
-        <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-blue-100/30 rounded-lg border border-blue-200">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-blue-900">Score de Composição</span>
-            <span className="text-2xl font-bold text-blue-600">{analysis.visual_analysis.composition_score}/100</span>
-          </div>
-        </div>
-
-        {/* Elementos Visuais Detectados */}
-        {analysis.visual_analysis.visual_elements && (
-          <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">🎨 Elementos Visuais Identificados</h4>
-
-            {analysis.visual_analysis.visual_elements.detected_objects.length > 0 && (
-              <div className="mb-3">
-                <span className="text-xs text-gray-500 uppercase block mb-2">Objetos/Pessoas/Produtos:</span>
-                <div className="flex flex-wrap gap-2">
-                  {analysis.visual_analysis.visual_elements.detected_objects.map((obj, i) => (
-                    <span key={i} className="px-3 py-1 bg-white border border-gray-300 rounded-full text-xs font-medium text-gray-700">
-                      {obj}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {analysis.visual_analysis.visual_elements.color_palette.length > 0 && (
-              <div className="mb-3">
-                <span className="text-xs text-gray-500 uppercase block mb-2">Paleta de Cores:</span>
-                <div className="flex flex-wrap gap-2">
-                  {analysis.visual_analysis.visual_elements.color_palette.map((color, i) => (
-                    <span key={i} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium text-gray-700 shadow-sm">
-                      {color}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Tipografia:</span>
-                <p className="text-gray-900">{analysis.visual_analysis.visual_elements.typography_analysis}</p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Tipo de Composição:</span>
-                <p className="text-gray-900">{analysis.visual_analysis.visual_elements.composition_type}</p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Hierarquia Visual:</span>
-                <p className="text-gray-900">{analysis.visual_analysis.visual_elements.visual_hierarchy}</p>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500 uppercase block mb-1">Nível de Contraste:</span>
-                <p className="text-gray-900">{analysis.visual_analysis.visual_elements.contrast_level}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Análise Psicológica */}
-        {analysis.visual_analysis.psychological_analysis && (
-          <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
-            <h4 className="text-sm font-semibold text-purple-900 mb-3">🧠 Análise Psicológica</h4>
-
-            <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-              <div>
-                <span className="text-xs text-purple-600 uppercase block mb-1">Emoção Primária:</span>
-                <p className="text-purple-900 font-medium">{analysis.visual_analysis.psychological_analysis.primary_emotion}</p>
-              </div>
-              <div>
-                <span className="text-xs text-purple-600 uppercase block mb-1">Carga Cognitiva:</span>
-                <p className="text-purple-900 font-medium">{analysis.visual_analysis.psychological_analysis.cognitive_load}</p>
-              </div>
-            </div>
-
-            {analysis.visual_analysis.psychological_analysis.emotional_triggers.length > 0 && (
-              <div className="mb-3">
-                <span className="text-xs text-purple-600 uppercase block mb-2">Gatilhos Emocionais:</span>
-                <div className="flex flex-wrap gap-2">
-                  {analysis.visual_analysis.psychological_analysis.emotional_triggers.map((trigger, i) => (
-                    <span key={i} className="px-2.5 py-1 bg-purple-100 border border-purple-300 rounded-full text-xs font-medium text-purple-800">
-                      {trigger}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {analysis.visual_analysis.psychological_analysis.persuasion_techniques.length > 0 && (
-              <div className="mb-3">
-                <span className="text-xs text-purple-600 uppercase block mb-2">Técnicas de Persuasão:</span>
-                <div className="flex flex-wrap gap-2">
-                  {analysis.visual_analysis.psychological_analysis.persuasion_techniques.map((tech, i) => (
-                    <span key={i} className="px-2.5 py-1 bg-purple-100 border border-purple-300 rounded-full text-xs font-medium text-purple-800">
-                      {tech}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="text-sm">
-              <span className="text-xs text-purple-600 uppercase block mb-1">Público-Alvo Ideal:</span>
-              <p className="text-purple-900">{analysis.visual_analysis.psychological_analysis.target_audience_fit}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Primeiro Impacto */}
-        {analysis.visual_analysis.first_impression && (
-          <div className="mb-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
-            <h4 className="text-sm font-semibold text-amber-900 mb-3">⚡ Análise de Primeiro Impacto</h4>
-
-            <div className="mb-3 flex items-center justify-between p-3 bg-white rounded-lg border border-amber-300">
-              <span className="text-xs font-medium text-amber-900">Score de Atenção</span>
-              <span className="text-xl font-bold text-amber-600">{analysis.visual_analysis.first_impression.attention_score}/100</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-xs text-amber-600 uppercase block mb-1">Potencial Scrollstopper:</span>
-                <p className="text-amber-900 font-medium">{analysis.visual_analysis.first_impression.scrollstopper_potential}</p>
-              </div>
-              <div>
-                <span className="text-xs text-amber-600 uppercase block mb-1">Claridade Visual:</span>
-                <p className="text-amber-900">{analysis.visual_analysis.first_impression.visual_clarity}</p>
-              </div>
-              <div className="col-span-2">
-                <span className="text-xs text-amber-600 uppercase block mb-1">Mensagem em 3 segundos:</span>
-                <p className="text-amber-900">{analysis.visual_analysis.first_impression.three_second_message}</p>
-              </div>
-              <div className="col-span-2">
-                <span className="text-xs text-amber-600 uppercase block mb-1">Ponto Focal:</span>
-                <p className="text-amber-900">{analysis.visual_analysis.first_impression.focal_point}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Análise de Placement */}
-        {analysis.visual_analysis.placement_analysis && (
-          <div className="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
-            <h4 className="text-sm font-semibold text-green-900 mb-3">📱 Adequação por Placement</h4>
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <span className="text-xs text-green-600 uppercase block mb-1">Feed:</span>
-                <p className="text-green-900">{analysis.visual_analysis.placement_analysis.feed_suitability}</p>
-              </div>
-              <div>
-                <span className="text-xs text-green-600 uppercase block mb-1">Stories:</span>
-                <p className="text-green-900">{analysis.visual_analysis.placement_analysis.stories_suitability}</p>
-              </div>
-              <div>
-                <span className="text-xs text-green-600 uppercase block mb-1">Reels:</span>
-                <p className="text-green-900">{analysis.visual_analysis.placement_analysis.reels_suitability}</p>
-              </div>
-              <div>
-                <span className="text-xs text-green-600 uppercase block mb-1">Mobile:</span>
-                <p className="text-green-900">{analysis.visual_analysis.placement_analysis.mobile_friendliness}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Análise Base */}
-        <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-          <div>
-            <span className="text-gray-500">Uso de cores:</span>
-            <p className="text-gray-900">{analysis.visual_analysis.color_usage}</p>
-          </div>
-          <div>
-            <span className="text-gray-500">Visibilidade do texto:</span>
-            <p className="text-gray-900">{analysis.visual_analysis.text_visibility}</p>
-          </div>
-          <div>
-            <span className="text-gray-500">Consistência visual:</span>
-            <p className="text-gray-900">{analysis.visual_analysis.brand_consistency}</p>
-          </div>
-          <div>
-            <span className="text-gray-500">Capacidade de atrair:</span>
-            <p className="text-gray-900">{analysis.visual_analysis.attention_grabbing}</p>
-          </div>
-        </div>
-
-        {/* Tendências e Modernidade */}
-        {analysis.visual_analysis.design_trends && (
-          <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <h5 className="text-xs font-semibold text-blue-900 uppercase mb-2">Tendências de Design</h5>
-            <p className="text-sm text-blue-800">{analysis.visual_analysis.design_trends}</p>
-          </div>
-        )}
-
-        {analysis.visual_analysis.modernization_suggestions && analysis.visual_analysis.modernization_suggestions.length > 0 && (
-          <div className="mb-4">
-            <span className="text-xs text-gray-500 uppercase block mb-2">Sugestões de Modernização:</span>
-            <ul className="space-y-1">
-              {analysis.visual_analysis.modernization_suggestions.map((sug, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-blue-700">
-                  <Sparkles className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  {sug}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {analysis.visual_analysis.key_strengths.length > 0 && (
-          <div className="mb-3">
-            <span className="text-xs text-gray-500 uppercase">Pontos fortes</span>
-            <ul className="mt-1 space-y-1">
-              {analysis.visual_analysis.key_strengths.map((s, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-green-700">
-                  <TrendingUp className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  {s}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {analysis.visual_analysis.improvement_areas.length > 0 && (
-          <div>
-            <span className="text-xs text-gray-500 uppercase">Áreas de melhoria</span>
-            <ul className="mt-1 space-y-1">
-              {analysis.visual_analysis.improvement_areas.map((s, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-amber-700">
-                  <TrendingDown className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  {s}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <p className="text-gray-600 text-sm">{metricsAnalysis.overall_diagnosis}</p>
       </div>
 
-      {/* Copy Analysis */}
-      <div className="bg-white border border-gray-200 rounded-lg p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <BarChart3 className="w-5 h-5 text-blue-600" />
-          <h3 className="font-medium text-gray-900">Análise da Copy</h3>
-        </div>
-        <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-          <div>
-            <span className="text-gray-500">Nível de persuasão:</span>
-            <p className="text-gray-900 capitalize">{analysis.copy_analysis.persuasion_level}</p>
+      {/* Areas de Atencao Prioritaria */}
+      {metricsAnalysis.priority_areas && metricsAnalysis.priority_areas.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle className="w-5 h-5 text-amber-600" />
+            <h3 className="font-medium text-amber-900">Areas de Atencao Prioritaria</h3>
           </div>
-          <div>
-            <span className="text-gray-500">Urgência presente:</span>
-            <p className="text-gray-900">{analysis.copy_analysis.urgency_present ? 'Sim' : 'Não'}</p>
-          </div>
-          <div>
-            <span className="text-gray-500">Eficácia do CTA:</span>
-            <p className="text-gray-900">{analysis.copy_analysis.cta_effectiveness}</p>
-          </div>
-          <div>
-            <span className="text-gray-500">Apelo emocional:</span>
-            <p className="text-gray-900">{analysis.copy_analysis.emotional_appeal}</p>
-          </div>
-        </div>
-        {analysis.copy_analysis.key_strengths.length > 0 && (
-          <div className="mb-3">
-            <span className="text-xs text-gray-500 uppercase">Pontos fortes</span>
-            <ul className="mt-1 space-y-1">
-              {analysis.copy_analysis.key_strengths.map((s, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-green-700">
-                  <TrendingUp className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  {s}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {analysis.copy_analysis.improvement_areas.length > 0 && (
-          <div>
-            <span className="text-xs text-gray-500 uppercase">Áreas de melhoria</span>
-            <ul className="mt-1 space-y-1">
-              {analysis.copy_analysis.improvement_areas.map((s, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-amber-700">
-                  <TrendingDown className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  {s}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      {/* Recommendations */}
-      {analysis.recommendations.length > 0 && (
-        <div>
-          <h3 className="font-medium text-gray-900 mb-4">
-            Recomendações ({analysis.recommendations.length})
-          </h3>
-          <div className="space-y-3">
-            {analysis.recommendations.map((rec, i) => (
-              <RecommendationCard key={i} recommendation={rec} index={i} />
+          <ul className="space-y-2">
+            {metricsAnalysis.priority_areas.map((area, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-amber-800">
+                <ChevronRight className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                {area}
+              </li>
             ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Tendencias Identificadas */}
+      {metricsAnalysis.trends && metricsAnalysis.trends.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="w-5 h-5 text-blue-600" />
+            <h3 className="font-medium text-gray-900">Tendencias Identificadas</h3>
           </div>
+          <div className="space-y-4">
+            {metricsAnalysis.trends.map((trend, i) => {
+              const trendInfo = getTrendInfo(trend.direction);
+              return (
+                <div key={i} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium text-gray-900">{trend.metric}</span>
+                    <div className="flex items-center gap-2">
+                      {trendInfo.arrow === 'up' && <TrendingUp className={`w-4 h-4 ${trendInfo.color}`} />}
+                      {trendInfo.arrow === 'down' && <TrendingDown className={`w-4 h-4 ${trendInfo.color}`} />}
+                      <span className={`text-sm font-medium ${trendInfo.color}`}>
+                        {trend.change_percent > 0 ? '+' : ''}{trend.change_percent.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-2">{trend.interpretation}</p>
+                  <div className="flex items-center gap-2 text-xs text-blue-600">
+                    <Sparkles className="w-3 h-3" />
+                    {trend.action_suggested}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Anomalias Detectadas */}
+      {metricsAnalysis.anomalies && metricsAnalysis.anomalies.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertCircle className="w-5 h-5 text-red-600" />
+            <h3 className="font-medium text-red-900">Anomalias Detectadas</h3>
+          </div>
+          <div className="space-y-4">
+            {metricsAnalysis.anomalies.map((anomaly, i) => {
+              const impactColor = getImpactColor(anomaly.severity);
+              return (
+                <div key={i} className="p-4 bg-white rounded-lg border border-red-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium text-gray-900">{anomaly.metric}</span>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${impactColor.bg} ${impactColor.text}`}>
+                      {getImpactLabel(anomaly.severity)}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">{anomaly.description}</p>
+                  {anomaly.possible_causes.length > 0 && (
+                    <div className="mb-2">
+                      <span className="text-xs text-gray-500 uppercase">Possiveis Causas:</span>
+                      <ul className="mt-1 space-y-1">
+                        {anomaly.possible_causes.map((cause, j) => (
+                          <li key={j} className="text-xs text-gray-600 flex items-start gap-1">
+                            <span className="text-gray-400">-</span> {cause}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {anomaly.recommended_actions.length > 0 && (
+                    <div>
+                      <span className="text-xs text-gray-500 uppercase">Acoes Recomendadas:</span>
+                      <ul className="mt-1 space-y-1">
+                        {anomaly.recommended_actions.map((action, j) => (
+                          <li key={j} className="text-xs text-blue-600 flex items-start gap-1">
+                            <ChevronRight className="w-3 h-3 mt-0.5 flex-shrink-0" /> {action}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Comparacao com Benchmarks */}
+      {metricsAnalysis.benchmark_comparisons && metricsAnalysis.benchmark_comparisons.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Target className="w-5 h-5 text-gray-600" />
+            <h3 className="font-medium text-gray-900">Comparativo com Benchmarks</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {metricsAnalysis.benchmark_comparisons.map((comp, i) => {
+              const statusColor = getBenchmarkStatusColor(comp.status);
+              return (
+                <div key={i} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-900">{comp.metric}</span>
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusColor.bg} ${statusColor.text}`}>
+                      {getBenchmarkStatusLabel(comp.status)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                    <span>Atual: {typeof comp.current_value === 'number' ? comp.current_value.toFixed(2) : comp.current_value}</span>
+                    <span>Benchmark: {typeof comp.benchmark_value === 'number' ? comp.benchmark_value.toFixed(2) : comp.benchmark_value}</span>
+                  </div>
+                  <p className="text-xs text-gray-600">{comp.interpretation}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Insights Detalhados */}
+      {metricsAnalysis.insights && metricsAnalysis.insights.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-5 h-5 text-blue-600" />
+            <h3 className="font-medium text-gray-900">Insights ({metricsAnalysis.insights.length})</h3>
+          </div>
+          <div className="space-y-4">
+            {metricsAnalysis.insights.map((insight, i) => {
+              const impactColor = getImpactColor(insight.impact);
+              return (
+                <div key={i} className="p-4 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-100">
+                  <div className="flex items-start justify-between mb-2">
+                    <h4 className="font-medium text-gray-900">{insight.title}</h4>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded ${impactColor.bg} ${impactColor.text}`}>
+                        {getImpactLabel(insight.impact)}
+                      </span>
+                      <span className="text-xs text-gray-400">{insight.confidence}% conf.</span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">{insight.description}</p>
+                  <div className="flex items-center gap-4 text-xs">
+                    <span className="text-gray-500">
+                      <strong>Atual:</strong> {insight.current_value}
+                    </span>
+                    {insight.expected_value && (
+                      <span className="text-gray-500">
+                        <strong>Ideal:</strong> {insight.expected_value}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <div className="flex items-start gap-2">
+                      <Sparkles className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-blue-800">{insight.recommendation}</p>
+                    </div>
+                    {insight.potential_improvement && (
+                      <p className="text-xs text-blue-600 mt-2 ml-6">
+                        Melhoria potencial: {insight.potential_improvement}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Recomendacoes de Otimizacao */}
+      {metricsAnalysis.recommendations && metricsAnalysis.recommendations.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Target className="w-5 h-5 text-green-600" />
+            <h3 className="font-medium text-gray-900">
+              Recomendacoes de Otimizacao ({metricsAnalysis.recommendations.length})
+            </h3>
+          </div>
+          <div className="space-y-4">
+            {metricsAnalysis.recommendations.map((rec, i) => {
+              const priorityColor = getImpactColor(rec.priority);
+              return (
+                <div key={i} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-6 h-6 rounded-full ${priorityColor.bg} ${priorityColor.text} flex items-center justify-center text-xs font-bold`}>
+                        {i + 1}
+                      </span>
+                      <h4 className="font-medium text-gray-900">{rec.title}</h4>
+                    </div>
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${priorityColor.bg} ${priorityColor.text}`}>
+                      {getImpactLabel(rec.priority)}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">{rec.description}</p>
+                  <div className="p-3 bg-green-50 rounded-lg border border-green-100 mb-3">
+                    <span className="text-xs text-green-600 uppercase font-medium">Impacto Esperado:</span>
+                    <p className="text-sm text-green-800 mt-1">{rec.expected_impact}</p>
+                    {rec.estimated_improvement && (
+                      <p className="text-xs text-green-600 mt-1 font-medium">{rec.estimated_improvement}</p>
+                    )}
+                  </div>
+                  {rec.implementation_steps && rec.implementation_steps.length > 0 && (
+                    <div className="mb-3">
+                      <span className="text-xs text-gray-500 uppercase">Passos para Implementacao:</span>
+                      <ol className="mt-2 space-y-1">
+                        {rec.implementation_steps.map((step, j) => (
+                          <li key={j} className="text-xs text-gray-600 flex items-start gap-2">
+                            <span className="w-4 h-4 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-xs flex-shrink-0">
+                              {j + 1}
+                            </span>
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  {rec.metrics_to_monitor && rec.metrics_to_monitor.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      <span className="text-xs text-gray-500">Metricas para monitorar:</span>
+                      {rec.metrics_to_monitor.map((metric, j) => (
+                        <span key={j} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+                          {metric}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Previsao de Curto Prazo */}
+      {metricsAnalysis.short_term_forecast && (
+        <div className="bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200 rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp className="w-5 h-5 text-cyan-600" />
+            <h3 className="font-medium text-gray-900">Previsao de Curto Prazo</h3>
+          </div>
+          <p className="text-gray-700">{metricsAnalysis.short_term_forecast}</p>
         </div>
       )}
 
       {/* Footer */}
       <div className="flex items-center justify-between pt-4 border-t border-gray-200 text-xs text-gray-500">
         <span>
-          Analisado em: {new Date(analysis.analyzed_at).toLocaleString('pt-BR')}
+          Analisado em: {new Date(metricsAnalysis.analyzed_at).toLocaleString('pt-BR')}
         </span>
-        <span>Modelo: {analysis.model_used}</span>
+        <span>Modelo: {metricsAnalysis.model_used}</span>
       </div>
 
       {/* Re-analyze button */}
@@ -1555,7 +1549,7 @@ const AIAnalysisTab: React.FC<AIAnalysisTabProps> = ({
           className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <RefreshCw className="w-4 h-4" />
-          Gerar nova análise
+          Gerar nova analise
         </button>
       </div>
     </div>

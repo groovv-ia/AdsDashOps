@@ -14,12 +14,21 @@ import {
   getAdAggregatedMetrics,
   refreshAdCreative,
 } from '../lib/services/AdCreativeService';
+import {
+  requestMetricsAnalysis,
+  getLatestMetricsAnalysis,
+  prepareMetricsDataForAnalysis,
+} from '../lib/services/MetricsAIAnalysisService';
 import type {
   MetaAdCreative,
   AdAIAnalysis,
   AdMetricsAggregated,
   AnalyzeAdPayload,
 } from '../types/adAnalysis';
+import type {
+  MetricsAIAnalysis,
+  AnalysisLevel,
+} from '../types/metricsAnalysis';
 
 // Interface para estado de loading/error genérico
 interface AsyncState<T> {
@@ -199,6 +208,103 @@ export function useAdAIAnalysis(adId: string | null) {
 }
 
 /**
+ * Hook para gerenciar análise de MÉTRICAS com IA de um anúncio/campanha
+ * Esta é a nova análise focada em performance de métricas, não em criativos
+ */
+export function useMetricsAIAnalysis(
+  entityId: string | null,
+  entityName: string | null,
+  entityLevel: AnalysisLevel,
+  metaAdAccountId: string | null,
+  startDate: string | null,
+  endDate: string | null
+) {
+  const [state, setState] = useState<AsyncState<MetricsAIAnalysis>>({
+    data: null,
+    loading: false,
+    error: null,
+  });
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // Busca análise existente
+  const fetchAnalysis = useCallback(async () => {
+    if (!entityId) {
+      setState({ data: null, loading: false, error: null });
+      return;
+    }
+
+    setState(prev => ({ ...prev, loading: true, error: null }));
+
+    try {
+      const analysis = await getLatestMetricsAnalysis(entityId, entityLevel);
+      setState({ data: analysis, loading: false, error: null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao buscar análise';
+      setState({ data: null, loading: false, error: message });
+    }
+  }, [entityId, entityLevel]);
+
+  // Solicita nova análise de métricas
+  const analyzeMetrics = useCallback(async () => {
+    if (!entityId || !entityName || !metaAdAccountId || !startDate || !endDate) {
+      throw new Error('Dados insuficientes para análise');
+    }
+
+    setIsAnalyzing(true);
+    setState(prev => ({ ...prev, error: null }));
+
+    try {
+      // Prepara dados de métricas para análise
+      const metricsData = await prepareMetricsDataForAnalysis(
+        entityId,
+        entityLevel,
+        startDate,
+        endDate
+      );
+
+      if (!metricsData) {
+        throw new Error('Não foi possível obter dados de métricas para análise');
+      }
+
+      // Solicita análise via Edge Function
+      const response = await requestMetricsAnalysis({
+        entity_id: entityId,
+        entity_name: entityName,
+        entity_level: entityLevel,
+        meta_ad_account_id: metaAdAccountId,
+        metrics_data: metricsData,
+      });
+
+      setState({ data: response.analysis, loading: false, error: null });
+      setIsAnalyzing(false);
+      return response;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao analisar métricas';
+      setState(prev => ({ ...prev, error: message }));
+      setIsAnalyzing(false);
+      throw err;
+    }
+  }, [entityId, entityName, entityLevel, metaAdAccountId, startDate, endDate]);
+
+  // Effect para buscar análise existente quando parâmetros mudam
+  useEffect(() => {
+    if (entityId) {
+      fetchAnalysis();
+    }
+  }, [entityId, fetchAnalysis]);
+
+  return {
+    metricsAnalysis: state.data,
+    metricsAnalysisLoading: state.loading,
+    metricsAnalysisError: state.error,
+    isAnalyzingMetrics: isAnalyzing,
+    fetchMetricsAnalysis: fetchAnalysis,
+    analyzeMetrics,
+    hasMetricsAnalysis: state.data !== null,
+  };
+}
+
+/**
  * Hook para gerenciar métricas de um anúncio
  */
 export function useAdMetrics(
@@ -247,9 +353,11 @@ export function useAdMetrics(
 
 /**
  * Hook combinado para todos os dados do detalhe do anúncio
+ * Inclui análise de métricas com IA (foco em performance, não criativos)
  */
 export function useAdDetailData(
   adId: string | null,
+  adName: string | null,
   metaAdAccountId: string | null,
   startDate: string | null,
   endDate: string | null
@@ -258,11 +366,26 @@ export function useAdDetailData(
   const analysis = useAdAIAnalysis(adId);
   const metrics = useAdMetrics(adId, startDate, endDate);
 
+  // Análise de métricas com IA (nova funcionalidade)
+  const metricsAI = useMetricsAIAnalysis(
+    adId,
+    adName,
+    'ad',
+    metaAdAccountId,
+    startDate,
+    endDate
+  );
+
   // Loading geral (qualquer um carregando)
-  const isLoading = creative.loading || analysis.loading || metrics.loading;
+  const isLoading = creative.loading || analysis.loading || metrics.loading || metricsAI.metricsAnalysisLoading;
 
   // Erros combinados
-  const errors = [creative.error, analysis.error, metrics.error].filter(Boolean);
+  const errors = [
+    creative.error,
+    analysis.error,
+    metrics.error,
+    metricsAI.metricsAnalysisError
+  ].filter(Boolean);
 
   // Refresh de todos os dados
   const refreshAll = useCallback(async () => {
@@ -270,16 +393,19 @@ export function useAdDetailData(
       creative.refresh(),
       analysis.fetchAnalysis(),
       metrics.fetchMetrics(),
+      metricsAI.fetchMetricsAnalysis(),
     ]);
-  }, [creative, analysis, metrics]);
+  }, [creative, analysis, metrics, metricsAI]);
 
   return {
+    // Dados do criativo
     creative: creative.creative,
     creativeLoading: creative.loading,
     creativeError: creative.error,
     creativeCached: creative.isCached,
     refreshCreative: creative.refresh,
 
+    // Análise de criativo (antiga - mantida para compatibilidade)
     analysis: analysis.analysis,
     analysisLoading: analysis.loading,
     analysisError: analysis.error,
@@ -287,11 +413,22 @@ export function useAdDetailData(
     analyzeAd: analysis.analyze,
     hasAnalysis: analysis.hasAnalysis,
 
+    // Métricas brutas
     metrics: metrics.metrics,
     metricsLoading: metrics.loading,
     metricsError: metrics.error,
     refreshMetrics: metrics.fetchMetrics,
 
+    // Análise de MÉTRICAS com IA (nova - foco em performance)
+    metricsAnalysis: metricsAI.metricsAnalysis,
+    metricsAnalysisLoading: metricsAI.metricsAnalysisLoading,
+    metricsAnalysisError: metricsAI.metricsAnalysisError,
+    isAnalyzingMetrics: metricsAI.isAnalyzingMetrics,
+    analyzeMetrics: metricsAI.analyzeMetrics,
+    hasMetricsAnalysis: metricsAI.hasMetricsAnalysis,
+    fetchMetricsAnalysis: metricsAI.fetchMetricsAnalysis,
+
+    // Estados gerais
     isLoading,
     errors,
     refreshAll,
