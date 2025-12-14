@@ -1,6 +1,5 @@
 import React from 'react';
-import { Settings, Headphones, Target, Link2, RefreshCw, Building2 } from 'lucide-react';
-import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
+import { Settings, Headphones, Target, Link2, RefreshCw } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -14,7 +13,6 @@ const menuItems = [
   { icon: Link2, label: 'Conexao Meta', page: 'meta-admin' },
   { icon: Target, label: 'Campanhas', page: 'campaigns' },
   { icon: RefreshCw, label: 'Meta Ads Sync', page: 'meta-sync' },
-  { icon: Building2, label: 'Workspaces', page: 'workspaces' },
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configuracoes', page: 'settings' },
 ];
@@ -57,20 +55,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex flex-col h-full">
           <div className="p-6 border-b border-gray-200/50 flex-shrink-0">
             <div className="flex items-center justify-center">
-              <img
-                src="/logotipo-adsops.fw.png"
-                alt="AdsOPS"
+              <img 
+                src="/logotipo-adsops.fw.png" 
+                alt="AdsOPS" 
                 className="h-12 w-auto object-contain"
               />
             </div>
-          </div>
-
-          {/* Seletor de Workspace */}
-          <div className="px-4 py-3 border-b border-gray-200/50">
-            <WorkspaceSelector
-              onNavigateToWorkspaces={() => handlePageClick('workspaces')}
-              compact
-            />
           </div>
 
           <nav className="p-4 flex-1 overflow-y-auto">
