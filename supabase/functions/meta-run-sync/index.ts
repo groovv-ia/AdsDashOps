@@ -492,8 +492,136 @@ Deno.serve(async (req: Request) => {
     if (sync_creatives && allAdIds.length > 0) {
       console.log(`Iniciando busca de criativos para ${allAdIds.length} ads...`);
 
-      // Campos a buscar para cada ad
-      const adFields = "id,name,status,creative{id,name,title,body,image_url,thumbnail_url,video_id,call_to_action_type,object_story_spec,effective_object_story_id},preview_shareable_link";
+      // Cache local para conversao de image_hash
+      const imageHashCache = new Map<string, string>();
+
+      // Funcao para converter image_hash em URL
+      async function convertImageHashToUrl(imageHash: string, adAccountId: string): Promise<string | null> {
+        if (imageHashCache.has(imageHash)) {
+          return imageHashCache.get(imageHash) || null;
+        }
+        try {
+          const accountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
+          const url = `https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128&access_token=${accessToken}`;
+          const resp = await fetch(url);
+          const data = await resp.json();
+          if (data.data?.[0]) {
+            const imgUrl = data.data[0].url || data.data[0].url_128;
+            if (imgUrl) {
+              imageHashCache.set(imageHash, imgUrl);
+              return imgUrl;
+            }
+          }
+        } catch (err) {
+          console.error(`Erro ao converter image_hash ${imageHash}:`, err);
+        }
+        return null;
+      }
+
+      // Funcao para buscar thumbnail de video
+      async function fetchVideoThumbnail(videoId: string): Promise<string | null> {
+        try {
+          const resp = await fetch(`https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails,picture&access_token=${accessToken}`);
+          const data = await resp.json();
+          if (data.thumbnails?.data?.length > 0) {
+            const sorted = data.thumbnails.data.sort((a: { width: number }, b: { width: number }) => b.width - a.width);
+            return sorted[0].uri;
+          }
+          if (data.picture) return data.picture;
+        } catch (err) {
+          console.error(`Erro ao buscar thumbnail do video ${videoId}:`, err);
+        }
+        return null;
+      }
+
+      // Funcao para extrair URL de imagem de todas as fontes
+      async function extractImageUrl(creative: Record<string, unknown>, adAccountId: string): Promise<string | null> {
+        // URLs diretas
+        if (creative.image_url) return creative.image_url as string;
+        if (creative.thumbnail_url) return creative.thumbnail_url as string;
+
+        const objStorySpec = creative.object_story_spec as Record<string, unknown> | undefined;
+        const linkData = objStorySpec?.link_data as Record<string, unknown> | undefined;
+        const videoData = objStorySpec?.video_data as Record<string, unknown> | undefined;
+        const photoData = objStorySpec?.photo_data as Record<string, unknown> | undefined;
+        const assetFeed = creative.asset_feed_spec as Record<string, unknown> | undefined;
+
+        if (linkData?.picture) return linkData.picture as string;
+        if (videoData?.image_url) return videoData.image_url as string;
+        if (photoData?.url) return photoData.url as string;
+
+        // Child attachments (carrossel)
+        const childAttachments = linkData?.child_attachments as Array<Record<string, unknown>> | undefined;
+        if (childAttachments?.length) {
+          const first = childAttachments[0];
+          if (first.picture) return first.picture as string;
+          if (first.image_hash) {
+            const url = await convertImageHashToUrl(first.image_hash as string, adAccountId);
+            if (url) return url;
+          }
+        }
+
+        // Asset feed spec (dinamico)
+        const assetImages = assetFeed?.images as Array<Record<string, unknown>> | undefined;
+        if (assetImages?.length) {
+          const first = assetImages[0];
+          if (first.url) return first.url as string;
+          if (first.hash) {
+            const url = await convertImageHashToUrl(first.hash as string, adAccountId);
+            if (url) return url;
+          }
+        }
+
+        // Converte image_hash de varias fontes
+        const hashesToTry = [
+          creative.image_hash,
+          linkData?.image_hash,
+          videoData?.image_hash,
+          photoData?.image_hash,
+        ].filter(Boolean) as string[];
+
+        for (const hash of hashesToTry) {
+          const url = await convertImageHashToUrl(hash, adAccountId);
+          if (url) return url;
+        }
+
+        // Busca thumbnail de video
+        const videoId = (creative.video_id || videoData?.video_id) as string | undefined;
+        if (videoId) {
+          const thumb = await fetchVideoThumbnail(videoId);
+          if (thumb) return thumb;
+        }
+
+        return null;
+      }
+
+      // Funcao para determinar tipo do criativo
+      function determineCreativeType(creative: Record<string, unknown>): string {
+        const objStorySpec = creative.object_story_spec as Record<string, unknown> | undefined;
+        const videoData = objStorySpec?.video_data as Record<string, unknown> | undefined;
+        const linkData = objStorySpec?.link_data as Record<string, unknown> | undefined;
+        const assetFeed = creative.asset_feed_spec as Record<string, unknown> | undefined;
+
+        if (creative.video_id || videoData?.video_id) return "video";
+        const childAttachments = linkData?.child_attachments as Array<unknown> | undefined;
+        if (childAttachments && childAttachments.length > 1) return "carousel";
+        const assetImages = assetFeed?.images as Array<unknown> | undefined;
+        const assetVideos = assetFeed?.videos as Array<unknown> | undefined;
+        if (assetFeed && (assetImages?.length || assetVideos?.length)) {
+          if (assetVideos?.length) return "video";
+          return "dynamic";
+        }
+        if (creative.image_url || creative.image_hash || linkData?.picture || linkData?.image_hash) return "image";
+        return "unknown";
+      }
+
+      // Campos expandidos para cobrir todos os tipos de criativos
+      const adFields = [
+        "id", "name", "status", "preview_shareable_link",
+        "creative{id,name,title,body,image_url,thumbnail_url,video_id,image_hash,call_to_action_type,",
+        "object_story_spec,effective_object_story_id,effective_instagram_media_id,asset_feed_spec}",
+        "adcreatives{id,name,title,body,image_url,thumbnail_url,video_id,image_hash,object_story_spec,asset_feed_spec}"
+      ].join("");
 
       // Agrupa ads por ad account para processar em lotes
       const adsByAccount = new Map<string, string[]>();
@@ -546,35 +674,30 @@ Deno.serve(async (req: Request) => {
                   continue;
                 }
 
-                // Extrai dados do criativo
-                const creative = adData.creative || {};
-                const linkData = creative.object_story_spec?.link_data || {};
-                const videoData = creative.object_story_spec?.video_data || {};
-
-                // Determina tipo do criativo
-                let creativeType = "unknown";
-                if (creative.video_id || videoData.video_id) {
-                  creativeType = "video";
-                } else if (creative.image_url || linkData.picture || videoData.image_url) {
-                  creativeType = "image";
+                // Tenta pegar criativo de varias fontes
+                let creative = adData.creative || {};
+                if (!creative.id && adData.adcreatives?.data?.[0]) {
+                  creative = adData.adcreatives.data[0];
                 }
 
-                // Busca thumbnail de video se necessario
-                let thumbnailUrl = creative.image_url || linkData.picture || videoData.image_url || null;
-                const videoId = creative.video_id || videoData.video_id;
+                const linkData = creative.object_story_spec?.link_data || {};
+                const videoData = creative.object_story_spec?.video_data || {};
+                const assetFeed = creative.asset_feed_spec || {};
 
+                // Determina tipo do criativo
+                const creativeType = determineCreativeType(creative);
+
+                // Extrai URL da imagem
+                const imageUrl = await extractImageUrl(creative, accountMetaId);
+
+                // Video ID e URL
+                const videoId = creative.video_id || videoData.video_id || assetFeed.videos?.[0]?.video_id || null;
+                const videoUrl = videoId ? `https://www.facebook.com/ads/videos/${videoId}` : null;
+
+                // Para videos, busca thumbnail se nao tiver imagem
+                let thumbnailUrl = imageUrl;
                 if (creativeType === "video" && videoId && !thumbnailUrl) {
-                  try {
-                    const videoResp = await fetch(
-                      `https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails&access_token=${accessToken}`
-                    );
-                    const videoDataResp = await videoResp.json();
-                    if (videoDataResp.thumbnails?.data?.[0]?.uri) {
-                      thumbnailUrl = videoDataResp.thumbnails.data[0].uri;
-                    }
-                  } catch (videoErr) {
-                    console.error(`Erro ao buscar thumbnail do video ${videoId}:`, videoErr);
-                  }
+                  thumbnailUrl = await fetchVideoThumbnail(videoId);
                 }
 
                 // Monta registro do criativo
@@ -584,13 +707,13 @@ Deno.serve(async (req: Request) => {
                   meta_ad_account_id: accountMetaId,
                   meta_creative_id: creative.id || null,
                   creative_type: creativeType,
-                  image_url: creative.image_url || linkData.picture || videoData.image_url || null,
+                  image_url: imageUrl,
                   thumbnail_url: thumbnailUrl,
-                  video_url: videoId ? `https://www.facebook.com/ads/videos/${videoId}` : null,
-                  video_id: videoId || null,
+                  video_url: videoUrl,
+                  video_id: videoId,
                   preview_url: adData.preview_shareable_link || null,
-                  title: creative.title || linkData.name || videoData.title || null,
-                  body: creative.body || linkData.message || videoData.message || null,
+                  title: creative.title || linkData.name || videoData.title || assetFeed.titles?.[0]?.text || null,
+                  body: creative.body || linkData.message || videoData.message || assetFeed.bodies?.[0]?.text || null,
                   description: linkData.description || videoData.link_description || null,
                   call_to_action: creative.call_to_action_type || linkData.call_to_action?.type || videoData.call_to_action?.type || null,
                   link_url: linkData.link || videoData.call_to_action?.value?.link || null,
@@ -598,6 +721,8 @@ Deno.serve(async (req: Request) => {
                     ad_name: adData.name,
                     ad_status: adData.status,
                     raw_creative: creative,
+                    has_carousel: (linkData.child_attachments?.length || 0) > 1,
+                    carousel_count: linkData.child_attachments?.length || 0,
                   },
                   fetched_at: new Date().toISOString(),
                 };
@@ -621,7 +746,7 @@ Deno.serve(async (req: Request) => {
 
             // Pequena pausa entre lotes para evitar rate limit
             if (i + 50 < adIds.length) {
-              await new Promise(resolve => setTimeout(resolve, 500));
+              await new Promise(resolve => setTimeout(resolve, 300));
             }
           }
         } catch (accountErr) {
