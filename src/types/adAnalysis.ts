@@ -241,7 +241,7 @@ export interface AdDetailData {
 // Interface para payload de busca de criativo
 export interface FetchCreativePayload {
   ad_id: string;
-  meta_ad_account_id: string;
+  meta_ad_account_id?: string; // Opcional - Edge Function tentará descobrir se não fornecido
   force_refresh?: boolean;
 }
 

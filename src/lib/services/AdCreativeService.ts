@@ -24,6 +24,7 @@ const FUNCTIONS_URL = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
 /**
  * Busca o criativo de um anúncio do Meta
  * Primeiro verifica cache local, depois chama Edge Function se necessário
+ * O meta_ad_account_id é opcional - se não fornecido, a Edge Function tentará descobrir
  */
 export async function fetchAdCreative(
   payload: FetchCreativePayload
