@@ -3,6 +3,7 @@
  * 
  * Executa sincronizacao de dados do Meta Ads.
  * Busca insights de campaigns, adsets e ads e salva no Supabase.
+ * Opcionalmente busca criativos (imagens/videos) dos anuncios.
  * 
  * POST /functions/v1/meta-run-sync
  * Body: { 
@@ -10,7 +11,8 @@
  *   client_id?: string,
  *   meta_ad_account_id?: string,
  *   days_back?: number,
- *   levels?: string[] (default: ['campaign', 'adset', 'ad'])
+ *   levels?: string[] (default: ['campaign', 'adset', 'ad']),
+ *   sync_creatives?: boolean (default: false)
  * }
  */
 
@@ -29,6 +31,7 @@ interface SyncPayload {
   meta_ad_account_id?: string;
   days_back?: number;
   levels?: string[];
+  sync_creatives?: boolean;
 }
 
 interface MetaInsightRow {
@@ -213,12 +216,13 @@ Deno.serve(async (req: Request) => {
 
     // Parse do body
     const body: SyncPayload = await req.json();
-    const { 
-      mode = "intraday", 
-      client_id, 
+    const {
+      mode = "intraday",
+      client_id,
       meta_ad_account_id,
       days_back = 7,
-      levels = ["campaign", "adset", "ad"]
+      levels = ["campaign", "adset", "ad"],
+      sync_creatives = false
     } = body;
 
     // Busca o workspace do usuario
@@ -284,8 +288,12 @@ Deno.serve(async (req: Request) => {
       date_to: dateTo,
       accounts_synced: 0,
       insights_synced: 0,
+      creatives_synced: 0,
       errors: [] as string[],
     };
+
+    // Coleta IDs de ads para buscar criativos depois
+    const allAdIds: { adId: string; metaAdAccountId: string }[] = [];
 
     // Campos a buscar da API Meta
     const insightFields = [
@@ -359,6 +367,13 @@ Deno.serve(async (req: Request) => {
               if (level === "ad") {
                 entityId = insight.ad_id || "";
                 entityName = insight.ad_name || null;
+                // Coleta ad_id para buscar criativos depois
+                if (entityId && sync_creatives) {
+                  const alreadyCollected = allAdIds.some(a => a.adId === entityId);
+                  if (!alreadyCollected) {
+                    allAdIds.push({ adId: entityId, metaAdAccountId: adAccount.meta_ad_account_id });
+                  }
+                }
               } else if (level === "adset") {
                 entityId = insight.adset_id || "";
                 entityName = insight.adset_name || null;
@@ -471,6 +486,151 @@ Deno.serve(async (req: Request) => {
         syncResult.errors.push(errorMsg);
         console.error(errorMsg);
       }
+    }
+
+    // Fase 2: Busca criativos se solicitado
+    if (sync_creatives && allAdIds.length > 0) {
+      console.log(`Iniciando busca de criativos para ${allAdIds.length} ads...`);
+
+      // Campos a buscar para cada ad
+      const adFields = "id,name,status,creative{id,name,title,body,image_url,thumbnail_url,video_id,call_to_action_type,object_story_spec,effective_object_story_id},preview_shareable_link";
+
+      // Agrupa ads por ad account para processar em lotes
+      const adsByAccount = new Map<string, string[]>();
+      for (const { adId, metaAdAccountId } of allAdIds) {
+        const list = adsByAccount.get(metaAdAccountId) || [];
+        list.push(adId);
+        adsByAccount.set(metaAdAccountId, list);
+      }
+
+      // Processa cada ad account
+      for (const [accountMetaId, adIds] of adsByAccount) {
+        try {
+          // Processa em lotes de 50 (limite do batch da Meta)
+          for (let i = 0; i < adIds.length; i += 50) {
+            const batch = adIds.slice(i, i + 50);
+
+            // Cria batch requests
+            const batchRequests = batch.map(adId => ({
+              method: "GET",
+              relative_url: `${adId}?fields=${encodeURIComponent(adFields)}`,
+            }));
+
+            const batchBody = new URLSearchParams({
+              access_token: accessToken,
+              batch: JSON.stringify(batchRequests),
+            });
+
+            const batchResponse = await fetch("https://graph.facebook.com/v21.0/", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: batchBody,
+            });
+
+            const batchResults = await batchResponse.json();
+
+            // Processa cada resultado do batch
+            for (let j = 0; j < batchResults.length; j++) {
+              const result = batchResults[j];
+              const adId = batch[j];
+
+              if (result.code !== 200) {
+                console.error(`Erro ao buscar criativo do ad ${adId}: HTTP ${result.code}`);
+                continue;
+              }
+
+              try {
+                const adData = JSON.parse(result.body);
+                if (adData.error) {
+                  console.error(`Erro da Meta para ad ${adId}:`, adData.error);
+                  continue;
+                }
+
+                // Extrai dados do criativo
+                const creative = adData.creative || {};
+                const linkData = creative.object_story_spec?.link_data || {};
+                const videoData = creative.object_story_spec?.video_data || {};
+
+                // Determina tipo do criativo
+                let creativeType = "unknown";
+                if (creative.video_id || videoData.video_id) {
+                  creativeType = "video";
+                } else if (creative.image_url || linkData.picture || videoData.image_url) {
+                  creativeType = "image";
+                }
+
+                // Busca thumbnail de video se necessario
+                let thumbnailUrl = creative.image_url || linkData.picture || videoData.image_url || null;
+                const videoId = creative.video_id || videoData.video_id;
+
+                if (creativeType === "video" && videoId && !thumbnailUrl) {
+                  try {
+                    const videoResp = await fetch(
+                      `https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails&access_token=${accessToken}`
+                    );
+                    const videoDataResp = await videoResp.json();
+                    if (videoDataResp.thumbnails?.data?.[0]?.uri) {
+                      thumbnailUrl = videoDataResp.thumbnails.data[0].uri;
+                    }
+                  } catch (videoErr) {
+                    console.error(`Erro ao buscar thumbnail do video ${videoId}:`, videoErr);
+                  }
+                }
+
+                // Monta registro do criativo
+                const creativeRecord = {
+                  workspace_id: workspace.id,
+                  ad_id: adId,
+                  meta_ad_account_id: accountMetaId,
+                  meta_creative_id: creative.id || null,
+                  creative_type: creativeType,
+                  image_url: creative.image_url || linkData.picture || videoData.image_url || null,
+                  thumbnail_url: thumbnailUrl,
+                  video_url: videoId ? `https://www.facebook.com/ads/videos/${videoId}` : null,
+                  video_id: videoId || null,
+                  preview_url: adData.preview_shareable_link || null,
+                  title: creative.title || linkData.name || videoData.title || null,
+                  body: creative.body || linkData.message || videoData.message || null,
+                  description: linkData.description || videoData.link_description || null,
+                  call_to_action: creative.call_to_action_type || linkData.call_to_action?.type || videoData.call_to_action?.type || null,
+                  link_url: linkData.link || videoData.call_to_action?.value?.link || null,
+                  extra_data: {
+                    ad_name: adData.name,
+                    ad_status: adData.status,
+                    raw_creative: creative,
+                  },
+                  fetched_at: new Date().toISOString(),
+                };
+
+                // Upsert no banco
+                const { error: upsertError } = await supabaseAdmin
+                  .from("meta_ad_creatives")
+                  .upsert(creativeRecord, {
+                    onConflict: "workspace_id,ad_id",
+                  });
+
+                if (upsertError) {
+                  console.error(`Erro ao salvar criativo do ad ${adId}:`, upsertError);
+                } else {
+                  syncResult.creatives_synced++;
+                }
+              } catch (parseErr) {
+                console.error(`Erro ao processar criativo do ad ${adId}:`, parseErr);
+              }
+            }
+
+            // Pequena pausa entre lotes para evitar rate limit
+            if (i + 50 < adIds.length) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+        } catch (accountErr) {
+          console.error(`Erro ao processar criativos da conta ${accountMetaId}:`, accountErr);
+          syncResult.errors.push(`Creatives error for ${accountMetaId}: ${accountErr instanceof Error ? accountErr.message : "Unknown"}`);
+        }
+      }
+
+      console.log(`Criativos sincronizados: ${syncResult.creatives_synced}`);
     }
 
     return new Response(

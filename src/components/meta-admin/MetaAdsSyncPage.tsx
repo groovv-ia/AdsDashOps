@@ -151,6 +151,9 @@ export const MetaAdsSyncPage: React.FC = () => {
     return preset ? preset.getDateRange() : { dateFrom: '', dateTo: '' };
   });
 
+  // Opcao para sincronizar criativos junto com metricas
+  const [syncCreatives, setSyncCreatives] = useState<boolean>(true);
+
   // Mensagens
   const [error, setError] = useState<string | null>(null);
 
@@ -347,6 +350,7 @@ export const MetaAdsSyncPage: React.FC = () => {
         metaAdAccountId: account.meta_id,
         daysBack,
         levels: ['campaign', 'adset', 'ad'],
+        syncCreatives: syncCreatives,
       });
 
       // Completa o progresso ao finalizar
@@ -777,6 +781,26 @@ export const MetaAdsSyncPage: React.FC = () => {
               onPeriodChange={handlePeriodChange}
             />
           </div>
+
+          {/* Opcao para sincronizar criativos */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={syncCreatives}
+                onChange={(e) => setSyncCreatives(e.target.checked)}
+                className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+              />
+              <div>
+                <span className="font-medium text-gray-800 group-hover:text-blue-600 transition-colors">
+                  Sincronizar Criativos
+                </span>
+                <p className="text-sm text-gray-500">
+                  Buscar imagens e videos dos anuncios durante a sincronizacao (pode aumentar o tempo)
+                </p>
+              </div>
+            </label>
+          </div>
         </Card>
 
         {/* Mensagem de resultado de sincronizacao */}
@@ -794,9 +818,16 @@ export const MetaAdsSyncPage: React.FC = () => {
               ) : (
                 <CheckCircle2 className="w-5 h-5 text-green-500" />
               )}
-              <span className="font-medium">
-                {syncResult.insights_synced} registros sincronizados de {syncResult.accounts_synced} conta(s)
-              </span>
+              <div>
+                <span className="font-medium">
+                  {syncResult.insights_synced} registros sincronizados de {syncResult.accounts_synced} conta(s)
+                </span>
+                {syncResult.creatives_synced !== undefined && syncResult.creatives_synced > 0 && (
+                  <span className="ml-2 text-blue-600">
+                    + {syncResult.creatives_synced} criativos
+                  </span>
+                )}
+              </div>
             </div>
             {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
           </div>

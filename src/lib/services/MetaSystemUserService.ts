@@ -79,6 +79,7 @@ export interface SyncResult {
   date_to: string;
   accounts_synced: number;
   insights_synced: number;
+  creatives_synced?: number;
   errors: string[];
 }
 
@@ -297,6 +298,7 @@ export async function runMetaSync(options: {
   metaAdAccountId?: string;
   daysBack?: number;
   levels?: string[];
+  syncCreatives?: boolean;
 }): Promise<SyncResult> {
   const headers = await getAuthHeaders();
 
@@ -309,6 +311,7 @@ export async function runMetaSync(options: {
       meta_ad_account_id: options.metaAdAccountId,
       days_back: options.daysBack || 7,
       levels: options.levels || ['campaign', 'adset', 'ad'],
+      sync_creatives: options.syncCreatives ?? false,
     }),
   });
 
