@@ -1,7 +1,7 @@
 /**
  * Edge Function: meta-run-sync
  * 
- * Executa sincronizacao de dados do Meta Ads.
+ * Executa sincronização de dados do Meta Ads.
  * Busca insights de campaigns, adsets e ads e salva no Supabase.
  * 
  * POST /functions/v1/meta-run-sync
@@ -59,12 +59,12 @@ interface MetaInsightsResponse {
   error?: { message: string; code: number };
 }
 
-// Funcao para formatar data no padrao YYYY-MM-DD
+// Função para formatar data no padrão YYYY-MM-DD
 function formatDate(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
-// Funcao para calcular datas baseado no modo
+// Função para calcular datas baseado no modo
 function getDateRange(mode: string, daysBack: number = 7): { dateFrom: string; dateTo: string } {
   const now = new Date();
   const today = formatDate(now);
@@ -78,68 +78,14 @@ function getDateRange(mode: string, daysBack: number = 7): { dateFrom: string; d
     // Hoje
     return { dateFrom: today, dateTo: today };
   } else {
-    // Backfill: ultimos N dias
+    // Backfill: últimos N dias
     const fromDate = new Date(now);
     fromDate.setDate(fromDate.getDate() - daysBack);
     return { dateFrom: formatDate(fromDate), dateTo: today };
   }
 }
 
-// Funcao para extrair leads do array de actions
-function extractLeads(actions?: Array<{ action_type: string; value: string }>): number {
-  if (!actions || !Array.isArray(actions)) return 0;
-  
-  const leadTypes = ['lead', 'onsite_conversion.lead_grouped'];
-  return actions
-    .filter((a) => leadTypes.includes(a.action_type))
-    .reduce((sum, a) => sum + parseInt(a.value || '0', 10), 0);
-}
-
-// Funcao para extrair conversoes do array de actions
-function extractConversions(actions?: Array<{ action_type: string; value: string }>): number {
-  if (!actions || !Array.isArray(actions)) return 0;
-  
-  const conversionTypes = [
-    'lead',
-    'purchase',
-    'complete_registration',
-    'offsite_conversion.fb_pixel_purchase',
-    'onsite_conversion.purchase',
-    'offsite_conversion.fb_pixel_lead',
-  ];
-  return actions
-    .filter((a) => conversionTypes.includes(a.action_type))
-    .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
-}
-
-// Funcao para extrair valores de conversao do array de action_values
-function extractConversionValue(actionValues?: Array<{ action_type: string; value: string }>): number {
-  if (!actionValues || !Array.isArray(actionValues)) return 0;
-  
-  const valueTypes = [
-    'purchase',
-    'offsite_conversion.fb_pixel_purchase',
-    'onsite_conversion.purchase',
-  ];
-  return actionValues
-    .filter((a) => valueTypes.includes(a.action_type))
-    .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
-}
-
-// Funcao para extrair valores de compra do array de action_values
-function extractPurchaseValue(actionValues?: Array<{ action_type: string; value: string }>): number {
-  if (!actionValues || !Array.isArray(actionValues)) return 0;
-  
-  const purchaseTypes = [
-    'purchase',
-    'offsite_conversion.fb_pixel_purchase',
-  ];
-  return actionValues
-    .filter((a) => purchaseTypes.includes(a.action_type))
-    .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
-}
-
-// Funcao para buscar insights com retry e backoff
+// Função para buscar insights com retry e backoff
 async function fetchInsightsWithRetry(
   url: string,
   maxRetries: number = 3
@@ -221,7 +167,7 @@ Deno.serve(async (req: Request) => {
       levels = ["campaign", "adset", "ad"]
     } = body;
 
-    // Busca o workspace do usuario
+    // Busca o workspace do usuário
     const { data: workspace } = await supabaseAdmin
       .from("workspaces")
       .select("id")
@@ -235,7 +181,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Busca a conexao Meta
+    // Busca a conexão Meta
     const { data: metaConnection } = await supabaseAdmin
       .from("meta_connections")
       .select("access_token_encrypted, status")
@@ -258,7 +204,7 @@ Deno.serve(async (req: Request) => {
     // Busca as ad accounts a sincronizar
     let adAccountsQuery = supabaseAdmin
       .from("meta_ad_accounts")
-      .select("id, meta_ad_account_id, name, currency, timezone_name")
+      .select("id, meta_ad_account_id, name, currency, timezone")
       .eq("workspace_id", workspace.id);
 
     if (meta_ad_account_id) {
@@ -274,7 +220,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Calcula periodo
+    // Calcula período
     const { dateFrom, dateTo } = getDateRange(mode, days_back);
 
     // Resultado do sync
@@ -301,7 +247,7 @@ Deno.serve(async (req: Request) => {
     // Processa cada ad account
     for (const adAccount of adAccounts) {
       try {
-        // Captura timestamp de inicio para calcular duracao
+        // Captura timestamp de início para calcular duração
         const syncStartTime = new Date();
 
         // Cria job de sync
@@ -322,7 +268,7 @@ Deno.serve(async (req: Request) => {
 
         let totalRows = 0;
 
-        // Busca insights para cada nivel
+        // Busca insights para cada nível
         for (const level of levels) {
           try {
             const levelParam = level === "adset" ? "adset" : level;
@@ -339,7 +285,7 @@ Deno.serve(async (req: Request) => {
             let url: string | null = `${baseUrl}?${params.toString()}`;
             const allInsights: MetaInsightRow[] = [];
 
-            // Paginacao
+            // Paginação
             while (url) {
               const data = await fetchInsightsWithRetry(url);
               
@@ -352,7 +298,7 @@ Deno.serve(async (req: Request) => {
 
             // Processa e salva insights
             for (const insight of allInsights) {
-              // Determina entity_id e entity_name baseado no nivel
+              // Determina entity_id e entity_name baseado no nível
               let entityId: string;
               let entityName: string | null;
 
@@ -368,12 +314,6 @@ Deno.serve(async (req: Request) => {
               }
 
               if (!entityId) continue;
-
-              // Extrai metricas de conversao
-              const leads = extractLeads(insight.actions);
-              const conversions = extractConversions(insight.actions);
-              const conversionValue = extractConversionValue(insight.action_values);
-              const purchaseValue = extractPurchaseValue(insight.action_values);
 
               // Salva na camada RAW
               await supabaseAdmin.from("meta_insights_raw").insert({
@@ -407,10 +347,6 @@ Deno.serve(async (req: Request) => {
                 unique_clicks: parseInt(insight.unique_clicks || "0", 10),
                 actions_json: insight.actions || {},
                 action_values_json: insight.action_values || {},
-                leads: leads,
-                conversions: conversions,
-                conversion_value: conversionValue,
-                purchase_value: purchaseValue,
               };
 
               await supabaseAdmin
@@ -430,7 +366,7 @@ Deno.serve(async (req: Request) => {
 
         // Atualiza job como sucesso
         if (syncJob) {
-          // Calcula duracao da sincronizacao em segundos
+          // Calcula duração da sincronização em segundos
           const syncEndTime = new Date();
           const durationSeconds = Math.floor((syncEndTime.getTime() - syncStartTime.getTime()) / 1000);
 
