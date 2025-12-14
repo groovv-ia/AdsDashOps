@@ -5,7 +5,7 @@
  * Fornece o workspace atual e funcoes para trocar entre workspaces.
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import {
   Workspace,
   listUserWorkspaces,
@@ -23,13 +23,10 @@ const WORKSPACE_STORAGE_KEY = 'adsops_active_workspace_id';
 
 // Interface do contexto
 interface WorkspaceContextType {
-  // Estado atual
   currentWorkspace: Workspace | null;
   workspaces: Workspace[];
   isLoading: boolean;
   error: string | null;
-
-  // Acoes
   setCurrentWorkspace: (workspace: Workspace) => void;
   refreshWorkspaces: () => Promise<void>;
   createWorkspace: (input: CreateWorkspaceInput) => Promise<{ success: boolean; error?: string }>;
@@ -49,14 +46,21 @@ interface WorkspaceProviderProps {
  * Provider do contexto de workspace
  */
 export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
-  // Estados
   const [currentWorkspace, setCurrentWorkspaceState] = useState<Workspace | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Ref para controlar se ja carregou inicialmente
+  const hasLoadedRef = useRef(false);
+
   // Carrega workspaces do usuario
-  const refreshWorkspaces = useCallback(async () => {
+  const loadWorkspaces = useCallback(async (forceReload = false) => {
+    // Evita recarregar se ja carregou e nao e forcado
+    if (hasLoadedRef.current && !forceReload) {
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -66,47 +70,52 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       if (listError) {
         setError(listError);
         setWorkspaces([]);
+        setIsLoading(false);
         return;
       }
 
       setWorkspaces(data);
+      hasLoadedRef.current = true;
 
-      // Se nao tem workspace atual, seleciona o primeiro
-      if (data.length > 0 && !currentWorkspace) {
-        // Tenta recuperar workspace salvo no localStorage
-        const savedWorkspaceId = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+      // Se nao tem workspaces, apenas finaliza
+      if (data.length === 0) {
+        setIsLoading(false);
+        return;
+      }
 
-        if (savedWorkspaceId) {
-          const saved = data.find(w => w.id === savedWorkspaceId);
-          if (saved) {
-            setCurrentWorkspaceState(saved);
-            return;
-          }
-        }
+      // Tenta recuperar workspace salvo no localStorage
+      const savedWorkspaceId = localStorage.getItem(WORKSPACE_STORAGE_KEY);
 
-        // Usa o workspace padrao
-        const { data: defaultWs } = await getDefaultWorkspace();
-        if (defaultWs) {
-          setCurrentWorkspaceState(defaultWs);
-          localStorage.setItem(WORKSPACE_STORAGE_KEY, defaultWs.id);
-        } else if (data.length > 0) {
-          setCurrentWorkspaceState(data[0]);
-          localStorage.setItem(WORKSPACE_STORAGE_KEY, data[0].id);
+      if (savedWorkspaceId) {
+        const saved = data.find(w => w.id === savedWorkspaceId);
+        if (saved) {
+          setCurrentWorkspaceState(saved);
+          setIsLoading(false);
+          return;
         }
       }
+
+      // Usa o primeiro workspace da lista
+      setCurrentWorkspaceState(data[0]);
+      localStorage.setItem(WORKSPACE_STORAGE_KEY, data[0].id);
     } catch (err) {
       setError('Erro ao carregar workspaces');
       console.error('Erro ao carregar workspaces:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [currentWorkspace]);
+  }, []);
 
   // Define workspace atual
   const setCurrentWorkspace = useCallback((workspace: Workspace) => {
     setCurrentWorkspaceState(workspace);
     localStorage.setItem(WORKSPACE_STORAGE_KEY, workspace.id);
   }, []);
+
+  // Refresh manual
+  const refreshWorkspaces = useCallback(async () => {
+    await loadWorkspaces(true);
+  }, [loadWorkspaces]);
 
   // Cria novo workspace
   const createWorkspace = useCallback(async (input: CreateWorkspaceInput) => {
@@ -116,7 +125,6 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       return { success: false, error: createError || 'Erro ao criar workspace' };
     }
 
-    // Adiciona a lista e seleciona
     setWorkspaces(prev => [...prev, data]);
     setCurrentWorkspace(data);
 
@@ -131,16 +139,17 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       return { success: false, error: updateError || 'Erro ao atualizar workspace' };
     }
 
-    // Atualiza na lista
     setWorkspaces(prev => prev.map(w => w.id === id ? data : w));
 
-    // Atualiza atual se for o mesmo
-    if (currentWorkspace?.id === id) {
-      setCurrentWorkspaceState(data);
-    }
+    setCurrentWorkspaceState(prev => {
+      if (prev?.id === id) {
+        return data;
+      }
+      return prev;
+    });
 
     return { success: true };
-  }, [currentWorkspace]);
+  }, []);
 
   // Deleta workspace
   const deleteWorkspace = useCallback(async (id: string) => {
@@ -150,53 +159,71 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       return { success: false, error: deleteError || 'Erro ao deletar workspace' };
     }
 
-    // Remove da lista
-    const newList = workspaces.filter(w => w.id !== id);
-    setWorkspaces(newList);
+    setWorkspaces(prev => {
+      const newList = prev.filter(w => w.id !== id);
 
-    // Se era o atual, seleciona outro
-    if (currentWorkspace?.id === id && newList.length > 0) {
-      setCurrentWorkspace(newList[0]);
-    }
+      // Se era o atual, seleciona outro
+      setCurrentWorkspaceState(current => {
+        if (current?.id === id && newList.length > 0) {
+          localStorage.setItem(WORKSPACE_STORAGE_KEY, newList[0].id);
+          return newList[0];
+        }
+        return current;
+      });
+
+      return newList;
+    });
 
     return { success: true };
-  }, [workspaces, currentWorkspace, setCurrentWorkspace]);
+  }, []);
 
-  // Carrega workspaces quando usuario muda
+  // Carrega workspaces na montagem e escuta autenticacao
   useEffect(() => {
-    const loadWorkspaces = async () => {
+    let mounted = true;
+
+    const initWorkspaces = async () => {
       const { data: { session } } = await supabase.auth.getSession();
 
+      if (!mounted) return;
+
       if (session?.user) {
-        await refreshWorkspaces();
+        await loadWorkspaces();
       } else {
         setWorkspaces([]);
         setCurrentWorkspaceState(null);
         setIsLoading(false);
+        hasLoadedRef.current = false;
       }
     };
 
-    loadWorkspaces();
+    initWorkspaces();
 
     // Escuta mudancas de autenticacao
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_IN' && session?.user) {
-          await refreshWorkspaces();
-        } else if (event === 'SIGNED_OUT') {
-          setWorkspaces([]);
-          setCurrentWorkspaceState(null);
-          localStorage.removeItem(WORKSPACE_STORAGE_KEY);
-        }
+      (event, session) => {
+        if (!mounted) return;
+
+        // Usa setTimeout para evitar deadlock do onAuthStateChange
+        setTimeout(async () => {
+          if (event === 'SIGNED_IN' && session?.user) {
+            hasLoadedRef.current = false;
+            await loadWorkspaces();
+          } else if (event === 'SIGNED_OUT') {
+            setWorkspaces([]);
+            setCurrentWorkspaceState(null);
+            localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+            hasLoadedRef.current = false;
+          }
+        }, 0);
       }
     );
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
-  }, [refreshWorkspaces]);
+  }, [loadWorkspaces]);
 
-  // Valor do contexto
   const value: WorkspaceContextType = {
     currentWorkspace,
     workspaces,
