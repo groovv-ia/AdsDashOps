@@ -395,6 +395,8 @@ Deno.serve(async (req: Request) => {
                 level: level,
                 entity_id: entityId,
                 entity_name: entityName,
+                campaign_id: insight.campaign_id || null, // Salva campaign_id para hierarquia
+                adset_id: insight.adset_id || null, // Salva adset_id para hierarquia
                 date: insight.date_start,
                 spend: parseFloat(insight.spend || "0"),
                 impressions: parseInt(insight.impressions || "0", 10),
