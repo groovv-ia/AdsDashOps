@@ -16,9 +16,11 @@ import { CookiePreferencesModal } from './components/legal/CookiePreferencesModa
 import { CookieSettingsButton } from './components/legal/CookieSettingsButton';
 import { CookieConsentProvider } from './contexts/CookieConsentContext';
 import { ClientProvider } from './contexts/ClientContext';
+import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
+import { WorkspacesPage } from './components/workspaces/WorkspacesPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
@@ -344,6 +346,8 @@ function AppContent() {
         );
       case 'support':
         return <SupportPage />;
+      case 'workspaces':
+        return <WorkspacesPage />;
       default:
         return <MetaAdminPage />;
     }
@@ -389,9 +393,11 @@ function App() {
   return (
     <ThemeProvider>
       <CookieConsentProvider>
-        <ClientProvider>
-          <AppContent />
-        </ClientProvider>
+        <WorkspaceProvider>
+          <ClientProvider>
+            <AppContent />
+          </ClientProvider>
+        </WorkspaceProvider>
       </CookieConsentProvider>
     </ThemeProvider>
   );
