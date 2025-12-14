@@ -158,6 +158,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     metricsLoading,
     metricsAnalysis,
     metricsAnalysisLoading,
+    metricsAnalysisError,
     isAnalyzingMetrics,
     analyzeMetrics,
     hasMetricsAnalysis,
@@ -400,6 +401,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
               <MetricsAIAnalysisTab
                 metricsAnalysis={metricsAnalysis}
                 loading={metricsAnalysisLoading}
+                error={metricsAnalysisError}
                 isAnalyzing={isAnalyzingMetrics}
                 hasMetrics={!!metrics && metrics.total_impressions > 0}
                 onAnalyze={analyzeMetrics}
@@ -1201,6 +1203,7 @@ const MetricBadge: React.FC<{ label: string; value: string; trend?: 'up' | 'down
 interface MetricsAIAnalysisTabProps {
   metricsAnalysis: MetricsAIAnalysis | null;
   loading: boolean;
+  error: string | null;
   isAnalyzing: boolean;
   hasMetrics: boolean;
   onAnalyze: () => void;
@@ -1209,6 +1212,7 @@ interface MetricsAIAnalysisTabProps {
 const MetricsAIAnalysisTab: React.FC<MetricsAIAnalysisTabProps> = ({
   metricsAnalysis,
   loading,
+  error,
   isAnalyzing,
   hasMetrics,
   onAnalyze,
@@ -1238,6 +1242,36 @@ const MetricsAIAnalysisTab: React.FC<MetricsAIAnalysisTabProps> = ({
           </div>
           <p className="text-gray-900 font-medium mt-6 mb-2">Analisando metricas com IA...</p>
           <p className="text-sm text-gray-500">Isso pode levar de 15 a 45 segundos</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado de erro - exibe mensagem e botao para tentar novamente
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Erro na Analise
+          </h3>
+          <p className="text-gray-500 mb-4">
+            {error}
+          </p>
+          <button
+            onClick={onAnalyze}
+            disabled={!hasMetrics}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-cyan-700 transition-all shadow-lg shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className="w-5 h-5" />
+            Tentar Novamente
+          </button>
+          <p className="text-xs text-gray-400 mt-4">
+            Se o erro persistir, verifique sua conexao ou tente mais tarde
+          </p>
         </div>
       </div>
     );

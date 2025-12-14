@@ -308,7 +308,18 @@ async function analyzeWithGPT4(
 
   if (!response.ok) {
     const errorData = await response.json();
-    throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+    const errorMessage = errorData.error?.message || response.statusText;
+    console.error("OpenAI API error:", errorMessage, "Status:", response.status);
+
+    // Mensagens de erro mais claras para o usuario
+    if (response.status === 429) {
+      throw new Error("Limite de requisicoes da IA atingido. Aguarde alguns minutos e tente novamente.");
+    } else if (response.status === 401) {
+      throw new Error("Erro de autenticacao com servico de IA. Contate o suporte.");
+    } else if (response.status >= 500) {
+      throw new Error("Servico de IA temporariamente indisponivel. Tente novamente em alguns minutos.");
+    }
+    throw new Error(`Erro ao processar analise: ${errorMessage}`);
   }
 
   const data = await response.json();
@@ -363,6 +374,28 @@ Deno.serve(async (req: Request) => {
     if (!entity_id || !entity_name || !entity_level || !metrics_data) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: entity_id, entity_name, entity_level, metrics_data" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Valida se metrics_data tem dados suficientes para analise
+    if (!metrics_data.total_impressions || metrics_data.total_impressions === 0) {
+      return new Response(
+        JSON.stringify({
+          error: "Dados insuficientes para analise",
+          details: "O anuncio precisa ter pelo menos algumas impressoes para ser analisado."
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Valida periodo de datas
+    if (!metrics_data.start_date || !metrics_data.end_date) {
+      return new Response(
+        JSON.stringify({
+          error: "Periodo de analise invalido",
+          details: "As datas de inicio e fim do periodo sao obrigatorias."
+        }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
