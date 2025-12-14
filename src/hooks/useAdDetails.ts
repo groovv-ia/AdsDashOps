@@ -40,9 +40,8 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
   const [isCached, setIsCached] = useState(false);
 
   // Busca criativo ao montar ou quando IDs mudam
-  // O metaAdAccountId é opcional - se não fornecido, a Edge Function tentará descobrir
   const fetchCreative = useCallback(async () => {
-    if (!adId) {
+    if (!adId || !metaAdAccountId) {
       setState({ data: null, loading: false, error: null });
       return;
     }
@@ -52,7 +51,7 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
     try {
       const response = await fetchAdCreative({
         ad_id: adId,
-        meta_ad_account_id: metaAdAccountId || undefined,
+        meta_ad_account_id: metaAdAccountId,
       });
       setState({ data: response.creative, loading: false, error: null });
       setIsCached(response.cached);
@@ -63,14 +62,13 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
   }, [adId, metaAdAccountId]);
 
   // Força atualização do criativo
-  // O metaAdAccountId é opcional
   const refresh = useCallback(async () => {
-    if (!adId) return;
+    if (!adId || !metaAdAccountId) return;
 
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const response = await refreshAdCreative(adId, metaAdAccountId || '');
+      const response = await refreshAdCreative(adId, metaAdAccountId);
       setState({ data: response.creative, loading: false, error: null });
       setIsCached(false);
     } catch (err) {
@@ -92,9 +90,8 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
 
   // Effect para buscar criativo quando IDs mudam
   // Primeiro tenta carregar do cache, depois busca se não encontrar
-  // O metaAdAccountId é opcional - a Edge Function tentará descobrir se não fornecido
   useEffect(() => {
-    if (!adId) return;
+    if (!adId || !metaAdAccountId) return;
 
     let cancelled = false;
 
@@ -109,7 +106,6 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
         setIsCached(true);
       } else {
         // Se não encontrou no cache, busca da API
-        // Mesmo sem metaAdAccountId, a Edge Function tentará descobrir
         fetchCreative();
       }
     }

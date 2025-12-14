@@ -150,9 +150,9 @@ Deno.serve(async (req: Request) => {
     const { ad_id, meta_ad_account_id, force_refresh = false } = payload;
 
     // Valida campos obrigatórios
-    if (!ad_id) {
+    if (!ad_id || !meta_ad_account_id) {
       return new Response(
-        JSON.stringify({ error: "Missing required field: ad_id" }),
+        JSON.stringify({ error: "Missing required fields: ad_id, meta_ad_account_id" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -202,9 +202,9 @@ Deno.serve(async (req: Request) => {
 
       if (cachedCreative) {
         return new Response(
-          JSON.stringify({
-            creative: cachedCreative,
-            cached: true
+          JSON.stringify({ 
+            creative: cachedCreative, 
+            cached: true 
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -222,48 +222,6 @@ Deno.serve(async (req: Request) => {
       return new Response(
         JSON.stringify({ error: "No valid Meta connection found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Se meta_ad_account_id não foi fornecido, tenta encontrar na cache de entidades
-    let resolvedMetaAdAccountId = meta_ad_account_id;
-    if (!resolvedMetaAdAccountId) {
-      // Busca o anúncio na cache de entidades para descobrir a qual conta pertence
-      const { data: adEntity } = await supabaseAdmin
-        .from("meta_entities_cache")
-        .select("meta_ad_account_id")
-        .eq("workspace_id", workspace.id)
-        .eq("entity_type", "ad")
-        .eq("entity_id", ad_id)
-        .maybeSingle();
-
-      if (adEntity?.meta_ad_account_id) {
-        resolvedMetaAdAccountId = adEntity.meta_ad_account_id;
-      } else {
-        // Se ainda não encontrou, tenta pela tabela meta_insights_daily
-        const { data: insightEntity } = await supabaseAdmin
-          .from("meta_insights_daily")
-          .select("meta_ad_account_id, meta_ad_accounts!inner(meta_ad_account_id)")
-          .eq("workspace_id", workspace.id)
-          .eq("level", "ad")
-          .eq("entity_id", ad_id)
-          .limit(1)
-          .maybeSingle();
-
-        if (insightEntity?.meta_ad_accounts?.meta_ad_account_id) {
-          resolvedMetaAdAccountId = insightEntity.meta_ad_accounts.meta_ad_account_id;
-        }
-      }
-    }
-
-    // Se ainda não temos meta_ad_account_id, retorna erro
-    if (!resolvedMetaAdAccountId) {
-      return new Response(
-        JSON.stringify({
-          error: "Could not determine Meta Ad Account ID for this ad",
-          details: "Please provide meta_ad_account_id or ensure the ad is synced"
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -320,11 +278,11 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Prepara dados para salvar no banco (usa o meta_ad_account_id resolvido)
+    // Prepara dados para salvar no banco
     const creativeRecord = {
       workspace_id: workspace.id,
       ad_id: ad_id,
-      meta_ad_account_id: resolvedMetaAdAccountId,
+      meta_ad_account_id: meta_ad_account_id,
       meta_creative_id: creativeData.meta_creative_id,
       creative_type: creativeData.creative_type,
       image_url: creativeData.image_url,
