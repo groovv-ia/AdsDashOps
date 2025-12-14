@@ -37,7 +37,45 @@ export interface MetaAdCreative {
   created_at: string;
 }
 
-// Interface para análise visual do criativo
+// Interface para análise detalhada de elementos visuais específicos
+export interface VisualElements {
+  detected_objects: string[]; // Pessoas, produtos, ambientes identificados
+  color_palette: string[]; // Cores principais identificadas (hex codes)
+  typography_analysis: string; // Análise de fontes e textos visíveis
+  composition_type: string; // Tipo de composição (regra dos terços, centralizado, etc)
+  visual_hierarchy: string; // Análise da hierarquia visual
+  contrast_level: string; // Nível de contraste (alto, médio, baixo)
+}
+
+// Interface para análise psicológica e emocional
+export interface PsychologicalAnalysis {
+  primary_emotion: string; // Emoção primária evocada
+  emotional_triggers: string[]; // Gatilhos emocionais identificados
+  persuasion_techniques: string[]; // Técnicas de persuasão utilizadas (scarcity, urgency, social proof, etc)
+  target_audience_fit: string; // Adequação ao público-alvo
+  cognitive_load: string; // Carga cognitiva (baixa, média, alta)
+  trust_signals: string[]; // Sinais de confiança presentes
+}
+
+// Interface para análise de primeiro impacto
+export interface FirstImpressionAnalysis {
+  attention_score: number; // Score de atenção (0-100)
+  scrollstopper_potential: string; // Potencial de parar o scroll
+  three_second_message: string; // Mensagem captada em 3 segundos
+  visual_clarity: string; // Claridade visual imediata
+  focal_point: string; // Ponto focal principal
+}
+
+// Interface para análise de adequação a diferentes placements
+export interface PlacementAnalysis {
+  feed_suitability: string; // Adequação para feed (Facebook/Instagram)
+  stories_suitability: string; // Adequação para stories
+  reels_suitability: string; // Adequação para reels
+  mobile_friendliness: string; // Amigabilidade mobile
+  desktop_friendliness: string; // Amigabilidade desktop
+}
+
+// Interface para análise visual expandida do criativo
 export interface VisualAnalysis {
   composition_score: number;
   color_usage: string;
@@ -46,9 +84,26 @@ export interface VisualAnalysis {
   attention_grabbing: string;
   key_strengths: string[];
   improvement_areas: string[];
+  // Novos campos detalhados
+  visual_elements?: VisualElements;
+  psychological_analysis?: PsychologicalAnalysis;
+  first_impression?: FirstImpressionAnalysis;
+  placement_analysis?: PlacementAnalysis;
+  design_trends?: string; // Análise de tendências de design
+  modernization_suggestions?: string[]; // Sugestões de modernização
 }
 
-// Interface para análise da copy/texto do anúncio
+// Interface para análise da mensagem e proposta de valor
+export interface MessageAnalysis {
+  value_proposition_clarity: string; // Clareza da proposta de valor
+  message_match_visual: string; // Coerência entre mensagem e visual
+  tone_of_voice: string; // Tom de voz identificado
+  readability_score: number; // Score de legibilidade (0-100)
+  word_count: number; // Contagem de palavras
+  power_words_used: string[]; // Palavras poderosas utilizadas
+}
+
+// Interface para análise expandida da copy/texto do anúncio
 export interface CopyAnalysis {
   clarity_score: number;
   persuasion_level: 'baixo' | 'médio' | 'alto';
@@ -57,18 +112,62 @@ export interface CopyAnalysis {
   emotional_appeal: string;
   key_strengths: string[];
   improvement_areas: string[];
+  // Novos campos detalhados
+  message_analysis?: MessageAnalysis;
+  headline_effectiveness?: string; // Avaliação específica do headline
+  body_copy_effectiveness?: string; // Avaliação do corpo do texto
+  cta_placement_analysis?: string; // Análise do posicionamento do CTA
+  benefits_vs_features?: string; // Análise de benefícios vs características
 }
 
-// Interface para uma recomendação de melhoria
+// Interface para sugestão de teste A/B
+export interface ABTestSuggestion {
+  test_type: 'visual' | 'copy' | 'cta' | 'layout' | 'color';
+  hypothesis: string; // Hipótese do teste
+  variant_description: string; // Descrição da variante sugerida
+  what_to_change: string; // O que mudar especificamente
+  expected_outcome: string; // Resultado esperado
+  metrics_to_track: string[]; // Métricas para acompanhar
+  priority: RecommendationPriority;
+}
+
+// Interface para recomendação expandida de melhoria
 export interface AdRecommendation {
   priority: RecommendationPriority;
   category: RecommendationCategory;
   title: string;
   description: string;
   expected_impact: string;
+  // Novos campos
+  implementation_difficulty?: 'easy' | 'medium' | 'hard'; // Dificuldade de implementação
+  estimated_impact_percentage?: string; // Impacto estimado em percentual
+  ab_test_suggestion?: ABTestSuggestion; // Sugestão de teste A/B relacionado
 }
 
-// Interface para análise completa de IA do anúncio
+// Interface para contexto de performance (passado para análise)
+export interface PerformanceContext {
+  total_impressions: number;
+  total_clicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  total_spend: number;
+  conversions: number;
+  conversion_rate: number;
+  campaign_objective?: string; // Objetivo da campanha
+}
+
+// Interface para análise correlacionada com performance
+export interface PerformanceCorrelation {
+  performance_summary: string; // Resumo da performance atual
+  visual_performance_link: string; // Como visual impacta performance
+  copy_performance_link: string; // Como copy impacta performance
+  underperforming_areas: string[]; // Áreas com baixa performance
+  high_performing_elements: string[]; // Elementos de alta performance
+  optimization_priority: string; // Prioridade de otimização baseada em dados
+}
+
+// Interface para análise completa expandida de IA do anúncio
 export interface AdAIAnalysis {
   id: string;
   workspace_id: string;
@@ -85,6 +184,12 @@ export interface AdAIAnalysis {
   tokens_used: number;
   analyzed_at: string;
   created_at: string;
+  // Novos campos expandidos
+  performance_correlation?: PerformanceCorrelation;
+  ab_test_suggestions?: ABTestSuggestion[];
+  competitive_analysis?: string; // Análise competitiva
+  audience_insights?: string; // Insights sobre o público-alvo ideal
+  strategic_recommendations?: string; // Recomendações estratégicas de alto nível
 }
 
 // Interface para métricas do anúncio
@@ -147,7 +252,7 @@ export interface FetchCreativeResponse {
   save_error?: string;
 }
 
-// Interface para payload de análise de IA
+// Interface para payload expandido de análise de IA com contexto de performance
 export interface AnalyzeAdPayload {
   ad_id: string;
   meta_ad_account_id: string;
@@ -158,6 +263,8 @@ export interface AnalyzeAdPayload {
     description?: string;
     cta?: string;
   };
+  // Novo: contexto de performance para análise correlacionada
+  performance_context?: PerformanceContext;
 }
 
 // Interface para resposta de análise de IA

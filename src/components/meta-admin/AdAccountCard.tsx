@@ -276,10 +276,13 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
   return (
     <Card
       className={`
-        hover:shadow-xl transition-all duration-300 ${getPerformanceColor()} overflow-hidden cursor-pointer
-        ${isSelected ? 'ring-2 ring-blue-400 shadow-lg' : ''}
+        hover:shadow-xl transition-all duration-300 ${getPerformanceColor()} overflow-hidden
+        cursor-pointer hover:scale-[1.02] active:scale-[0.98]
+        hover:ring-2 hover:ring-blue-300 hover:bg-gray-50/50
+        ${isSelected ? 'ring-2 ring-blue-400 shadow-lg bg-blue-50/30' : ''}
       `}
       onClick={() => onSelect(account.id)}
+      title="Clique para ver detalhes da conta"
     >
       {/* Header do card */}
       <div className="flex items-start justify-between mb-4">
@@ -529,13 +532,10 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
           )}
         </button>
 
-        <button
-          onClick={() => onSelect(account.id)}
-          className="flex items-center justify-center p-2.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-          title="Ver detalhes"
-        >
+        {/* Indicador visual de que o card é clicável */}
+        <div className="flex items-center justify-center p-2.5 rounded-lg bg-blue-50 text-blue-600">
           <ChevronRight className="w-5 h-5" />
-        </button>
+        </div>
       </div>
 
       {/* Info adicional */}

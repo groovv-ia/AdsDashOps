@@ -1220,12 +1220,180 @@ const AIAnalysisTab: React.FC<AIAnalysisTabProps> = ({
         </div>
       </div>
 
-      {/* Visual Analysis */}
+      {/* Visual Analysis - Expandida */}
       <div className="bg-white border border-gray-200 rounded-lg p-5">
         <div className="flex items-center gap-2 mb-4">
           <Image className="w-5 h-5 text-blue-600" />
-          <h3 className="font-medium text-gray-900">Análise Visual</h3>
+          <h3 className="font-medium text-gray-900">Análise Visual Detalhada</h3>
         </div>
+
+        {/* Score de Composição */}
+        <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-blue-100/30 rounded-lg border border-blue-200">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-blue-900">Score de Composição</span>
+            <span className="text-2xl font-bold text-blue-600">{analysis.visual_analysis.composition_score}/100</span>
+          </div>
+        </div>
+
+        {/* Elementos Visuais Detectados */}
+        {analysis.visual_analysis.visual_elements && (
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <h4 className="text-sm font-semibold text-gray-900 mb-3">🎨 Elementos Visuais Identificados</h4>
+
+            {analysis.visual_analysis.visual_elements.detected_objects.length > 0 && (
+              <div className="mb-3">
+                <span className="text-xs text-gray-500 uppercase block mb-2">Objetos/Pessoas/Produtos:</span>
+                <div className="flex flex-wrap gap-2">
+                  {analysis.visual_analysis.visual_elements.detected_objects.map((obj, i) => (
+                    <span key={i} className="px-3 py-1 bg-white border border-gray-300 rounded-full text-xs font-medium text-gray-700">
+                      {obj}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {analysis.visual_analysis.visual_elements.color_palette.length > 0 && (
+              <div className="mb-3">
+                <span className="text-xs text-gray-500 uppercase block mb-2">Paleta de Cores:</span>
+                <div className="flex flex-wrap gap-2">
+                  {analysis.visual_analysis.visual_elements.color_palette.map((color, i) => (
+                    <span key={i} className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium text-gray-700 shadow-sm">
+                      {color}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-xs text-gray-500 uppercase block mb-1">Tipografia:</span>
+                <p className="text-gray-900">{analysis.visual_analysis.visual_elements.typography_analysis}</p>
+              </div>
+              <div>
+                <span className="text-xs text-gray-500 uppercase block mb-1">Tipo de Composição:</span>
+                <p className="text-gray-900">{analysis.visual_analysis.visual_elements.composition_type}</p>
+              </div>
+              <div>
+                <span className="text-xs text-gray-500 uppercase block mb-1">Hierarquia Visual:</span>
+                <p className="text-gray-900">{analysis.visual_analysis.visual_elements.visual_hierarchy}</p>
+              </div>
+              <div>
+                <span className="text-xs text-gray-500 uppercase block mb-1">Nível de Contraste:</span>
+                <p className="text-gray-900">{analysis.visual_analysis.visual_elements.contrast_level}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Análise Psicológica */}
+        {analysis.visual_analysis.psychological_analysis && (
+          <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <h4 className="text-sm font-semibold text-purple-900 mb-3">🧠 Análise Psicológica</h4>
+
+            <div className="grid grid-cols-2 gap-4 text-sm mb-3">
+              <div>
+                <span className="text-xs text-purple-600 uppercase block mb-1">Emoção Primária:</span>
+                <p className="text-purple-900 font-medium">{analysis.visual_analysis.psychological_analysis.primary_emotion}</p>
+              </div>
+              <div>
+                <span className="text-xs text-purple-600 uppercase block mb-1">Carga Cognitiva:</span>
+                <p className="text-purple-900 font-medium">{analysis.visual_analysis.psychological_analysis.cognitive_load}</p>
+              </div>
+            </div>
+
+            {analysis.visual_analysis.psychological_analysis.emotional_triggers.length > 0 && (
+              <div className="mb-3">
+                <span className="text-xs text-purple-600 uppercase block mb-2">Gatilhos Emocionais:</span>
+                <div className="flex flex-wrap gap-2">
+                  {analysis.visual_analysis.psychological_analysis.emotional_triggers.map((trigger, i) => (
+                    <span key={i} className="px-2.5 py-1 bg-purple-100 border border-purple-300 rounded-full text-xs font-medium text-purple-800">
+                      {trigger}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {analysis.visual_analysis.psychological_analysis.persuasion_techniques.length > 0 && (
+              <div className="mb-3">
+                <span className="text-xs text-purple-600 uppercase block mb-2">Técnicas de Persuasão:</span>
+                <div className="flex flex-wrap gap-2">
+                  {analysis.visual_analysis.psychological_analysis.persuasion_techniques.map((tech, i) => (
+                    <span key={i} className="px-2.5 py-1 bg-purple-100 border border-purple-300 rounded-full text-xs font-medium text-purple-800">
+                      {tech}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="text-sm">
+              <span className="text-xs text-purple-600 uppercase block mb-1">Público-Alvo Ideal:</span>
+              <p className="text-purple-900">{analysis.visual_analysis.psychological_analysis.target_audience_fit}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Primeiro Impacto */}
+        {analysis.visual_analysis.first_impression && (
+          <div className="mb-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
+            <h4 className="text-sm font-semibold text-amber-900 mb-3">⚡ Análise de Primeiro Impacto</h4>
+
+            <div className="mb-3 flex items-center justify-between p-3 bg-white rounded-lg border border-amber-300">
+              <span className="text-xs font-medium text-amber-900">Score de Atenção</span>
+              <span className="text-xl font-bold text-amber-600">{analysis.visual_analysis.first_impression.attention_score}/100</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-xs text-amber-600 uppercase block mb-1">Potencial Scrollstopper:</span>
+                <p className="text-amber-900 font-medium">{analysis.visual_analysis.first_impression.scrollstopper_potential}</p>
+              </div>
+              <div>
+                <span className="text-xs text-amber-600 uppercase block mb-1">Claridade Visual:</span>
+                <p className="text-amber-900">{analysis.visual_analysis.first_impression.visual_clarity}</p>
+              </div>
+              <div className="col-span-2">
+                <span className="text-xs text-amber-600 uppercase block mb-1">Mensagem em 3 segundos:</span>
+                <p className="text-amber-900">{analysis.visual_analysis.first_impression.three_second_message}</p>
+              </div>
+              <div className="col-span-2">
+                <span className="text-xs text-amber-600 uppercase block mb-1">Ponto Focal:</span>
+                <p className="text-amber-900">{analysis.visual_analysis.first_impression.focal_point}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Análise de Placement */}
+        {analysis.visual_analysis.placement_analysis && (
+          <div className="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
+            <h4 className="text-sm font-semibold text-green-900 mb-3">📱 Adequação por Placement</h4>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-xs text-green-600 uppercase block mb-1">Feed:</span>
+                <p className="text-green-900">{analysis.visual_analysis.placement_analysis.feed_suitability}</p>
+              </div>
+              <div>
+                <span className="text-xs text-green-600 uppercase block mb-1">Stories:</span>
+                <p className="text-green-900">{analysis.visual_analysis.placement_analysis.stories_suitability}</p>
+              </div>
+              <div>
+                <span className="text-xs text-green-600 uppercase block mb-1">Reels:</span>
+                <p className="text-green-900">{analysis.visual_analysis.placement_analysis.reels_suitability}</p>
+              </div>
+              <div>
+                <span className="text-xs text-green-600 uppercase block mb-1">Mobile:</span>
+                <p className="text-green-900">{analysis.visual_analysis.placement_analysis.mobile_friendliness}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Análise Base */}
         <div className="grid grid-cols-2 gap-4 text-sm mb-4">
           <div>
             <span className="text-gray-500">Uso de cores:</span>
@@ -1244,6 +1412,28 @@ const AIAnalysisTab: React.FC<AIAnalysisTabProps> = ({
             <p className="text-gray-900">{analysis.visual_analysis.attention_grabbing}</p>
           </div>
         </div>
+
+        {/* Tendências e Modernidade */}
+        {analysis.visual_analysis.design_trends && (
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <h5 className="text-xs font-semibold text-blue-900 uppercase mb-2">Tendências de Design</h5>
+            <p className="text-sm text-blue-800">{analysis.visual_analysis.design_trends}</p>
+          </div>
+        )}
+
+        {analysis.visual_analysis.modernization_suggestions && analysis.visual_analysis.modernization_suggestions.length > 0 && (
+          <div className="mb-4">
+            <span className="text-xs text-gray-500 uppercase block mb-2">Sugestões de Modernização:</span>
+            <ul className="space-y-1">
+              {analysis.visual_analysis.modernization_suggestions.map((sug, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-blue-700">
+                  <Sparkles className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  {sug}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {analysis.visual_analysis.key_strengths.length > 0 && (
           <div className="mb-3">
             <span className="text-xs text-gray-500 uppercase">Pontos fortes</span>
