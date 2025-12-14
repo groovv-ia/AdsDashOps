@@ -1,13 +1,13 @@
 /**
  * Edge Function: meta-get-sync-status
  * 
- * Retorna o status de sincronizacao do Meta Ads.
+ * Retorna o status de sincronização do Meta Ads.
  * 
  * GET /functions/v1/meta-get-sync-status?client_id=...
  * 
  * Retorna:
- * - Status da conexao
- * - Ultima execucao daily/intraday
+ * - Status da conexão
+ * - Última execução daily/intraday
  * - Jobs recentes com erro
  * - Data freshness por conta
  */
@@ -64,7 +64,7 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     const clientId = url.searchParams.get("client_id");
 
-    // Busca workspace do usuario
+    // Busca workspace do usuário
     const { data: workspace } = await supabaseAdmin
       .from("workspaces")
       .select("id, name")
@@ -78,35 +78,24 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 1. Status da conexao Meta
+    // 1. Status da conexão Meta
     const { data: metaConnection } = await supabaseAdmin
       .from("meta_connections")
       .select("id, status, granted_scopes, last_validated_at, business_manager_id")
       .eq("workspace_id", workspace.id)
       .maybeSingle();
 
-    // 2. Busca ad accounts - corrigido: usa timezone_name ao inves de timezone
-    const { data: adAccounts, error: adAccountsError } = await supabaseAdmin
+    // 2. Busca ad accounts
+    const { data: adAccounts } = await supabaseAdmin
       .from("meta_ad_accounts")
-      .select("id, meta_ad_account_id, name, currency, timezone_name, account_status")
+      .select("id, meta_ad_account_id, name, currency, timezone, account_status")
       .eq("workspace_id", workspace.id);
-
-    if (adAccountsError) {
-      console.error("Erro ao buscar ad accounts:", adAccountsError);
-    }
 
     // 3. Busca sync states
     let syncStatesQuery = supabaseAdmin
       .from("meta_sync_state")
-      .select("*");
-
-    // Filtra por workspace apenas se a tabela tiver essa coluna
-    // Como a tabela pode nao ter workspace_id, vamos filtrar pelas contas do workspace
-    const accountIds = adAccounts?.map((a) => a.meta_ad_account_id) || [];
-    
-    if (accountIds.length > 0) {
-      syncStatesQuery = syncStatesQuery.in("meta_ad_account_id", accountIds);
-    }
+      .select("*")
+      .eq("workspace_id", workspace.id);
 
     if (clientId) {
       syncStatesQuery = syncStatesQuery.eq("client_id", clientId);
@@ -114,15 +103,15 @@ Deno.serve(async (req: Request) => {
 
     const { data: syncStates } = await syncStatesQuery;
 
-    // 4. Busca jobs recentes (com erro ou em execucao)
+    // 4. Busca jobs recentes (com erro ou em execução)
     const { data: recentJobs } = await supabaseAdmin
       .from("meta_sync_jobs")
       .select("*")
-      .in("meta_ad_account_id", accountIds.length > 0 ? accountIds : [''])
+      .eq("workspace_id", workspace.id)
       .order("created_at", { ascending: false })
       .limit(20);
 
-    // 5. Busca ultimo job completado de cada conta para obter metricas de sincronizacao
+    // 5. Busca último job completado de cada conta para obter métricas de sincronização
     const lastCompletedJobsByAccount: Record<string, {
       duration_seconds: number | null;
       total_records_synced: number | null;
@@ -134,6 +123,7 @@ Deno.serve(async (req: Request) => {
         const { data: lastJob } = await supabaseAdmin
           .from("meta_sync_jobs")
           .select("duration_seconds, total_records_synced, ended_at")
+          .eq("workspace_id", workspace.id)
           .eq("meta_ad_account_id", account.meta_ad_account_id)
           .eq("status", "completed")
           .order("ended_at", { ascending: false })
@@ -154,7 +144,7 @@ Deno.serve(async (req: Request) => {
     const { data: insightsTotals } = await supabaseAdmin
       .from("meta_insights_daily")
       .select("meta_ad_account_id, level, date")
-      .in("meta_ad_account_id", accountIds.length > 0 ? accountIds : ['']);
+      .eq("workspace_id", workspace.id);
 
     // Processa data freshness por conta
     const accountFreshness: Record<string, {
@@ -221,7 +211,7 @@ Deno.serve(async (req: Request) => {
       ad_accounts: adAccounts?.map((acc) => {
         // Busca o sync state correspondente para obter last_success_at
         const syncState = syncStates?.find((s) => s.meta_ad_account_id === acc.meta_ad_account_id);
-        // Busca metricas do ultimo job completado
+        // Busca métricas do último job completado
         const lastJobMetrics = lastCompletedJobsByAccount[acc.meta_ad_account_id];
 
         return {
@@ -229,11 +219,11 @@ Deno.serve(async (req: Request) => {
           meta_id: acc.meta_ad_account_id,
           name: acc.name,
           currency: acc.currency,
-          timezone: acc.timezone_name, // Mapeado corretamente
+          timezone: acc.timezone,
           status: acc.account_status,
-          freshness: accountFreshness[acc.meta_ad_account_id] || null,
-          // Informacoes detalhadas de ultima sincronizacao
-          last_sync_at: syncState?.last_success_at || lastJobMetrics?.ended_at || null,
+          freshness: accountFreshness[acc.id] || null,
+          // Informações detalhadas de última sincronização
+          last_sync_at: syncState?.last_success_at || null,
           last_sync_duration: lastJobMetrics?.duration_seconds || null,
           last_sync_records_count: lastJobMetrics?.total_records_synced || null,
         };
