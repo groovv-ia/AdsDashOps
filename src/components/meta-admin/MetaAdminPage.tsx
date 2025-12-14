@@ -20,7 +20,6 @@ import {
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
-import { MetaAccountClientBinder } from './MetaAccountClientBinder';
 import {
   validateMetaConnection,
   listMetaAdAccounts,
@@ -417,14 +416,6 @@ export const MetaAdminPage: React.FC = () => {
             </table>
           </div>
         </Card>
-      )}
-
-      {/* Vinculacao de Contas a Clientes */}
-      {connectionStatus?.connected && syncStatus?.workspace && (
-        <MetaAccountClientBinder
-          workspaceId={syncStatus.workspace.id}
-          onBindingChange={loadSyncStatus}
-        />
       )}
 
       {/* Instrucoes */}

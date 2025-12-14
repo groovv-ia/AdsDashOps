@@ -44,7 +44,6 @@ export interface AdAccountData {
   lastSyncDuration?: number; // Duracao da ultima sincronizacao em segundos
   syncStatus?: 'synced' | 'syncing' | 'stale' | 'error' | 'never';
   syncProgress?: number; // Progresso atual da sincronizacao (0-100)
-  clientName?: string; // Nome do cliente vinculado (opcional)
   metrics?: {
     spend: number;
     impressions: number;
@@ -313,15 +312,6 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
             <Badge variant={getStatusVariant()}>
               {getStatusText()}
             </Badge>
-            {account.clientName && (
-              <span
-                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border bg-violet-100 text-violet-700 border-violet-300"
-                title={`Cliente: ${account.clientName}`}
-              >
-                <Users className="w-3 h-3" />
-                {account.clientName}
-              </span>
-            )}
             <span className="text-xs text-gray-500 font-mono">{account.metaId}</span>
           </div>
         </div>

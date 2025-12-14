@@ -544,7 +544,6 @@ export const MetaAdsSyncPage: React.FC = () => {
         lastSyncDuration,
         syncStatus: syncingAccountId === acc.id ? 'syncing' : syncStatusValue,
         syncProgress: accountSyncProgress,
-        clientName: acc.client_name || undefined,
         metrics: acc.metrics || undefined,
       };
     });
