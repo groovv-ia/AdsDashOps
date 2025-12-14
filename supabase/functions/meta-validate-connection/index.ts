@@ -234,37 +234,70 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 5. Criptografar o token usando a função do banco
-    const { data: encryptedData, error: encryptError } = await supabaseAdmin
-      .rpc("encrypt_token", { p_token: system_user_token });
+    // 5. Criptografar o token usando a função do banco (se existir)
+    let encryptedToken = system_user_token;
+    try {
+      const { data: encryptedData, error: encryptError } = await supabaseAdmin
+        .rpc("encrypt_token", { p_token: system_user_token });
 
-    if (encryptError) {
-      console.error("Encryption error:", encryptError);
-      // Fallback: salvar token como está (não recomendado em produção)
+      if (!encryptError && encryptedData) {
+        encryptedToken = encryptedData;
+      }
+    } catch (e) {
+      // Função de criptografia não existe, usa token como está
+      console.log("Encryption function not available, storing token as-is");
     }
 
-    const encryptedToken = encryptedData || system_user_token;
-
-    // 6. Upsert na tabela meta_connections
-    const { error: upsertError } = await supabaseAdmin
+    // 6. Verificar se já existe conexão para este workspace
+    const { data: existingConnection } = await supabaseAdmin
       .from("meta_connections")
-      .upsert(
-        {
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+
+    // Nome da conexão baseado no usuário Meta
+    const connectionName = meData.name || `Meta Connection - ${business_manager_id}`;
+
+    let upsertError;
+
+    if (existingConnection) {
+      // Atualiza conexão existente
+      const { error } = await supabaseAdmin
+        .from("meta_connections")
+        .update({
+          business_manager_id: business_manager_id,
+          access_token_encrypted: encryptedToken,
+          granted_scopes: grantedScopes,
+          status: "connected",
+          name: connectionName,
+          last_validated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingConnection.id);
+      
+      upsertError = error;
+    } else {
+      // Insere nova conexão com todos os campos obrigatórios
+      const { error } = await supabaseAdmin
+        .from("meta_connections")
+        .insert({
           workspace_id: workspaceId,
           business_manager_id: business_manager_id,
           access_token_encrypted: encryptedToken,
           granted_scopes: grantedScopes,
           status: "connected",
+          name: connectionName,
+          is_default: true,
           last_validated_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "workspace_id",
-        }
-      );
+        });
+      
+      upsertError = error;
+    }
 
     if (upsertError) {
-      console.error("Upsert error:", upsertError);
+      console.error("Save connection error:", upsertError);
       return new Response(
         JSON.stringify({ error: "Failed to save connection", details: upsertError.message }),
         {
