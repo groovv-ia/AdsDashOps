@@ -4,7 +4,6 @@
 
 export { MetaAdminPage } from './MetaAdminPage';
 export { MetaAdsSyncPage } from './MetaAdsSyncPage';
-export { MetaConnectionsPage } from './MetaConnectionsPage';
 export { AdAccountCard } from './AdAccountCard';
 export type { AdAccountData } from './AdAccountCard';
 export { SyncStatusBadge, SyncStatusDot } from './SyncStatusBadge';
