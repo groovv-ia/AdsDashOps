@@ -516,8 +516,6 @@ Deno.serve(async (req: Request) => {
           return imageHashCache.get(imageHash) || null;
         }
 
-        let lastError: Error | null = null;
-
         // Tenta converter com retry automatico
         for (let attempt = 0; attempt <= retries; attempt++) {
           try {
@@ -533,7 +531,7 @@ Deno.serve(async (req: Request) => {
               const imgUrl = imageData.url || imageData.url_128 || imageData.permalink_url;
               if (imgUrl) {
                 imageHashCache.set(imageHash, imgUrl);
-                console.log(`✓ Image hash ${imageHash} convertido com sucesso (tentativa ${attempt + 1})`);
+                console.log(`Image hash ${imageHash} convertido com sucesso`);
                 return imgUrl;
               }
             }
@@ -541,7 +539,6 @@ Deno.serve(async (req: Request) => {
             // Se chegou aqui sem retornar, nao tem URL disponivel
             return null;
           } catch (err) {
-            lastError = err instanceof Error ? err : new Error("Unknown error");
             console.error(`Erro ao converter image_hash ${imageHash} (tentativa ${attempt + 1}/${retries + 1}):`, err);
 
             // Espera antes de tentar novamente
@@ -551,7 +548,7 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        console.error(`✗ Falha ao converter image_hash ${imageHash} apos ${retries + 1} tentativas`);
+        console.error(`Falha ao converter image_hash ${imageHash} apos ${retries + 1} tentativas`);
         return null;
       }
 
@@ -756,12 +753,12 @@ Deno.serve(async (req: Request) => {
               const result = batchResults[j];
               const adId = batch[j];
 
-              console.log(`\n--- Processando Ad ${adId} ---`);
+              console.log(`Processando Ad ${adId}`);
               creativeStats.processed++;
 
               if (result.code !== 200) {
                 const errorMsg = `HTTP ${result.code}`;
-                console.error(`✗ Erro ao buscar criativo: ${errorMsg}`);
+                console.error(`Erro ao buscar criativo: ${errorMsg}`);
                 creativeStats.withError++;
                 creativeStats.failedAdIds.push(adId);
                 continue;
@@ -770,7 +767,7 @@ Deno.serve(async (req: Request) => {
               try {
                 const adData = JSON.parse(result.body);
                 if (adData.error) {
-                  console.error(`✗ Erro da Meta:`, adData.error);
+                  console.error(`Erro da Meta:`, adData.error);
                   creativeStats.withError++;
                   creativeStats.failedAdIds.push(adId);
                   continue;
@@ -788,7 +785,7 @@ Deno.serve(async (req: Request) => {
                 }
 
                 if (!creative.id) {
-                  console.log(`⚠ Ad sem criativo detectado - salvando com preview_url apenas`);
+                  console.log(`Ad sem criativo detectado - salvando com preview_url apenas`);
                 }
 
                 const linkData = creative.object_story_spec?.link_data || {};
@@ -806,11 +803,11 @@ Deno.serve(async (req: Request) => {
                 const imageSource = imageResult.source;
 
                 if (imageUrl) {
-                  console.log(`✓ Imagem encontrada! Fonte: ${imageSource}`);
+                  console.log(`Imagem encontrada! Fonte: ${imageSource}`);
                   creativeStats.withImage++;
                   creativeStats.bySource[imageSource] = (creativeStats.bySource[imageSource] || 0) + 1;
                 } else {
-                  console.log(`✗ Nenhuma imagem encontrada. Motivo: ${imageSource}`);
+                  console.log(`Nenhuma imagem encontrada. Motivo: ${imageSource}`);
                   creativeStats.withoutImage++;
                   creativeStats.failedAdIds.push(adId);
                 }
@@ -829,10 +826,10 @@ Deno.serve(async (req: Request) => {
                   console.log(`Buscando thumbnail do video...`);
                   thumbnailUrl = await fetchVideoThumbnail(videoId);
                   if (thumbnailUrl) {
-                    console.log(`✓ Thumbnail de video encontrado`);
+                    console.log(`Thumbnail de video encontrado`);
                     creativeStats.withImage++;
                   } else {
-                    console.log(`✗ Falha ao buscar thumbnail do video`);
+                    console.log(`Falha ao buscar thumbnail do video`);
                   }
                 }
 
@@ -872,7 +869,7 @@ Deno.serve(async (req: Request) => {
                   });
 
                 if (upsertError) {
-                  console.error(`✗ ERRO ao salvar:`, {
+                  console.error(`ERRO ao salvar:`, {
                     message: upsertError.message,
                     code: upsertError.code,
                     details: upsertError.details,
@@ -880,11 +877,11 @@ Deno.serve(async (req: Request) => {
                   });
                   creativeStats.withError++;
                 } else {
-                  console.log(`✓ Criativo salvo com sucesso no banco`);
+                  console.log(`Criativo salvo com sucesso no banco`);
                   syncResult.creatives_synced++;
                 }
               } catch (parseErr) {
-                console.error(`✗ Erro ao processar criativo:`, parseErr);
+                console.error(`Erro ao processar criativo:`, parseErr);
                 creativeStats.withError++;
                 creativeStats.failedAdIds.push(adId);
               }
@@ -904,8 +901,10 @@ Deno.serve(async (req: Request) => {
       // Imprime resumo final das estatisticas
       console.log(`\n========== RESUMO DA BUSCA DE CRIATIVOS ==========`);
       console.log(`Total de ads processados: ${creativeStats.processed}/${creativeStats.total}`);
-      console.log(`Com imagem: ${creativeStats.withImage} (${Math.round(creativeStats.withImage / creativeStats.processed * 100)}%)`);
-      console.log(`Sem imagem: ${creativeStats.withoutImage} (${Math.round(creativeStats.withoutImage / creativeStats.processed * 100)}%)`);
+      const percentWithImage = creativeStats.processed > 0 ? Math.round(creativeStats.withImage / creativeStats.processed * 100) : 0;
+      const percentWithoutImage = creativeStats.processed > 0 ? Math.round(creativeStats.withoutImage / creativeStats.processed * 100) : 0;
+      console.log(`Com imagem: ${creativeStats.withImage} (${percentWithImage}%)`);
+      console.log(`Sem imagem: ${creativeStats.withoutImage} (${percentWithoutImage}%)`);
       console.log(`Com erro: ${creativeStats.withError}`);
       console.log(`Salvos no banco: ${syncResult.creatives_synced}`);
 
