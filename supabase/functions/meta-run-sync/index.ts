@@ -62,52 +62,40 @@ interface MetaInsightsResponse {
   error?: { message: string; code: number };
 }
 
-// Funcao para formatar data no padrao YYYY-MM-DD
 function formatDate(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
-// Funcao para calcular datas baseado no modo
 function getDateRange(mode: string, daysBack: number = 7): { dateFrom: string; dateTo: string } {
   const now = new Date();
   const today = formatDate(now);
   
   if (mode === "daily") {
-    // Ontem
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     return { dateFrom: formatDate(yesterday), dateTo: formatDate(yesterday) };
   } else if (mode === "intraday") {
-    // Hoje
     return { dateFrom: today, dateTo: today };
   } else {
-    // Backfill: ultimos N dias
     const fromDate = new Date(now);
     fromDate.setDate(fromDate.getDate() - daysBack);
     return { dateFrom: formatDate(fromDate), dateTo: today };
   }
 }
 
-// Funcao para extrair leads do array de actions
 function extractLeads(actions?: Array<{ action_type: string; value: string }>): number {
   if (!actions || !Array.isArray(actions)) return 0;
-  
   const leadTypes = ['lead', 'onsite_conversion.lead_grouped'];
   return actions
     .filter((a) => leadTypes.includes(a.action_type))
     .reduce((sum, a) => sum + parseInt(a.value || '0', 10), 0);
 }
 
-// Funcao para extrair conversoes do array de actions
 function extractConversions(actions?: Array<{ action_type: string; value: string }>): number {
   if (!actions || !Array.isArray(actions)) return 0;
-  
   const conversionTypes = [
-    'lead',
-    'purchase',
-    'complete_registration',
-    'offsite_conversion.fb_pixel_purchase',
-    'onsite_conversion.purchase',
+    'lead', 'purchase', 'complete_registration',
+    'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase',
     'offsite_conversion.fb_pixel_lead',
   ];
   return actions
@@ -115,38 +103,23 @@ function extractConversions(actions?: Array<{ action_type: string; value: string
     .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
 }
 
-// Funcao para extrair valores de conversao do array de action_values
 function extractConversionValue(actionValues?: Array<{ action_type: string; value: string }>): number {
   if (!actionValues || !Array.isArray(actionValues)) return 0;
-  
-  const valueTypes = [
-    'purchase',
-    'offsite_conversion.fb_pixel_purchase',
-    'onsite_conversion.purchase',
-  ];
+  const valueTypes = ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase'];
   return actionValues
     .filter((a) => valueTypes.includes(a.action_type))
     .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
 }
 
-// Funcao para extrair valores de compra do array de action_values
 function extractPurchaseValue(actionValues?: Array<{ action_type: string; value: string }>): number {
   if (!actionValues || !Array.isArray(actionValues)) return 0;
-  
-  const purchaseTypes = [
-    'purchase',
-    'offsite_conversion.fb_pixel_purchase',
-  ];
+  const purchaseTypes = ['purchase', 'offsite_conversion.fb_pixel_purchase'];
   return actionValues
     .filter((a) => purchaseTypes.includes(a.action_type))
     .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
 }
 
-// Funcao para buscar insights com retry e backoff
-async function fetchInsightsWithRetry(
-  url: string,
-  maxRetries: number = 3
-): Promise<MetaInsightsResponse> {
+async function fetchInsightsWithRetry(url: string, maxRetries: number = 3): Promise<MetaInsightsResponse> {
   let lastError: Error | null = null;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -155,7 +128,6 @@ async function fetchInsightsWithRetry(
       const data = await response.json();
       
       if (data.error) {
-        // Se for rate limit, espera e tenta novamente
         if (data.error.code === 17 || data.error.code === 4) {
           const waitTime = Math.pow(2, attempt) * 1000;
           await new Promise((resolve) => setTimeout(resolve, waitTime));
@@ -214,7 +186,6 @@ Deno.serve(async (req: Request) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Parse do body
     const body: SyncPayload = await req.json();
     const {
       mode = "intraday",
@@ -225,7 +196,6 @@ Deno.serve(async (req: Request) => {
       sync_creatives = false
     } = body;
 
-    // Busca o workspace do usuario
     const { data: workspace } = await supabaseAdmin
       .from("workspaces")
       .select("id")
@@ -239,7 +209,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Busca a conexao Meta
     const { data: metaConnection } = await supabaseAdmin
       .from("meta_connections")
       .select("access_token_encrypted, status")
@@ -253,13 +222,11 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Descriptografa o token
     const { data: decryptedToken } = await supabaseAdmin
       .rpc("decrypt_token", { p_encrypted_token: metaConnection.access_token_encrypted });
 
     const accessToken = decryptedToken || metaConnection.access_token_encrypted;
 
-    // Busca as ad accounts a sincronizar
     let adAccountsQuery = supabaseAdmin
       .from("meta_ad_accounts")
       .select("id, meta_ad_account_id, name, currency, timezone_name")
@@ -278,10 +245,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Calcula periodo
     const { dateFrom, dateTo } = getDateRange(mode, days_back);
 
-    // Resultado do sync
     const syncResult = {
       mode,
       date_from: dateFrom,
@@ -292,27 +257,20 @@ Deno.serve(async (req: Request) => {
       errors: [] as string[],
     };
 
-    // Coleta IDs de ads para buscar criativos depois
     const allAdIds: { adId: string; metaAdAccountId: string }[] = [];
 
-    // Campos a buscar da API Meta
     const insightFields = [
-      "campaign_id", "campaign_name",
-      "adset_id", "adset_name",
-      "ad_id", "ad_name",
-      "date_start", "date_stop",
+      "campaign_id", "campaign_name", "adset_id", "adset_name",
+      "ad_id", "ad_name", "date_start", "date_stop",
       "spend", "impressions", "reach", "clicks",
       "ctr", "cpc", "cpm", "frequency", "unique_clicks",
       "actions", "action_values"
     ].join(",");
 
-    // Processa cada ad account
     for (const adAccount of adAccounts) {
       try {
-        // Captura timestamp de inicio para calcular duracao
         const syncStartTime = new Date();
 
-        // Cria job de sync
         const { data: syncJob } = await supabaseAdmin
           .from("meta_sync_jobs")
           .insert({
@@ -330,7 +288,6 @@ Deno.serve(async (req: Request) => {
 
         let totalRows = 0;
 
-        // Busca insights para cada nivel
         for (const level of levels) {
           try {
             const levelParam = level === "adset" ? "adset" : level;
@@ -347,27 +304,21 @@ Deno.serve(async (req: Request) => {
             let url: string | null = `${baseUrl}?${params.toString()}`;
             const allInsights: MetaInsightRow[] = [];
 
-            // Paginacao
             while (url) {
               const data = await fetchInsightsWithRetry(url);
-              
               if (data.data && data.data.length > 0) {
                 allInsights.push(...data.data);
               }
-
               url = data.paging?.next || null;
             }
 
-            // Processa e salva insights
             for (const insight of allInsights) {
-              // Determina entity_id e entity_name baseado no nivel
               let entityId: string;
               let entityName: string | null;
 
               if (level === "ad") {
                 entityId = insight.ad_id || "";
                 entityName = insight.ad_name || null;
-                // Coleta ad_id para buscar criativos depois
                 if (entityId && sync_creatives) {
                   const alreadyCollected = allAdIds.some(a => a.adId === entityId);
                   if (!alreadyCollected) {
@@ -384,13 +335,11 @@ Deno.serve(async (req: Request) => {
 
               if (!entityId) continue;
 
-              // Extrai metricas de conversao
               const leads = extractLeads(insight.actions);
               const conversions = extractConversions(insight.actions);
               const conversionValue = extractConversionValue(insight.action_values);
               const purchaseValue = extractPurchaseValue(insight.action_values);
 
-              // Salva na camada RAW
               await supabaseAdmin.from("meta_insights_raw").insert({
                 workspace_id: workspace.id,
                 client_id: client_id || null,
@@ -402,7 +351,6 @@ Deno.serve(async (req: Request) => {
                 payload: insight,
               });
 
-              // Normaliza e salva na camada DAILY (upsert)
               const dailyInsight = {
                 workspace_id: workspace.id,
                 client_id: client_id || null,
@@ -443,9 +391,7 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // Atualiza job como sucesso
         if (syncJob) {
-          // Calcula duracao da sincronizacao em segundos
           const syncEndTime = new Date();
           const durationSeconds = Math.floor((syncEndTime.getTime() - syncStartTime.getTime()) / 1000);
 
@@ -462,7 +408,6 @@ Deno.serve(async (req: Request) => {
             .eq("id", syncJob.id);
         }
 
-        // Atualiza sync state
         await supabaseAdmin
           .from("meta_sync_state")
           .upsert(
@@ -488,12 +433,10 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Fase 2: Busca criativos se solicitado
     if (sync_creatives && allAdIds.length > 0) {
       console.log(`\n========== INICIANDO BUSCA DE CRIATIVOS ==========`);
       console.log(`Total de ads para buscar criativos: ${allAdIds.length}`);
 
-      // Contadores para metricas detalhadas
       const creativeStats = {
         total: allAdIds.length,
         processed: 0,
@@ -506,28 +449,22 @@ Deno.serve(async (req: Request) => {
         failedAdIds: [] as string[],
       };
 
-      // Cache local para conversao de image_hash (evita requisicoes duplicadas)
       const imageHashCache = new Map<string, string>();
 
-      // Funcao para converter image_hash em URL com retry e campos expandidos
       async function convertImageHashToUrl(imageHash: string, adAccountId: string, retries: number = 2): Promise<string | null> {
-        // Verifica cache primeiro
         if (imageHashCache.has(imageHash)) {
           return imageHashCache.get(imageHash) || null;
         }
 
-        // Tenta converter com retry automatico
         for (let attempt = 0; attempt <= retries; attempt++) {
           try {
             const accountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
-            // Solicita multiplos campos de URL para aumentar chances de sucesso
             const url = `https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128,permalink_url&access_token=${accessToken}`;
             const resp = await fetch(url);
             const data = await resp.json();
 
             if (data.data && data.data.length > 0) {
               const imageData = data.data[0];
-              // Prioriza URL maior (melhor qualidade)
               const imgUrl = imageData.url || imageData.url_128 || imageData.permalink_url;
               if (imgUrl) {
                 imageHashCache.set(imageHash, imgUrl);
@@ -535,37 +472,27 @@ Deno.serve(async (req: Request) => {
                 return imgUrl;
               }
             }
-
-            // Se chegou aqui sem retornar, nao tem URL disponivel
             return null;
           } catch (err) {
             console.error(`Erro ao converter image_hash ${imageHash} (tentativa ${attempt + 1}/${retries + 1}):`, err);
-
-            // Espera antes de tentar novamente
             if (attempt < retries) {
               await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
             }
           }
         }
-
         console.error(`Falha ao converter image_hash ${imageHash} apos ${retries + 1} tentativas`);
         return null;
       }
 
-      // Funcao para buscar thumbnail de video com multiplos campos
       async function fetchVideoThumbnail(videoId: string): Promise<string | null> {
         try {
-          // Solicita multiplos campos para aumentar chances de obter thumbnail
           const resp = await fetch(`https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails,picture,source&access_token=${accessToken}`);
           const data = await resp.json();
 
-          // Tenta thumbnails primeiro (melhor qualidade)
           if (data.thumbnails?.data && data.thumbnails.data.length > 0) {
             const sorted = data.thumbnails.data.sort((a: { width: number }, b: { width: number }) => b.width - a.width);
             return sorted[0].uri;
           }
-
-          // Fallback para picture
           if (data.picture) {
             return data.picture;
           }
@@ -575,15 +502,17 @@ Deno.serve(async (req: Request) => {
         return null;
       }
 
-      // Funcao para extrair URL de imagem de TODAS as fontes possiveis (alinhada com batch)
+      function isValidUrl(url: unknown): url is string {
+        return typeof url === 'string' && url.length > 0 && url.startsWith('http');
+      }
+
       async function extractImageUrl(creative: Record<string, unknown>, adAccountId: string): Promise<{ url: string | null; source: string }> {
-        // 1. URL direta do criativo
-        if (creative.image_url) {
-          return { url: creative.image_url as string, source: 'creative.image_url' };
+        if (isValidUrl(creative.image_url)) {
+          return { url: creative.image_url, source: 'creative.image_url' };
         }
 
-        if (creative.thumbnail_url) {
-          return { url: creative.thumbnail_url as string, source: 'creative.thumbnail_url' };
+        if (isValidUrl(creative.thumbnail_url)) {
+          return { url: creative.thumbnail_url, source: 'creative.thumbnail_url' };
         }
 
         const objStorySpec = creative.object_story_spec as Record<string, unknown> | undefined;
@@ -593,26 +522,22 @@ Deno.serve(async (req: Request) => {
         const templateData = objStorySpec?.template_data as Record<string, unknown> | undefined;
         const assetFeed = creative.asset_feed_spec as Record<string, unknown> | undefined;
 
-        // 2. Picture de link_data
-        if (linkData?.picture) {
+        if (isValidUrl(linkData?.picture)) {
           return { url: linkData.picture as string, source: 'link_data.picture' };
         }
 
-        // 3. Image URL de video_data
-        if (videoData?.image_url) {
+        if (isValidUrl(videoData?.image_url)) {
           return { url: videoData.image_url as string, source: 'video_data.image_url' };
         }
 
-        // 4. URL de photo_data
-        if (photoData?.url) {
+        if (isValidUrl(photoData?.url)) {
           return { url: photoData.url as string, source: 'photo_data.url' };
         }
 
-        // 5. Primeiro item de carrossel (child_attachments de link_data)
         const childAttachments = linkData?.child_attachments as Array<Record<string, unknown>> | undefined;
         if (childAttachments && childAttachments.length > 0) {
           const first = childAttachments[0];
-          if (first.picture) {
+          if (isValidUrl(first.picture)) {
             return { url: first.picture as string, source: 'link_data.child_attachments[0].picture' };
           }
           if (first.image_hash) {
@@ -621,11 +546,10 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // 6. Template data child attachments (NOVO! - faltava na versao anterior)
         const templateChildAttachments = templateData?.child_attachments as Array<Record<string, unknown>> | undefined;
         if (templateChildAttachments && templateChildAttachments.length > 0) {
           const first = templateChildAttachments[0];
-          if (first.picture) {
+          if (isValidUrl(first.picture)) {
             return { url: first.picture as string, source: 'template_data.child_attachments[0].picture' };
           }
           if (first.image_hash) {
@@ -634,11 +558,10 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // 7. Asset feed spec images (criativos dinamicos)
         const assetImages = assetFeed?.images as Array<Record<string, unknown>> | undefined;
         if (assetImages && assetImages.length > 0) {
           const first = assetImages[0];
-          if (first.url) {
+          if (isValidUrl(first.url)) {
             return { url: first.url as string, source: 'asset_feed_spec.images[0].url' };
           }
           if (first.hash) {
@@ -647,11 +570,10 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // 8. Asset feed spec videos thumbnail
         const assetVideos = assetFeed?.videos as Array<Record<string, unknown>> | undefined;
         if (assetVideos && assetVideos.length > 0) {
           const firstVideo = assetVideos[0];
-          if (firstVideo.thumbnail_url) {
+          if (isValidUrl(firstVideo.thumbnail_url)) {
             return { url: firstVideo.thumbnail_url as string, source: 'asset_feed_spec.videos[0].thumbnail_url' };
           }
           if (firstVideo.video_id) {
@@ -660,9 +582,7 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // 9. Converte image_hash de varias fontes
         const hashesToTry: Array<{ hash: string; source: string }> = [];
-
         if (creative.image_hash) hashesToTry.push({ hash: creative.image_hash as string, source: 'creative.image_hash' });
         if (linkData?.image_hash) hashesToTry.push({ hash: linkData.image_hash as string, source: 'link_data.image_hash' });
         if (videoData?.image_hash) hashesToTry.push({ hash: videoData.image_hash as string, source: 'video_data.image_hash' });
@@ -673,7 +593,6 @@ Deno.serve(async (req: Request) => {
           if (url) return { url, source };
         }
 
-        // 10. Busca thumbnail de video se houver video_id
         const videoId = (creative.video_id || videoData?.video_id) as string | undefined;
         if (videoId) {
           const thumb = await fetchVideoThumbnail(videoId);
@@ -683,12 +602,15 @@ Deno.serve(async (req: Request) => {
         return { url: null, source: 'nenhuma fonte encontrou imagem' };
       }
 
-      // Funcao para determinar tipo do criativo
       function determineCreativeType(creative: Record<string, unknown>): string {
         const objStorySpec = creative.object_story_spec as Record<string, unknown> | undefined;
         const videoData = objStorySpec?.video_data as Record<string, unknown> | undefined;
         const linkData = objStorySpec?.link_data as Record<string, unknown> | undefined;
         const assetFeed = creative.asset_feed_spec as Record<string, unknown> | undefined;
+        const creativeName = creative.name as string | undefined;
+
+        const isCatalogCreative = creativeName?.includes('{{product.') ||
+          creative.effective_object_story_id !== undefined;
 
         if (creative.video_id || videoData?.video_id) return "video";
         const childAttachments = linkData?.child_attachments as Array<unknown> | undefined;
@@ -699,11 +621,12 @@ Deno.serve(async (req: Request) => {
           if (assetVideos?.length) return "video";
           return "dynamic";
         }
+        if (isCatalogCreative) return "catalog";
         if (creative.image_url || creative.image_hash || linkData?.picture || linkData?.image_hash) return "image";
+        if (creative.thumbnail_url) return "image";
         return "unknown";
       }
 
-      // Campos expandidos para cobrir TODOS os tipos de criativos e referencias indiretas
       const adFields = [
         "id", "name", "status", "preview_shareable_link",
         "creative{id,name,title,body,image_url,thumbnail_url,video_id,image_hash,call_to_action_type,",
@@ -714,7 +637,6 @@ Deno.serve(async (req: Request) => {
         "source_instagram_media_id,object_id,asset_feed_spec}"
       ].join("");
 
-      // Agrupa ads por ad account para processar em lotes
       const adsByAccount = new Map<string, string[]>();
       for (const { adId, metaAdAccountId } of allAdIds) {
         const list = adsByAccount.get(metaAdAccountId) || [];
@@ -722,14 +644,11 @@ Deno.serve(async (req: Request) => {
         adsByAccount.set(metaAdAccountId, list);
       }
 
-      // Processa cada ad account
       for (const [accountMetaId, adIds] of adsByAccount) {
         try {
-          // Processa em lotes de 50 (limite do batch da Meta)
           for (let i = 0; i < adIds.length; i += 50) {
             const batch = adIds.slice(i, i + 50);
 
-            // Cria batch requests
             const batchRequests = batch.map(adId => ({
               method: "GET",
               relative_url: `${adId}?fields=${encodeURIComponent(adFields)}`,
@@ -748,7 +667,6 @@ Deno.serve(async (req: Request) => {
 
             const batchResults = await batchResponse.json();
 
-            // Processa cada resultado do batch
             for (let j = 0; j < batchResults.length; j++) {
               const result = batchResults[j];
               const adId = batch[j];
@@ -773,11 +691,9 @@ Deno.serve(async (req: Request) => {
                   continue;
                 }
 
-                // Captura status do ad (ACTIVE, PAUSED, etc.)
                 const adStatus = adData.status || "UNKNOWN";
                 console.log(`Status do ad: ${adStatus}`);
 
-                // Tenta pegar criativo de varias fontes
                 let creative = adData.creative || {};
                 if (!creative.id && adData.adcreatives?.data?.[0]) {
                   creative = adData.adcreatives.data[0];
@@ -792,12 +708,10 @@ Deno.serve(async (req: Request) => {
                 const videoData = creative.object_story_spec?.video_data || {};
                 const assetFeed = creative.asset_feed_spec || {};
 
-                // Determina tipo do criativo
                 const creativeType = determineCreativeType(creative);
                 console.log(`Tipo detectado: ${creativeType}`);
                 creativeStats.byType[creativeType] = (creativeStats.byType[creativeType] || 0) + 1;
 
-                // Extrai URL da imagem (agora retorna objeto com url e source)
                 const imageResult = await extractImageUrl(creative, accountMetaId);
                 const imageUrl = imageResult.url;
                 const imageSource = imageResult.source;
@@ -812,7 +726,6 @@ Deno.serve(async (req: Request) => {
                   creativeStats.failedAdIds.push(adId);
                 }
 
-                // Video ID e URL
                 const videoId = creative.video_id || videoData.video_id || assetFeed.videos?.[0]?.video_id || null;
                 const videoUrl = videoId ? `https://www.facebook.com/ads/videos/${videoId}` : null;
 
@@ -820,7 +733,6 @@ Deno.serve(async (req: Request) => {
                   console.log(`Video ID detectado: ${videoId}`);
                 }
 
-                // Para videos, busca thumbnail se nao tiver imagem
                 let thumbnailUrl = imageUrl;
                 if (creativeType === "video" && videoId && !thumbnailUrl) {
                   console.log(`Buscando thumbnail do video...`);
@@ -833,7 +745,16 @@ Deno.serve(async (req: Request) => {
                   }
                 }
 
-                // Monta registro do criativo
+                if (!thumbnailUrl && isValidUrl(creative.thumbnail_url)) {
+                  thumbnailUrl = creative.thumbnail_url as string;
+                  console.log(`Usando thumbnail_url do criativo como fallback`);
+                  if (!imageUrl) {
+                    creativeStats.withImage++;
+                    creativeStats.bySource['creative.thumbnail_url (fallback)'] =
+                      (creativeStats.bySource['creative.thumbnail_url (fallback)'] || 0) + 1;
+                  }
+                }
+
                 const creativeRecord = {
                   workspace_id: workspace.id,
                   ad_id: adId,
@@ -861,7 +782,6 @@ Deno.serve(async (req: Request) => {
                   fetched_at: new Date().toISOString(),
                 };
 
-                // Upsert no banco (salva mesmo se nao tiver imagem)
                 const { error: upsertError } = await supabaseAdmin
                   .from("meta_ad_creatives")
                   .upsert(creativeRecord, {
@@ -887,7 +807,6 @@ Deno.serve(async (req: Request) => {
               }
             }
 
-            // Pequena pausa entre lotes para evitar rate limit
             if (i + 50 < adIds.length) {
               await new Promise(resolve => setTimeout(resolve, 300));
             }
@@ -898,7 +817,6 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Imprime resumo final das estatisticas
       console.log(`\n========== RESUMO DA BUSCA DE CRIATIVOS ==========`);
       console.log(`Total de ads processados: ${creativeStats.processed}/${creativeStats.total}`);
       const percentWithImage = creativeStats.processed > 0 ? Math.round(creativeStats.withImage / creativeStats.processed * 100) : 0;
