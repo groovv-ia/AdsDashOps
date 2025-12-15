@@ -490,109 +490,200 @@ Deno.serve(async (req: Request) => {
 
     // Fase 2: Busca criativos se solicitado
     if (sync_creatives && allAdIds.length > 0) {
-      console.log(`Iniciando busca de criativos para ${allAdIds.length} ads...`);
+      console.log(`\n========== INICIANDO BUSCA DE CRIATIVOS ==========`);
+      console.log(`Total de ads para buscar criativos: ${allAdIds.length}`);
 
-      // Cache local para conversao de image_hash
+      // Contadores para metricas detalhadas
+      const creativeStats = {
+        total: allAdIds.length,
+        processed: 0,
+        withImage: 0,
+        withoutImage: 0,
+        withError: 0,
+        cached: 0,
+        byType: {} as Record<string, number>,
+        bySource: {} as Record<string, number>,
+        failedAdIds: [] as string[],
+      };
+
+      // Cache local para conversao de image_hash (evita requisicoes duplicadas)
       const imageHashCache = new Map<string, string>();
 
-      // Funcao para converter image_hash em URL
-      async function convertImageHashToUrl(imageHash: string, adAccountId: string): Promise<string | null> {
+      // Funcao para converter image_hash em URL com retry e campos expandidos
+      async function convertImageHashToUrl(imageHash: string, adAccountId: string, retries: number = 2): Promise<string | null> {
+        // Verifica cache primeiro
         if (imageHashCache.has(imageHash)) {
           return imageHashCache.get(imageHash) || null;
         }
-        try {
-          const accountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
-          const url = `https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128&access_token=${accessToken}`;
-          const resp = await fetch(url);
-          const data = await resp.json();
-          if (data.data?.[0]) {
-            const imgUrl = data.data[0].url || data.data[0].url_128;
-            if (imgUrl) {
-              imageHashCache.set(imageHash, imgUrl);
-              return imgUrl;
+
+        let lastError: Error | null = null;
+
+        // Tenta converter com retry automatico
+        for (let attempt = 0; attempt <= retries; attempt++) {
+          try {
+            const accountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
+            // Solicita multiplos campos de URL para aumentar chances de sucesso
+            const url = `https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128,permalink_url&access_token=${accessToken}`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+
+            if (data.data && data.data.length > 0) {
+              const imageData = data.data[0];
+              // Prioriza URL maior (melhor qualidade)
+              const imgUrl = imageData.url || imageData.url_128 || imageData.permalink_url;
+              if (imgUrl) {
+                imageHashCache.set(imageHash, imgUrl);
+                console.log(`✓ Image hash ${imageHash} convertido com sucesso (tentativa ${attempt + 1})`);
+                return imgUrl;
+              }
+            }
+
+            // Se chegou aqui sem retornar, nao tem URL disponivel
+            return null;
+          } catch (err) {
+            lastError = err instanceof Error ? err : new Error("Unknown error");
+            console.error(`Erro ao converter image_hash ${imageHash} (tentativa ${attempt + 1}/${retries + 1}):`, err);
+
+            // Espera antes de tentar novamente
+            if (attempt < retries) {
+              await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
             }
           }
-        } catch (err) {
-          console.error(`Erro ao converter image_hash ${imageHash}:`, err);
         }
+
+        console.error(`✗ Falha ao converter image_hash ${imageHash} apos ${retries + 1} tentativas`);
         return null;
       }
 
-      // Funcao para buscar thumbnail de video
+      // Funcao para buscar thumbnail de video com multiplos campos
       async function fetchVideoThumbnail(videoId: string): Promise<string | null> {
         try {
-          const resp = await fetch(`https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails,picture&access_token=${accessToken}`);
+          // Solicita multiplos campos para aumentar chances de obter thumbnail
+          const resp = await fetch(`https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails,picture,source&access_token=${accessToken}`);
           const data = await resp.json();
-          if (data.thumbnails?.data?.length > 0) {
+
+          // Tenta thumbnails primeiro (melhor qualidade)
+          if (data.thumbnails?.data && data.thumbnails.data.length > 0) {
             const sorted = data.thumbnails.data.sort((a: { width: number }, b: { width: number }) => b.width - a.width);
             return sorted[0].uri;
           }
-          if (data.picture) return data.picture;
+
+          // Fallback para picture
+          if (data.picture) {
+            return data.picture;
+          }
         } catch (err) {
           console.error(`Erro ao buscar thumbnail do video ${videoId}:`, err);
         }
         return null;
       }
 
-      // Funcao para extrair URL de imagem de todas as fontes
-      async function extractImageUrl(creative: Record<string, unknown>, adAccountId: string): Promise<string | null> {
-        // URLs diretas
-        if (creative.image_url) return creative.image_url as string;
-        if (creative.thumbnail_url) return creative.thumbnail_url as string;
+      // Funcao para extrair URL de imagem de TODAS as fontes possiveis (alinhada com batch)
+      async function extractImageUrl(creative: Record<string, unknown>, adAccountId: string): Promise<{ url: string | null; source: string }> {
+        // 1. URL direta do criativo
+        if (creative.image_url) {
+          return { url: creative.image_url as string, source: 'creative.image_url' };
+        }
+
+        if (creative.thumbnail_url) {
+          return { url: creative.thumbnail_url as string, source: 'creative.thumbnail_url' };
+        }
 
         const objStorySpec = creative.object_story_spec as Record<string, unknown> | undefined;
         const linkData = objStorySpec?.link_data as Record<string, unknown> | undefined;
         const videoData = objStorySpec?.video_data as Record<string, unknown> | undefined;
         const photoData = objStorySpec?.photo_data as Record<string, unknown> | undefined;
+        const templateData = objStorySpec?.template_data as Record<string, unknown> | undefined;
         const assetFeed = creative.asset_feed_spec as Record<string, unknown> | undefined;
 
-        if (linkData?.picture) return linkData.picture as string;
-        if (videoData?.image_url) return videoData.image_url as string;
-        if (photoData?.url) return photoData.url as string;
+        // 2. Picture de link_data
+        if (linkData?.picture) {
+          return { url: linkData.picture as string, source: 'link_data.picture' };
+        }
 
-        // Child attachments (carrossel)
+        // 3. Image URL de video_data
+        if (videoData?.image_url) {
+          return { url: videoData.image_url as string, source: 'video_data.image_url' };
+        }
+
+        // 4. URL de photo_data
+        if (photoData?.url) {
+          return { url: photoData.url as string, source: 'photo_data.url' };
+        }
+
+        // 5. Primeiro item de carrossel (child_attachments de link_data)
         const childAttachments = linkData?.child_attachments as Array<Record<string, unknown>> | undefined;
-        if (childAttachments?.length) {
+        if (childAttachments && childAttachments.length > 0) {
           const first = childAttachments[0];
-          if (first.picture) return first.picture as string;
+          if (first.picture) {
+            return { url: first.picture as string, source: 'link_data.child_attachments[0].picture' };
+          }
           if (first.image_hash) {
             const url = await convertImageHashToUrl(first.image_hash as string, adAccountId);
-            if (url) return url;
+            if (url) return { url, source: 'link_data.child_attachments[0].image_hash' };
           }
         }
 
-        // Asset feed spec (dinamico)
+        // 6. Template data child attachments (NOVO! - faltava na versao anterior)
+        const templateChildAttachments = templateData?.child_attachments as Array<Record<string, unknown>> | undefined;
+        if (templateChildAttachments && templateChildAttachments.length > 0) {
+          const first = templateChildAttachments[0];
+          if (first.picture) {
+            return { url: first.picture as string, source: 'template_data.child_attachments[0].picture' };
+          }
+          if (first.image_hash) {
+            const url = await convertImageHashToUrl(first.image_hash as string, adAccountId);
+            if (url) return { url, source: 'template_data.child_attachments[0].image_hash' };
+          }
+        }
+
+        // 7. Asset feed spec images (criativos dinamicos)
         const assetImages = assetFeed?.images as Array<Record<string, unknown>> | undefined;
-        if (assetImages?.length) {
+        if (assetImages && assetImages.length > 0) {
           const first = assetImages[0];
-          if (first.url) return first.url as string;
+          if (first.url) {
+            return { url: first.url as string, source: 'asset_feed_spec.images[0].url' };
+          }
           if (first.hash) {
             const url = await convertImageHashToUrl(first.hash as string, adAccountId);
-            if (url) return url;
+            if (url) return { url, source: 'asset_feed_spec.images[0].hash' };
           }
         }
 
-        // Converte image_hash de varias fontes
-        const hashesToTry = [
-          creative.image_hash,
-          linkData?.image_hash,
-          videoData?.image_hash,
-          photoData?.image_hash,
-        ].filter(Boolean) as string[];
-
-        for (const hash of hashesToTry) {
-          const url = await convertImageHashToUrl(hash, adAccountId);
-          if (url) return url;
+        // 8. Asset feed spec videos thumbnail
+        const assetVideos = assetFeed?.videos as Array<Record<string, unknown>> | undefined;
+        if (assetVideos && assetVideos.length > 0) {
+          const firstVideo = assetVideos[0];
+          if (firstVideo.thumbnail_url) {
+            return { url: firstVideo.thumbnail_url as string, source: 'asset_feed_spec.videos[0].thumbnail_url' };
+          }
+          if (firstVideo.video_id) {
+            const thumb = await fetchVideoThumbnail(firstVideo.video_id as string);
+            if (thumb) return { url: thumb, source: 'asset_feed_spec.videos[0].video_id thumbnail' };
+          }
         }
 
-        // Busca thumbnail de video
+        // 9. Converte image_hash de varias fontes
+        const hashesToTry: Array<{ hash: string; source: string }> = [];
+
+        if (creative.image_hash) hashesToTry.push({ hash: creative.image_hash as string, source: 'creative.image_hash' });
+        if (linkData?.image_hash) hashesToTry.push({ hash: linkData.image_hash as string, source: 'link_data.image_hash' });
+        if (videoData?.image_hash) hashesToTry.push({ hash: videoData.image_hash as string, source: 'video_data.image_hash' });
+        if (photoData?.image_hash) hashesToTry.push({ hash: photoData.image_hash as string, source: 'photo_data.image_hash' });
+
+        for (const { hash, source } of hashesToTry) {
+          const url = await convertImageHashToUrl(hash, adAccountId);
+          if (url) return { url, source };
+        }
+
+        // 10. Busca thumbnail de video se houver video_id
         const videoId = (creative.video_id || videoData?.video_id) as string | undefined;
         if (videoId) {
           const thumb = await fetchVideoThumbnail(videoId);
-          if (thumb) return thumb;
+          if (thumb) return { url: thumb, source: 'video_id thumbnail' };
         }
 
-        return null;
+        return { url: null, source: 'nenhuma fonte encontrou imagem' };
       }
 
       // Funcao para determinar tipo do criativo
@@ -615,12 +706,15 @@ Deno.serve(async (req: Request) => {
         return "unknown";
       }
 
-      // Campos expandidos para cobrir todos os tipos de criativos
+      // Campos expandidos para cobrir TODOS os tipos de criativos e referencias indiretas
       const adFields = [
         "id", "name", "status", "preview_shareable_link",
         "creative{id,name,title,body,image_url,thumbnail_url,video_id,image_hash,call_to_action_type,",
-        "object_story_spec,effective_object_story_id,effective_instagram_media_id,asset_feed_spec}",
-        "adcreatives{id,name,title,body,image_url,thumbnail_url,video_id,image_hash,object_story_spec,asset_feed_spec}"
+        "object_story_spec,effective_object_story_id,effective_instagram_media_id,",
+        "source_instagram_media_id,object_id,asset_feed_spec}",
+        "adcreatives{id,name,title,body,image_url,thumbnail_url,video_id,image_hash,",
+        "object_story_spec,effective_object_story_id,effective_instagram_media_id,",
+        "source_instagram_media_id,object_id,asset_feed_spec}"
       ].join("");
 
       // Agrupa ads por ad account para processar em lotes
@@ -662,22 +756,39 @@ Deno.serve(async (req: Request) => {
               const result = batchResults[j];
               const adId = batch[j];
 
+              console.log(`\n--- Processando Ad ${adId} ---`);
+              creativeStats.processed++;
+
               if (result.code !== 200) {
-                console.error(`Erro ao buscar criativo do ad ${adId}: HTTP ${result.code}`);
+                const errorMsg = `HTTP ${result.code}`;
+                console.error(`✗ Erro ao buscar criativo: ${errorMsg}`);
+                creativeStats.withError++;
+                creativeStats.failedAdIds.push(adId);
                 continue;
               }
 
               try {
                 const adData = JSON.parse(result.body);
                 if (adData.error) {
-                  console.error(`Erro da Meta para ad ${adId}:`, adData.error);
+                  console.error(`✗ Erro da Meta:`, adData.error);
+                  creativeStats.withError++;
+                  creativeStats.failedAdIds.push(adId);
                   continue;
                 }
+
+                // Captura status do ad (ACTIVE, PAUSED, etc.)
+                const adStatus = adData.status || "UNKNOWN";
+                console.log(`Status do ad: ${adStatus}`);
 
                 // Tenta pegar criativo de varias fontes
                 let creative = adData.creative || {};
                 if (!creative.id && adData.adcreatives?.data?.[0]) {
                   creative = adData.adcreatives.data[0];
+                  console.log(`Criativo encontrado via adcreatives fallback`);
+                }
+
+                if (!creative.id) {
+                  console.log(`⚠ Ad sem criativo detectado - salvando com preview_url apenas`);
                 }
 
                 const linkData = creative.object_story_spec?.link_data || {};
@@ -686,21 +797,43 @@ Deno.serve(async (req: Request) => {
 
                 // Determina tipo do criativo
                 const creativeType = determineCreativeType(creative);
-                console.log(`[Ad ${adId}] Tipo do criativo determinado: ${creativeType}`);
+                console.log(`Tipo detectado: ${creativeType}`);
+                creativeStats.byType[creativeType] = (creativeStats.byType[creativeType] || 0) + 1;
 
-                // Extrai URL da imagem
-                const imageUrl = await extractImageUrl(creative, accountMetaId);
-                console.log(`[Ad ${adId}] Image URL extraida: ${imageUrl ? 'Sim' : 'Nao'}`);
+                // Extrai URL da imagem (agora retorna objeto com url e source)
+                const imageResult = await extractImageUrl(creative, accountMetaId);
+                const imageUrl = imageResult.url;
+                const imageSource = imageResult.source;
+
+                if (imageUrl) {
+                  console.log(`✓ Imagem encontrada! Fonte: ${imageSource}`);
+                  creativeStats.withImage++;
+                  creativeStats.bySource[imageSource] = (creativeStats.bySource[imageSource] || 0) + 1;
+                } else {
+                  console.log(`✗ Nenhuma imagem encontrada. Motivo: ${imageSource}`);
+                  creativeStats.withoutImage++;
+                  creativeStats.failedAdIds.push(adId);
+                }
 
                 // Video ID e URL
                 const videoId = creative.video_id || videoData.video_id || assetFeed.videos?.[0]?.video_id || null;
                 const videoUrl = videoId ? `https://www.facebook.com/ads/videos/${videoId}` : null;
 
+                if (videoId) {
+                  console.log(`Video ID detectado: ${videoId}`);
+                }
+
                 // Para videos, busca thumbnail se nao tiver imagem
                 let thumbnailUrl = imageUrl;
                 if (creativeType === "video" && videoId && !thumbnailUrl) {
+                  console.log(`Buscando thumbnail do video...`);
                   thumbnailUrl = await fetchVideoThumbnail(videoId);
-                  console.log(`[Ad ${adId}] Thumbnail de video buscado: ${thumbnailUrl ? 'Sim' : 'Nao'}`);
+                  if (thumbnailUrl) {
+                    console.log(`✓ Thumbnail de video encontrado`);
+                    creativeStats.withImage++;
+                  } else {
+                    console.log(`✗ Falha ao buscar thumbnail do video`);
+                  }
                 }
 
                 // Monta registro do criativo
@@ -722,7 +855,8 @@ Deno.serve(async (req: Request) => {
                   link_url: linkData.link || videoData.call_to_action?.value?.link || null,
                   extra_data: {
                     ad_name: adData.name,
-                    ad_status: adData.status,
+                    ad_status: adStatus,
+                    image_source: imageSource,
                     raw_creative: creative,
                     has_carousel: (linkData.child_attachments?.length || 0) > 1,
                     carousel_count: linkData.child_attachments?.length || 0,
@@ -730,7 +864,7 @@ Deno.serve(async (req: Request) => {
                   fetched_at: new Date().toISOString(),
                 };
 
-                // Upsert no banco
+                // Upsert no banco (salva mesmo se nao tiver imagem)
                 const { error: upsertError } = await supabaseAdmin
                   .from("meta_ad_creatives")
                   .upsert(creativeRecord, {
@@ -738,20 +872,21 @@ Deno.serve(async (req: Request) => {
                   });
 
                 if (upsertError) {
-                  console.error(`[Ad ${adId}] ERRO ao salvar criativo:`, {
+                  console.error(`✗ ERRO ao salvar:`, {
                     message: upsertError.message,
                     code: upsertError.code,
                     details: upsertError.details,
                     hint: upsertError.hint,
-                    creative_type: creativeType,
                   });
+                  creativeStats.withError++;
                 } else {
-                  console.log(`[Ad ${adId}] Criativo salvo com sucesso (tipo: ${creativeType})`);
-
+                  console.log(`✓ Criativo salvo com sucesso no banco`);
                   syncResult.creatives_synced++;
                 }
               } catch (parseErr) {
-                console.error(`Erro ao processar criativo do ad ${adId}:`, parseErr);
+                console.error(`✗ Erro ao processar criativo:`, parseErr);
+                creativeStats.withError++;
+                creativeStats.failedAdIds.push(adId);
               }
             }
 
@@ -766,7 +901,33 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      console.log(`Criativos sincronizados: ${syncResult.creatives_synced}`);
+      // Imprime resumo final das estatisticas
+      console.log(`\n========== RESUMO DA BUSCA DE CRIATIVOS ==========`);
+      console.log(`Total de ads processados: ${creativeStats.processed}/${creativeStats.total}`);
+      console.log(`Com imagem: ${creativeStats.withImage} (${Math.round(creativeStats.withImage / creativeStats.processed * 100)}%)`);
+      console.log(`Sem imagem: ${creativeStats.withoutImage} (${Math.round(creativeStats.withoutImage / creativeStats.processed * 100)}%)`);
+      console.log(`Com erro: ${creativeStats.withError}`);
+      console.log(`Salvos no banco: ${syncResult.creatives_synced}`);
+
+      console.log(`\n--- Distribuicao por tipo ---`);
+      for (const [type, count] of Object.entries(creativeStats.byType)) {
+        console.log(`  ${type}: ${count}`);
+      }
+
+      console.log(`\n--- Distribuicao por fonte de imagem ---`);
+      for (const [source, count] of Object.entries(creativeStats.bySource)) {
+        console.log(`  ${source}: ${count}`);
+      }
+
+      if (creativeStats.failedAdIds.length > 0) {
+        console.log(`\n--- Ads que falharam (${creativeStats.failedAdIds.length}) ---`);
+        console.log(creativeStats.failedAdIds.slice(0, 10).join(', '));
+        if (creativeStats.failedAdIds.length > 10) {
+          console.log(`... e mais ${creativeStats.failedAdIds.length - 10} ads`);
+        }
+      }
+
+      console.log(`\n==================================================`);
     }
 
     return new Response(
