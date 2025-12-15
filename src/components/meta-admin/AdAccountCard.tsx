@@ -11,7 +11,7 @@
  * - Info adicional e botao de acao
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Building2,
   RefreshCw,
@@ -28,6 +28,7 @@ import {
   Users,
   BarChart3,
   Globe,
+  Image,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
@@ -60,7 +61,7 @@ interface AdAccountCardProps {
   isSelected?: boolean;
   isSyncing?: boolean;
   onSelect: (accountId: string) => void;
-  onSync: (accountId: string) => void;
+  onSync: (accountId: string, syncCreatives: boolean) => void;
 }
 
 export const AdAccountCard: React.FC<AdAccountCardProps> = ({
@@ -70,6 +71,26 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
   onSelect,
   onSync,
 }) => {
+  // Estado para controlar se deve sincronizar criativos (imagens e videos dos anúncios)
+  // Carrega preferência do localStorage ou usa true como padrão
+  const [syncCreatives, setSyncCreatives] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(`meta_sync_creatives_${account.metaId}`);
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  // Salva a preferência de sincronização de criativos no localStorage sempre que mudar
+  useEffect(() => {
+    try {
+      localStorage.setItem(`meta_sync_creatives_${account.metaId}`, String(syncCreatives));
+    } catch (error) {
+      console.error('Erro ao salvar preferência de criativos:', error);
+    }
+  }, [syncCreatives, account.metaId]);
+
   // Componente de progresso circular
   const CircularProgress: React.FC<{ progress: number; size?: number }> = ({
     progress,
@@ -513,12 +534,39 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
         )}
       </div>
 
+      {/* Opcao para incluir criativos na sincronizacao */}
+      <div
+        className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <label className="flex items-start space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={syncCreatives}
+            onChange={(e) => setSyncCreatives(e.target.checked)}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-offset-0 cursor-pointer transition-colors"
+          />
+          <div className="flex-1">
+            <div className="flex items-center space-x-2">
+              <Image className={`w-4 h-4 transition-colors ${syncCreatives ? 'text-blue-600' : 'text-gray-400'}`} />
+              <span className={`text-sm font-medium transition-colors ${syncCreatives ? 'text-gray-900' : 'text-gray-600'}`}>
+                Incluir criativos
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Imagens e vídeos dos anúncios
+            </p>
+          </div>
+        </label>
+      </div>
+
       {/* Acoes */}
       <div className="flex items-center space-x-2">
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onSync(account.id);
+            onSync(account.id, syncCreatives);
           }}
           disabled={isSyncing}
           className={`

@@ -151,9 +151,6 @@ export const MetaAdsSyncPage: React.FC = () => {
     return preset ? preset.getDateRange() : { dateFrom: '', dateTo: '' };
   });
 
-  // Opcao para sincronizar criativos junto com metricas
-  const [syncCreatives, setSyncCreatives] = useState<boolean>(true);
-
   // Mensagens
   const [error, setError] = useState<string | null>(null);
 
@@ -330,7 +327,7 @@ export const MetaAdsSyncPage: React.FC = () => {
   // ============================================================
 
   // Sincroniza uma conta especifica
-  const handleSyncAccount = async (accountId: string) => {
+  const handleSyncAccount = async (accountId: string, syncCreatives: boolean) => {
     const account = getAccountById(accountId);
     if (!account) return;
 
@@ -407,7 +404,18 @@ export const MetaAdsSyncPage: React.FC = () => {
     try {
       for (const account of syncStatus.ad_accounts) {
         setSyncingAccountId(account.id);
-        await handleSyncAccount(account.id);
+
+        // Busca a preferência de criativos do localStorage para cada conta
+        // Usa true como padrão se não encontrar preferência salva
+        let accountSyncCreatives = true;
+        try {
+          const saved = localStorage.getItem(`meta_sync_creatives_${account.meta_id}`);
+          accountSyncCreatives = saved !== null ? saved === 'true' : true;
+        } catch (error) {
+          console.error('Erro ao buscar preferência de criativos:', error);
+        }
+
+        await handleSyncAccount(account.id, accountSyncCreatives);
       }
     } finally {
       setSyncing(false);
@@ -780,26 +788,6 @@ export const MetaAdsSyncPage: React.FC = () => {
               selectedPeriod={selectedPeriod}
               onPeriodChange={handlePeriodChange}
             />
-          </div>
-
-          {/* Opcao para sincronizar criativos */}
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <label className="flex items-center space-x-3 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={syncCreatives}
-                onChange={(e) => setSyncCreatives(e.target.checked)}
-                className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
-              />
-              <div>
-                <span className="font-medium text-gray-800 group-hover:text-blue-600 transition-colors">
-                  Sincronizar Criativos
-                </span>
-                <p className="text-sm text-gray-500">
-                  Buscar imagens e videos dos anuncios durante a sincronizacao (pode aumentar o tempo)
-                </p>
-              </div>
-            </label>
           </div>
         </Card>
 
