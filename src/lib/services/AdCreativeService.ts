@@ -454,7 +454,18 @@ export async function fetchAdCreativesBatch(
 }
 
 /**
+ * Verifica se um criativo tem dados completos (imagem ou textos)
+ * Criativos incompletos serao rebuscados da API
+ */
+function isCreativeComplete(creative: MetaAdCreative): boolean {
+  const hasImage = !!(creative.thumbnail_url || creative.image_url);
+  const hasTexts = !!(creative.title || creative.body || creative.description);
+  return hasImage || hasTexts;
+}
+
+/**
  * Busca criativos do cache local (Supabase) em lote
+ * Filtra criativos incompletos para que sejam rebuscados
  */
 export async function getCreativesFromCacheBatch(
   adIds: string[]
@@ -478,15 +489,22 @@ export async function getCreativesFromCacheBatch(
     return {};
   }
 
-  // Mapeia por ad_id para acesso rapido
+  // Mapeia por ad_id, filtrando criativos incompletos
   const creativesMap: Record<string, MetaAdCreative> = {};
+  let incompleteCount = 0;
+
   if (data) {
     for (const creative of data) {
-      creativesMap[creative.ad_id] = creative;
+      // So adiciona ao cache se tiver dados completos
+      if (isCreativeComplete(creative)) {
+        creativesMap[creative.ad_id] = creative;
+      } else {
+        incompleteCount++;
+      }
     }
   }
 
-  console.log(`[AdCreativeService] Encontrados ${Object.keys(creativesMap).length} criativos no cache`);
+  console.log(`[AdCreativeService] Encontrados ${Object.keys(creativesMap).length} criativos completos no cache (${incompleteCount} incompletos serao rebuscados)`);
 
   return creativesMap;
 }

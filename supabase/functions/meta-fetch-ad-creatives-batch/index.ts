@@ -3,7 +3,7 @@
  *
  * Busca criativos de multiplos anuncios do Meta Ads API em lote.
  * Suporta todos os tipos de criativos: imagem, video, carrossel, dinamico.
- * Otimizado para buscar ate 50 ads por requisicao usando batch requests.
+ * Inclui busca de textos de posts via effective_object_story_id.
  *
  * POST /functions/v1/meta-fetch-ad-creatives-batch
  * Body: { ad_ids: string[], meta_ad_account_id: string }
@@ -90,6 +90,9 @@ interface MetaCreativeData {
     videos?: Array<{ video_id?: string; thumbnail_hash?: string; thumbnail_url?: string }>;
     bodies?: Array<{ text?: string }>;
     titles?: Array<{ text?: string }>;
+    descriptions?: Array<{ text?: string }>;
+    call_to_action_types?: string[];
+    link_urls?: Array<{ website_url?: string }>;
   };
   effective_object_story_id?: string;
   effective_instagram_media_id?: string;
@@ -110,8 +113,64 @@ interface MetaAdResponse {
   error?: { message: string; code: number };
 }
 
+// Interface para dados de post do Facebook
+interface PostData {
+  message?: string;
+  story?: string;
+  description?: string;
+  name?: string;
+  caption?: string;
+  full_picture?: string;
+  picture?: string;
+  call_to_action?: { type?: string; value?: { link?: string } };
+  attachments?: {
+    data?: Array<{
+      title?: string;
+      description?: string;
+      url?: string;
+      media?: { image?: { src?: string } };
+    }>;
+  };
+}
+
 // Cache para image_hash -> URL (evita requisicoes duplicadas)
 const imageHashCache = new Map<string, string>();
+
+// Cache para post data (evita requisicoes duplicadas)
+const postDataCache = new Map<string, PostData>();
+
+/**
+ * Busca dados do post do Facebook pelo effective_object_story_id
+ */
+async function fetchPostData(
+  postId: string,
+  accessToken: string
+): Promise<PostData | null> {
+  // Verifica cache
+  if (postDataCache.has(postId)) {
+    return postDataCache.get(postId) || null;
+  }
+
+  try {
+    const fields = "message,story,description,name,caption,full_picture,picture,call_to_action,attachments{title,description,url,media}";
+    const url = `https://graph.facebook.com/v21.0/${postId}?fields=${fields}&access_token=${accessToken}`;
+    
+    console.log(`Fetching post data for: ${postId}`);
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.error(`Error fetching post ${postId}: HTTP ${response.status}`);
+      return null;
+    }
+
+    const data: PostData = await response.json();
+    postDataCache.set(postId, data);
+    return data;
+  } catch (err) {
+    console.error(`Error fetching post ${postId}:`, err);
+    return null;
+  }
+}
 
 /**
  * Converte image_hash para URL usando API de ad images
@@ -180,7 +239,8 @@ async function fetchVideoThumbnail(videoId: string, accessToken: string): Promis
 async function extractImageUrl(
   creative: MetaCreativeData,
   adAccountId: string,
-  accessToken: string
+  accessToken: string,
+  postData?: PostData | null
 ): Promise<string | null> {
   // 1. URL direta do criativo
   if (creative.image_url) {
@@ -191,28 +251,36 @@ async function extractImageUrl(
     return creative.thumbnail_url;
   }
 
+  // 2. De post data
+  if (postData?.full_picture) {
+    return postData.full_picture;
+  }
+  if (postData?.picture) {
+    return postData.picture;
+  }
+
   const linkData = creative.object_story_spec?.link_data;
   const videoData = creative.object_story_spec?.video_data;
   const photoData = creative.object_story_spec?.photo_data;
   const templateData = creative.object_story_spec?.template_data;
   const assetFeed = creative.asset_feed_spec;
 
-  // 2. Picture de link_data
+  // 3. Picture de link_data
   if (linkData?.picture) {
     return linkData.picture;
   }
 
-  // 3. Image URL de video_data
+  // 4. Image URL de video_data
   if (videoData?.image_url) {
     return videoData.image_url;
   }
 
-  // 4. URL de photo_data
+  // 5. URL de photo_data
   if (photoData?.url) {
     return photoData.url;
   }
 
-  // 5. Primeiro item de carrossel (child_attachments)
+  // 6. Primeiro item de carrossel (child_attachments)
   if (linkData?.child_attachments && linkData.child_attachments.length > 0) {
     const firstChild = linkData.child_attachments[0];
     if (firstChild.picture) {
@@ -224,7 +292,7 @@ async function extractImageUrl(
     }
   }
 
-  // 6. Template data child attachments
+  // 7. Template data child attachments
   if (templateData?.child_attachments && templateData.child_attachments.length > 0) {
     const firstChild = templateData.child_attachments[0];
     if (firstChild.picture) {
@@ -236,7 +304,7 @@ async function extractImageUrl(
     }
   }
 
-  // 7. Asset feed spec images (criativos dinamicos)
+  // 8. Asset feed spec images (criativos dinamicos)
   if (assetFeed?.images && assetFeed.images.length > 0) {
     const firstImage = assetFeed.images[0];
     if (firstImage.url) {
@@ -248,7 +316,7 @@ async function extractImageUrl(
     }
   }
 
-  // 8. Asset feed spec videos thumbnail
+  // 9. Asset feed spec videos thumbnail
   if (assetFeed?.videos && assetFeed.videos.length > 0) {
     const firstVideo = assetFeed.videos[0];
     if (firstVideo.thumbnail_url) {
@@ -260,7 +328,15 @@ async function extractImageUrl(
     }
   }
 
-  // 9. Converte image_hash de varias fontes
+  // 10. Attachments do post
+  if (postData?.attachments?.data && postData.attachments.data.length > 0) {
+    const firstAttachment = postData.attachments.data[0];
+    if (firstAttachment.media?.image?.src) {
+      return firstAttachment.media.image.src;
+    }
+  }
+
+  // 11. Converte image_hash de varias fontes
   const hashesToTry = [
     creative.image_hash,
     linkData?.image_hash,
@@ -273,7 +349,7 @@ async function extractImageUrl(
     if (url) return url;
   }
 
-  // 10. Busca thumbnail de video se houver video_id
+  // 12. Busca thumbnail de video se houver video_id
   const videoId = creative.video_id || videoData?.video_id;
   if (videoId) {
     const thumb = await fetchVideoThumbnail(videoId, accessToken);
@@ -302,7 +378,7 @@ function determineCreativeType(creative: MetaCreativeData): string {
   }
 
   // Criativo dinamico
-  if (assetFeed && (assetFeed.images?.length || assetFeed.videos?.length)) {
+  if (assetFeed && (assetFeed.images?.length || assetFeed.videos?.length || assetFeed.bodies?.length)) {
     if (assetFeed.videos && assetFeed.videos.length > 0) {
       return "video";
     }
@@ -314,7 +390,91 @@ function determineCreativeType(creative: MetaCreativeData): string {
     return "image";
   }
 
+  // Se tem effective_object_story_id mas nao outros dados, provavelmente e dinamico
+  if (creative.effective_object_story_id) {
+    return "dynamic";
+  }
+
   return "unknown";
+}
+
+/**
+ * Extrai textos do criativo e do post
+ */
+function extractTexts(
+  creative: MetaCreativeData,
+  postData?: PostData | null
+): { title: string | null; body: string | null; description: string | null; callToAction: string | null; linkUrl: string | null } {
+  const linkData = creative.object_story_spec?.link_data;
+  const videoData = creative.object_story_spec?.video_data;
+  const photoData = creative.object_story_spec?.photo_data;
+  const assetFeed = creative.asset_feed_spec;
+
+  // Title - tenta varias fontes
+  let title = creative.title ||
+    linkData?.name ||
+    videoData?.title ||
+    assetFeed?.titles?.[0]?.text ||
+    null;
+
+  // Se nao achou, tenta do post
+  if (!title && postData) {
+    title = postData.name || postData.attachments?.data?.[0]?.title || null;
+  }
+
+  // Body - tenta varias fontes
+  let body = creative.body ||
+    linkData?.message ||
+    videoData?.message ||
+    photoData?.caption ||
+    assetFeed?.bodies?.[0]?.text ||
+    null;
+
+  // Se nao achou, tenta do post
+  if (!body && postData) {
+    body = postData.message || postData.story || null;
+  }
+
+  // Description - tenta varias fontes
+  let description = linkData?.description ||
+    videoData?.link_description ||
+    assetFeed?.descriptions?.[0]?.text ||
+    null;
+
+  // Se nao achou, tenta do post
+  if (!description && postData) {
+    description = postData.description ||
+      postData.caption ||
+      postData.attachments?.data?.[0]?.description ||
+      null;
+  }
+
+  // Call to action
+  let callToAction = creative.call_to_action_type ||
+    linkData?.call_to_action?.type ||
+    videoData?.call_to_action?.type ||
+    assetFeed?.call_to_action_types?.[0] ||
+    null;
+
+  // Se nao achou, tenta do post
+  if (!callToAction && postData?.call_to_action?.type) {
+    callToAction = postData.call_to_action.type;
+  }
+
+  // Link URL
+  let linkUrl = linkData?.link ||
+    videoData?.call_to_action?.value?.link ||
+    assetFeed?.link_urls?.[0]?.website_url ||
+    null;
+
+  // Se nao achou, tenta do post
+  if (!linkUrl && postData) {
+    linkUrl = postData.call_to_action?.value?.link ||
+      postData.attachments?.data?.[0]?.url ||
+      null;
+  }
+
+  return { title, body, description, callToAction, linkUrl };
 }
 
 /**
@@ -362,15 +522,20 @@ async function processAdResponse(
     };
   }
 
-  const linkData = creative.object_story_spec?.link_data;
-  const videoData = creative.object_story_spec?.video_data;
+  // Busca dados do post se tiver effective_object_story_id
+  let postData: PostData | null = null;
+  if (creative.effective_object_story_id) {
+    postData = await fetchPostData(creative.effective_object_story_id, accessToken);
+  }
+
   const assetFeed = creative.asset_feed_spec;
+  const videoData = creative.object_story_spec?.video_data;
 
   // Extrai tipo
   const creativeType = determineCreativeType(creative);
 
-  // Extrai URL da imagem
-  const imageUrl = await extractImageUrl(creative, metaAdAccountId, accessToken);
+  // Extrai URL da imagem (passa postData para fallback)
+  const imageUrl = await extractImageUrl(creative, metaAdAccountId, accessToken, postData);
 
   // Video ID e URL
   const videoId = creative.video_id || videoData?.video_id || assetFeed?.videos?.[0]?.video_id || null;
@@ -382,31 +547,8 @@ async function processAdResponse(
     thumbnailUrl = await fetchVideoThumbnail(videoId, accessToken);
   }
 
-  // Extrai textos
-  const title = creative.title ||
-    linkData?.name ||
-    videoData?.title ||
-    assetFeed?.titles?.[0]?.text ||
-    null;
-
-  const body = creative.body ||
-    linkData?.message ||
-    videoData?.message ||
-    assetFeed?.bodies?.[0]?.text ||
-    null;
-
-  const description = linkData?.description ||
-    videoData?.link_description ||
-    null;
-
-  const callToAction = creative.call_to_action_type ||
-    linkData?.call_to_action?.type ||
-    videoData?.call_to_action?.type ||
-    null;
-
-  const linkUrl = linkData?.link ||
-    videoData?.call_to_action?.value?.link ||
-    null;
+  // Extrai textos (inclui dados do post)
+  const { title, body, description, callToAction, linkUrl } = extractTexts(creative, postData);
 
   const record = {
     workspace_id: workspaceId,
@@ -428,8 +570,9 @@ async function processAdResponse(
       ad_name: adData.name,
       ad_status: adData.status,
       raw_creative: creative,
-      has_carousel: (linkData?.child_attachments?.length || 0) > 1,
-      carousel_count: linkData?.child_attachments?.length || 0,
+      post_data: postData || null,
+      has_carousel: (creative.object_story_spec?.link_data?.child_attachments?.length || 0) > 1,
+      carousel_count: creative.object_story_spec?.link_data?.child_attachments?.length || 0,
     },
     fetched_at: new Date().toISOString(),
   };
@@ -523,7 +666,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Verifica cache
+    // Verifica cache - ignora criativos sem textos para rebuscar
     const { data: cachedCreatives } = await supabaseAdmin
       .from("meta_ad_creatives")
       .select("*")
@@ -535,8 +678,12 @@ Deno.serve(async (req: Request) => {
 
     if (cachedCreatives) {
       for (const creative of cachedCreatives) {
-        // Verifica se criativo em cache tem imagem - se nao tiver, rebusca
-        if (creative.thumbnail_url || creative.image_url) {
+        // Verifica se criativo em cache tem imagem E textos - se nao tiver, rebusca
+        const hasImage = creative.thumbnail_url || creative.image_url;
+        const hasTexts = creative.title || creative.body || creative.description;
+        
+        // So considera valido se tiver imagem ou textos
+        if (hasImage || hasTexts) {
           cachedMap[creative.ad_id] = creative;
           cachedAdIds.add(creative.ad_id);
         }
@@ -544,7 +691,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const adsToFetch = ad_ids.filter(id => !cachedAdIds.has(id));
-    console.log(`Batch creative fetch: ${ad_ids.length} requested, ${cachedAdIds.size} cached with images, ${adsToFetch.length} to fetch`);
+    console.log(`Batch creative fetch: ${ad_ids.length} requested, ${cachedAdIds.size} cached with data, ${adsToFetch.length} to fetch`);
 
     if (adsToFetch.length === 0) {
       return new Response(
@@ -586,7 +733,7 @@ Deno.serve(async (req: Request) => {
       "id", "name", "status", "preview_shareable_link",
       "creative{id,name,title,body,image_url,thumbnail_url,video_id,image_hash,call_to_action_type,",
       "object_story_spec,effective_object_story_id,effective_instagram_media_id,object_id,asset_feed_spec}",
-      "adcreatives{id,name,title,body,image_url,thumbnail_url,video_id,image_hash,object_story_spec,asset_feed_spec}"
+      "adcreatives{id,name,title,body,image_url,thumbnail_url,video_id,image_hash,object_story_spec,asset_feed_spec,effective_object_story_id}"
     ].join("");
 
     // Processa em lotes
@@ -668,13 +815,16 @@ Deno.serve(async (req: Request) => {
     if (recordsToUpsert.length > 0) {
       console.log(`Salvando ${recordsToUpsert.length} criativos no banco...`);
 
-      // Log dos tipos de criativos
-      const typesSummary = recordsToUpsert.reduce((acc: Record<string, number>, record) => {
+      // Log dos tipos de criativos e textos encontrados
+      const summary = recordsToUpsert.reduce((acc: { types: Record<string, number>; withTexts: number }, record) => {
         const type = (record.creative_type as string) || 'unknown';
-        acc[type] = (acc[type] || 0) + 1;
+        acc.types[type] = (acc.types[type] || 0) + 1;
+        if (record.title || record.body || record.description) {
+          acc.withTexts++;
+        }
         return acc;
-      }, {});
-      console.log('Tipos de criativos:', typesSummary);
+      }, { types: {}, withTexts: 0 });
+      console.log('Resumo:', { types: summary.types, com_textos: summary.withTexts, total: recordsToUpsert.length });
 
       const { error: upsertError } = await supabaseAdmin
         .from("meta_ad_creatives")
@@ -690,7 +840,7 @@ Deno.serve(async (req: Request) => {
           hint: upsertError.hint,
         });
       } else {
-        console.log(`✓ ${recordsToUpsert.length} criativos salvos com sucesso`);
+        console.log(`${recordsToUpsert.length} criativos salvos com sucesso`);
       }
     }
 
