@@ -64,12 +64,44 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     const clientId = url.searchParams.get("client_id");
 
-    // Busca workspace do usuario
-    const { data: workspace } = await supabaseAdmin
+    // Busca workspace do usuario (primeiro como owner, depois como membro)
+    console.log(`[meta-get-sync-status] Buscando workspace para user_id: ${user.id}`);
+
+    let workspace = null;
+
+    // Tenta buscar como owner direto
+    const { data: ownedWorkspace } = await supabaseAdmin
       .from("workspaces")
       .select("id, name")
       .eq("owner_id", user.id)
       .maybeSingle();
+
+    if (ownedWorkspace) {
+      console.log(`[meta-get-sync-status] ✓ Workspace encontrado como owner: ${ownedWorkspace.id}`);
+      workspace = ownedWorkspace;
+    } else {
+      console.log(`[meta-get-sync-status] Não é owner, buscando como membro...`);
+
+      // Se não é owner, busca como membro
+      const { data: memberWorkspace } = await supabaseAdmin
+        .from("workspace_members")
+        .select(`
+          workspace_id,
+          workspaces!inner (
+            id,
+            name
+          )
+        `)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (memberWorkspace && memberWorkspace.workspaces) {
+        console.log(`[meta-get-sync-status] ✓ Workspace encontrado como membro: ${memberWorkspace.workspaces.id}`);
+        workspace = memberWorkspace.workspaces;
+      } else {
+        console.log(`[meta-get-sync-status] ❌ Nenhum workspace encontrado`);
+      }
+    }
 
     if (!workspace) {
       return new Response(
@@ -113,12 +145,6 @@ Deno.serve(async (req: Request) => {
     if (accountIds.length > 0) {
       syncStatesQuery = syncStatesQuery.in("meta_ad_account_id", accountIds);
     }
-
-    // Apenas filtra por client_id se explicitamente passado E se queremos filtrar contas específicas
-    // Para a página Meta Ads Sync, não passamos client_id para ver TODAS as contas
-    // if (clientId) {
-    //   syncStatesQuery = syncStatesQuery.eq("client_id", clientId);
-    // }
 
     const { data: syncStates } = await syncStatesQuery;
 
@@ -198,8 +224,6 @@ Deno.serve(async (req: Request) => {
     }
 
     // Calcula health status geral
-    // Considera dados "frescos" se sincronizados nas ultimas 48h
-    // Novo estado: "pending_first_sync" para contas conectadas mas nunca sincronizadas
     let healthStatus = "healthy";
     const now = new Date();
     const twoDaysAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
@@ -207,49 +231,37 @@ Deno.serve(async (req: Request) => {
     if (!metaConnection || metaConnection.status !== "connected") {
       healthStatus = "disconnected";
     } else if (adAccounts && adAccounts.length > 0) {
-      // Se tem contas vinculadas, verifica o status de sincronização
       const hasAnySyncState = syncStates && syncStates.length > 0;
 
       if (!hasAnySyncState) {
-        // Contas conectadas mas sem nenhum sync_state = aguardando primeira sincronização
         healthStatus = "pending_first_sync";
       } else {
-        // Verifica se ha erros RECENTES (ultimas 48h)
         const hasRecentError = syncStates.some((s) => {
           if (!s.last_error) return false;
-          // Se nao tiver last_success_at, considera o erro como recente
           if (!s.last_success_at) return true;
-          // Se o ultimo sucesso foi antes do erro (ou seja, erro ainda nao foi resolvido)
-          // Mas so considera "error" se o sucesso foi ha menos de 48h
           const lastSuccess = new Date(s.last_success_at);
           return lastSuccess < twoDaysAgo;
         });
 
-        // Verifica se há contas nunca sincronizadas
         const hasNeverSynced = syncStates.some((s) => !s.last_success_at);
 
-        // Verifica se dados estao desatualizados (mais de 48h sem sincronizacao bem-sucedida)
-        // Mas só para contas que já foram sincronizadas alguma vez
         const hasStaleData = syncStates.some((s) => {
-          if (!s.last_success_at) return false; // Ignora contas nunca sincronizadas
+          if (!s.last_success_at) return false;
           return new Date(s.last_success_at) < twoDaysAgo;
         });
 
         if (hasRecentError) {
           healthStatus = "error";
         } else if (hasNeverSynced) {
-          // Prioriza "aguardando primeira sincronização" sobre "desatualizado"
           healthStatus = "pending_first_sync";
         } else if (hasStaleData) {
           healthStatus = "stale";
         }
       }
     } else {
-      // Conectado mas sem contas vinculadas
       healthStatus = "pending_first_sync";
     }
 
-    // Monta resposta
     console.log(`[meta-get-sync-status] Preparing response with ${adAccounts?.length || 0} ad accounts`);
 
     const response = {
@@ -265,9 +277,7 @@ Deno.serve(async (req: Request) => {
       } : null,
       health_status: healthStatus,
       ad_accounts: adAccounts?.map((acc) => {
-        // Busca o sync state correspondente para obter last_success_at
         const syncState = syncStates?.find((s) => s.meta_ad_account_id === acc.meta_ad_account_id);
-        // Busca metricas do ultimo job completado
         const lastJobMetrics = lastCompletedJobsByAccount[acc.meta_ad_account_id];
 
         return {
@@ -275,10 +285,9 @@ Deno.serve(async (req: Request) => {
           meta_id: acc.meta_ad_account_id,
           name: acc.name,
           currency: acc.currency,
-          timezone: acc.timezone_name, // Mapeado corretamente
+          timezone: acc.timezone_name,
           status: acc.account_status,
           freshness: accountFreshness[acc.meta_ad_account_id] || null,
-          // Informacoes detalhadas de ultima sincronizacao
           last_sync_at: syncState?.last_success_at || lastJobMetrics?.ended_at || null,
           last_sync_duration: lastJobMetrics?.duration_seconds || null,
           last_sync_records_count: lastJobMetrics?.total_records_synced || null,
