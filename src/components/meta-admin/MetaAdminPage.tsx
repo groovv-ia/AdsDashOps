@@ -27,6 +27,7 @@ import {
   AdAccount,
   SyncStatusResponse,
 } from '../../lib/services/MetaSystemUserService';
+import { supabase } from '../../lib/supabase';
 
 interface ConnectionStatus {
   connected: boolean;
@@ -56,15 +57,59 @@ export const MetaAdminPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Contagem direta do banco
+  const [dbAccountCount, setDbAccountCount] = useState<number | null>(null);
+
   // Carrega status inicial
   useEffect(() => {
     loadSyncStatus();
+    loadDirectAccountCount();
   }, []);
+
+  /**
+   * Busca diretamente do banco de dados o número real de contas salvas
+   * Isso nos dá visibilidade sobre o que realmente está armazenado
+   */
+  const loadDirectAccountCount = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Busca workspace do usuário
+      const { data: workspace } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('owner_id', user.id)
+        .maybeSingle();
+
+      if (!workspace) {
+        console.log('[MetaAdminPage] Workspace não encontrado');
+        return;
+      }
+
+      // Conta quantas contas existem no banco
+      const { count, error } = await supabase
+        .from('meta_ad_accounts')
+        .select('*', { count: 'exact', head: true })
+        .eq('workspace_id', workspace.id);
+
+      if (error) {
+        console.error('[MetaAdminPage] Erro ao contar contas no banco:', error);
+      } else {
+        console.log(`[MetaAdminPage] Contas no banco de dados: ${count}`);
+        setDbAccountCount(count);
+      }
+    } catch (err) {
+      console.error('[MetaAdminPage] Erro ao buscar contagem direta:', err);
+    }
+  };
 
   const loadSyncStatus = async () => {
     setLoadingStatus(true);
     try {
       const status = await getMetaSyncStatus();
+      console.log('[MetaAdminPage] Status completo recebido:', status);
+      console.log('[MetaAdminPage] Contas no status:', status.ad_accounts?.length || 0);
 
       if (status.error) {
         console.error('Erro ao carregar status:', status.error);
@@ -83,6 +128,7 @@ export const MetaAdminPage: React.FC = () => {
         }
 
         if (status.ad_accounts.length > 0) {
+          console.log('[MetaAdminPage] Mapeando contas para exibição');
           setAdAccounts(
             status.ad_accounts.map((acc) => ({
               id: acc.meta_id,
@@ -92,6 +138,9 @@ export const MetaAdminPage: React.FC = () => {
               status: acc.status,
             }))
           );
+        } else {
+          console.log('[MetaAdminPage] Nenhuma conta encontrada no status');
+          setAdAccounts([]);
         }
       }
     } catch (err) {
@@ -127,9 +176,10 @@ export const MetaAdminPage: React.FC = () => {
         );
         setSystemUserToken('');
 
-        // Recarrega lista de contas
+        // Recarrega lista de contas e contagem direta
         await loadAdAccounts();
         await loadSyncStatus();
+        await loadDirectAccountCount();
       } else {
         setError(result.error || 'Erro ao validar conexao');
         if (result.missing_scopes && result.missing_scopes.length > 0) {
@@ -155,12 +205,32 @@ export const MetaAdminPage: React.FC = () => {
         console.error('Erro ao listar contas:', result.error);
       } else {
         setAdAccounts(result.adaccounts);
+        console.log(`[MetaAdminPage] Contas carregadas via Edge Function: ${result.adaccounts.length}`);
       }
     } catch (err) {
       console.error('Erro ao listar contas:', err);
     } finally {
       setLoadingAccounts(false);
     }
+  };
+
+  /**
+   * Força um refresh completo de todos os dados
+   * Útil para verificar se as Edge Functions foram atualizadas
+   */
+  const handleForceRefresh = async () => {
+    console.log('[MetaAdminPage] Forçando refresh completo...');
+    setError(null);
+    setSuccess(null);
+
+    await Promise.all([
+      loadAdAccounts(),
+      loadSyncStatus(),
+      loadDirectAccountCount(),
+    ]);
+
+    setSuccess('Dados atualizados com sucesso!');
+    setTimeout(() => setSuccess(null), 3000);
   };
 
   const getHealthStatusColor = (status: string) => {
@@ -218,10 +288,21 @@ export const MetaAdminPage: React.FC = () => {
           </div>
         </div>
 
-        <Button variant="outline" onClick={loadSyncStatus} disabled={loadingStatus}>
-          <RefreshCw className={`w-4 h-4 mr-2 ${loadingStatus ? 'animate-spin' : ''}`} />
-          Atualizar
-        </Button>
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" onClick={loadSyncStatus} disabled={loadingStatus}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${loadingStatus ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
+
+          <Button
+            onClick={handleForceRefresh}
+            disabled={loadingStatus || loadingAccounts}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${(loadingStatus || loadingAccounts) ? 'animate-spin' : ''}`} />
+            Refresh Completo
+          </Button>
+        </div>
       </div>
 
       {/* Status Card */}
@@ -246,6 +327,11 @@ export const MetaAdminPage: React.FC = () => {
                 {connectionStatus.adAccountsCount !== undefined && (
                   <p className="text-sm text-gray-600">
                     {connectionStatus.adAccountsCount} conta(s) de anuncios
+                  </p>
+                )}
+                {dbAccountCount !== null && (
+                  <p className="text-xs text-blue-600 font-mono mt-1">
+                    [Debug] {dbAccountCount} contas salvas no banco de dados
                   </p>
                 )}
                 {connectionStatus.lastValidated && (
