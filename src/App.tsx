@@ -121,6 +121,17 @@ function AppContent() {
     return () => window.removeEventListener('syncCompleted', handleSyncCompleted as EventListener);
   }, []);
 
+  // Listen for navigation requests from child components
+  useEffect(() => {
+    const handleNavigate = (event: CustomEvent) => {
+      console.log('Navegando para página:', event.detail.page);
+      setCurrentPage(event.detail.page);
+    };
+
+    window.addEventListener('navigateTo', handleNavigate as EventListener);
+    return () => window.removeEventListener('navigateTo', handleNavigate as EventListener);
+  }, []);
+
   // Filter data based on current filters
   const filteredCampaigns = mockCampaigns.filter(campaign => {
     if (filters.platforms.length > 0 && !filters.platforms.includes(campaign.platform.toLowerCase())) return false;

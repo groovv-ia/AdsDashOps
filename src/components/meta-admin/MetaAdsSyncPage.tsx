@@ -213,15 +213,7 @@ export const MetaAdsSyncPage: React.FC = () => {
   const loadStatus = async () => {
     setLoading(true);
     try {
-      console.log('[MetaAdsSyncPage] Carregando status para client:', selectedClient?.id);
       const status = await getMetaSyncStatus(selectedClient?.id);
-      console.log('[MetaAdsSyncPage] Status recebido:', {
-        connection: status.connection,
-        ad_accounts_count: status.ad_accounts?.length || 0,
-        ad_accounts: status.ad_accounts,
-        health_status: status.health_status,
-        error: status.error
-      });
       setSyncStatus(status);
     } catch (err) {
       console.error('[MetaAdsSyncPage] Erro ao carregar status:', err);
@@ -566,13 +558,7 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Transforma contas em formato para os cards
   const accountCards: AdAccountData[] = useMemo(() => {
-    console.log('[MetaAdsSyncPage] Criando accountCards. syncStatus:', syncStatus);
-    console.log('[MetaAdsSyncPage] ad_accounts:', syncStatus?.ad_accounts);
-
-    if (!syncStatus?.ad_accounts) {
-      console.log('[MetaAdsSyncPage] Nenhuma conta encontrada no syncStatus');
-      return [];
-    }
+    if (!syncStatus?.ad_accounts) return [];
 
     return syncStatus.ad_accounts.map((acc) => {
       // Determina status de sincronizacao
@@ -731,7 +717,9 @@ export const MetaAdsSyncPage: React.FC = () => {
           <p className="text-gray-600 mb-4">
             Configure a conexao com o Meta Ads antes de sincronizar dados.
           </p>
-          <Button onClick={() => (window.location.href = '#meta-admin')}>
+          <Button onClick={() => {
+            window.dispatchEvent(new CustomEvent('navigateTo', { detail: { page: 'meta-admin' } }));
+          }}>
             <Settings className="w-4 h-4 mr-2" />
             Configurar Conexao
           </Button>
@@ -847,7 +835,12 @@ export const MetaAdsSyncPage: React.FC = () => {
               Sua conexão com o Meta está ativa, mas você precisa vincular as contas de anúncio que deseja sincronizar.
             </p>
             <div className="space-y-3">
-              <Button onClick={() => (window.location.href = '#meta-admin')} className="mx-auto">
+              <Button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('navigateTo', { detail: { page: 'meta-admin' } }));
+                }}
+                className="mx-auto"
+              >
                 <Layers className="w-4 h-4 mr-2" />
                 Vincular Contas de Anúncio
               </Button>
