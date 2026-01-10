@@ -213,10 +213,19 @@ export const MetaAdsSyncPage: React.FC = () => {
   const loadStatus = async () => {
     setLoading(true);
     try {
+      console.log('[MetaAdsSyncPage] Carregando status para client:', selectedClient?.id);
       const status = await getMetaSyncStatus(selectedClient?.id);
+      console.log('[MetaAdsSyncPage] Status recebido:', {
+        connection: status.connection,
+        ad_accounts_count: status.ad_accounts?.length || 0,
+        ad_accounts: status.ad_accounts,
+        health_status: status.health_status,
+        error: status.error
+      });
       setSyncStatus(status);
     } catch (err) {
-      console.error('Erro ao carregar status:', err);
+      console.error('[MetaAdsSyncPage] Erro ao carregar status:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao carregar status');
     } finally {
       setLoading(false);
     }
@@ -557,7 +566,13 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Transforma contas em formato para os cards
   const accountCards: AdAccountData[] = useMemo(() => {
-    if (!syncStatus?.ad_accounts) return [];
+    console.log('[MetaAdsSyncPage] Criando accountCards. syncStatus:', syncStatus);
+    console.log('[MetaAdsSyncPage] ad_accounts:', syncStatus?.ad_accounts);
+
+    if (!syncStatus?.ad_accounts) {
+      console.log('[MetaAdsSyncPage] Nenhuma conta encontrada no syncStatus');
+      return [];
+    }
 
     return syncStatus.ad_accounts.map((acc) => {
       // Determina status de sincronizacao
@@ -824,17 +839,22 @@ export const MetaAdsSyncPage: React.FC = () => {
         {/* Grid de Cards de Contas */}
         {accountCards.length === 0 ? (
           <Card className="text-center py-12">
-            <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Nenhuma conta encontrada
+              Nenhuma conta de anúncio vinculada
             </h3>
             <p className="text-gray-600 mb-4">
-              Verifique a configuracao da conexao com o Meta Ads.
+              Sua conexão com o Meta está ativa, mas você precisa vincular as contas de anúncio que deseja sincronizar.
             </p>
-            <Button variant="outline" onClick={() => (window.location.href = '#meta-admin')}>
-              <Settings className="w-4 h-4 mr-2" />
-              Configurar Conexao
-            </Button>
+            <div className="space-y-3">
+              <Button onClick={() => (window.location.href = '#meta-admin')} className="mx-auto">
+                <Layers className="w-4 h-4 mr-2" />
+                Vincular Contas de Anúncio
+              </Button>
+              <p className="text-sm text-gray-500">
+                Vá para "Meta Admin" e clique em "Listar e Vincular Contas"
+              </p>
+            </div>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
