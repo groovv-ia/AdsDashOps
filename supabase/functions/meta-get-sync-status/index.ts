@@ -246,14 +246,12 @@ Deno.serve(async (req: Request) => {
           meta_id: acc.meta_ad_account_id,
           name: acc.name,
           currency: acc.currency,
-          timezone: acc.timezone_name, // Mapeado corretamente
+          timezone: acc.timezone_name,
           status: acc.account_status,
           freshness: accountFreshness[acc.meta_ad_account_id] || null,
-          // Informacoes detalhadas de ultima sincronizacao (null se nunca sincronizou)
           last_sync_at: syncState?.last_success_at || lastJobMetrics?.ended_at || null,
           last_sync_duration: lastJobMetrics?.duration_seconds || null,
           last_sync_records_count: lastJobMetrics?.total_records_synced || null,
-          // Indica se a conta tem configuração de sync
           has_sync_config: !!syncState,
         };
       }) || [],
