@@ -22,11 +22,13 @@ import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPag
 import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
 import { WorkspacesPage } from './components/workspaces/WorkspacesPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
+import { SetupPage, SetupAlert, FirstTimeSetupWizard } from './components/setup';
 import { useAuth } from './hooks/useAuth';
+import { useFirstTimeSetup } from './hooks/useFirstTimeSetup';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
 import { useDashboardData } from './hooks/useDashboardData';
-import { isDemoMode } from './lib/supabase';
+import { isDemoMode, supabase } from './lib/supabase';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
 import { AlertTriangle } from 'lucide-react';
@@ -36,6 +38,14 @@ function AppContent() {
   const { user, loading } = useAuth();
   const { notifications, unreadCount } = useNotifications();
   const { settings: systemSettings } = useSystemSettings();
+
+  // Hook de setup para detectar primeiro acesso
+  const {
+    loading: setupLoading,
+    needsSetup,
+    setupStatus,
+    refetchStatus,
+  } = useFirstTimeSetup(user?.id || null);
 
   // Hook para gerenciar dados do dashboard (reais ou mocks)
   const {
@@ -52,6 +62,8 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState('meta-admin');
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     platforms: [] as string[],
     campaigns: [] as string[],
@@ -62,6 +74,36 @@ function AppContent() {
       new Date()
     ] as [Date | null, Date | null]
   });
+
+  // Carrega workspace e abre wizard automaticamente se necessário
+  useEffect(() => {
+    const loadWorkspaceAndCheckSetup = async () => {
+      if (!user) return;
+
+      try {
+        // Busca workspace do usuário
+        const { data: workspaceData } = await supabase.from('workspace_members')
+          .select('workspace_id')
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (workspaceData) {
+          setWorkspaceId(workspaceData.workspace_id);
+        }
+
+        // Abre wizard automaticamente se precisa de setup
+        // Mas só se não estiver em uma página específica já
+        if (needsSetup && currentPage === 'meta-admin') {
+          setShowSetupWizard(true);
+        }
+      } catch (err) {
+        console.error('Error loading workspace:', err);
+      }
+    };
+
+    loadWorkspaceAndCheckSetup();
+  }, [user, needsSetup]);
 
   // Handle OAuth callback
   useEffect(() => {
@@ -368,6 +410,8 @@ function AppContent() {
         return <SupportPage />;
       case 'workspaces':
         return <WorkspacesPage />;
+      case 'setup':
+        return <SetupPage />;
       default:
         return <MetaAdminPage />;
     }
@@ -376,11 +420,12 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       <div className="flex h-screen overflow-hidden">
-        <Sidebar 
-          isOpen={sidebarOpen} 
+        <Sidebar
+          isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           currentPage={currentPage}
           onPageChange={setCurrentPage}
+          showSetupLink={needsSetup}
         />
         
         <div className="flex-1 flex flex-col overflow-hidden lg:ml-0">
@@ -390,7 +435,13 @@ function AppContent() {
             sidebarOpen={sidebarOpen}
             onPageChange={setCurrentPage}
           />
-          
+
+          {/* Setup Alert - aparece quando usuário precisa configurar */}
+          <SetupAlert
+            show={needsSetup && !showSetupWizard}
+            onClickSetup={() => setShowSetupWizard(true)}
+          />
+
           <main className="flex-1 overflow-y-auto p-4 lg:p-6">
             <div className="max-w-7xl mx-auto space-y-6">
               {renderPageContent()}
@@ -405,6 +456,23 @@ function AppContent() {
       {/* Cookie Settings Button and Modal - Available everywhere */}
       <CookieSettingsButton />
       <CookiePreferencesModal />
+
+      {/* Setup Wizard - abre automaticamente se necessário */}
+      {showSetupWizard && workspaceId && user && (
+        <FirstTimeSetupWizard
+          onClose={() => {
+            setShowSetupWizard(false);
+            refetchStatus();
+          }}
+          onComplete={() => {
+            setShowSetupWizard(false);
+            refetchStatus();
+          }}
+          workspaceId={workspaceId}
+          userId={user.id}
+          userEmail={user.email || ''}
+        />
+      )}
     </div>
   );
 }

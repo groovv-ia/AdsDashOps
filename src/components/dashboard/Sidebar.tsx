@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Headphones, Target, Link2, RefreshCw, Building2 } from 'lucide-react';
+import { Settings, Headphones, Target, Link2, RefreshCw, Building2, Rocket } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 
 interface SidebarProps {
@@ -7,6 +7,7 @@ interface SidebarProps {
   onClose: () => void;
   currentPage?: string;
   onPageChange?: (page: string) => void;
+  showSetupLink?: boolean; // Se deve mostrar o link de configuração inicial
 }
 
 // Itens do menu de navegacao principal
@@ -23,7 +24,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   onClose,
   currentPage = 'meta-admin',
-  onPageChange
+  onPageChange,
+  showSetupLink = false
 }) => {
   const handlePageClick = (page: string) => {
     if (onPageChange) {
@@ -75,6 +77,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <nav className="p-4 flex-1 overflow-y-auto">
             <ul className="space-y-2">
+              {/* Link de Configuração Inicial - apenas se showSetupLink for true */}
+              {showSetupLink && (
+                <li>
+                  <button
+                    onClick={() => handlePageClick('setup')}
+                    className={`
+                      w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-left transition-colors
+                      ${currentPage === 'setup'
+                        ? 'bg-gradient-to-r from-yellow-500/10 to-orange-500/10 text-yellow-600 border-r-2 border-yellow-500'
+                        : 'text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 border border-yellow-200'
+                      }
+                    `}
+                  >
+                    <Rocket className="w-5 h-5 flex-shrink-0" />
+                    <span className="font-semibold">Configuração Inicial</span>
+                  </button>
+                </li>
+              )}
+
               {menuItems.map((item, index) => (
                 <li key={index}>
                   <button
@@ -82,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     className={`
                       w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-left transition-colors
                       ${currentPage === item.page
-                        ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-r-2 border-blue-500' 
+                        ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-r-2 border-blue-500'
                         : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                       }
                     `}

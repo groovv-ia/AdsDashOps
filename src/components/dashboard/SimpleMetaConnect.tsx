@@ -19,7 +19,24 @@ import { supabase } from '../../lib/supabase';
  * - meta_ad_accounts: Contas de anúncios vinculadas ao workspace
  * - oauth_tokens: Tokens OAuth (access_token e system_user_token)
  */
-export const SimpleMetaConnect: React.FC = () => {
+
+// Props opcionais para integração com wizard e outros componentes
+interface SimpleMetaConnectProps {
+  // Callback chamado quando a conexão é concluída com sucesso
+  onConnectionSuccess?: (accounts: Array<{ id: string; name: string }>) => void;
+
+  // Callback chamado quando o usuário cancela o processo
+  onCancel?: () => void;
+
+  // Se true, oculta o componente quando já está conectado
+  hideIfConnected?: boolean;
+}
+
+export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
+  onConnectionSuccess,
+  onCancel,
+  hideIfConnected = false,
+}) => {
   // Estados para controle do fluxo
   const [status, setStatus] = useState<'disconnected' | 'connecting' | 'selecting' | 'connected'>('disconnected');
   const [loading, setLoading] = useState(false);
@@ -528,6 +545,18 @@ export const SimpleMetaConnect: React.FC = () => {
 
       // Recarrega a conexão
       await checkExistingConnection();
+
+      // Chama callback de sucesso se fornecido
+      if (onConnectionSuccess) {
+        const connectedAccounts = selectedAccountsIds.map(accountId => {
+          const account = accounts.find(acc => acc.id === accountId);
+          return {
+            id: accountId,
+            name: account?.name || 'Unknown Account',
+          };
+        });
+        onConnectionSuccess(connectedAccounts);
+      }
     } catch (err: any) {
       console.error('❌ Erro ao salvar conexão:', err);
       setError(err.message || 'Erro ao conectar');
@@ -621,6 +650,12 @@ export const SimpleMetaConnect: React.FC = () => {
   /**
    * Renderiza o estado atual da conexão
    */
+
+  // Se hideIfConnected é true e já está conectado, não renderiza nada
+  if (hideIfConnected && status === 'connected') {
+    return null;
+  }
+
   return (
     <Card>
       <div className="flex items-center justify-between mb-6">
@@ -753,6 +788,11 @@ export const SimpleMetaConnect: React.FC = () => {
                 setSelectedAccountsIds([]);
                 sessionStorage.removeItem('meta_temp_token');
                 sessionStorage.removeItem('meta_temp_business_id');
+
+                // Chama callback de cancelamento se fornecido
+                if (onCancel) {
+                  onCancel();
+                }
               }}
               disabled={loading}
             >
