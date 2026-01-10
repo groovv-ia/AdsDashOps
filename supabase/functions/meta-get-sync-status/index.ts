@@ -85,7 +85,8 @@ Deno.serve(async (req: Request) => {
       .eq("workspace_id", workspace.id)
       .maybeSingle();
 
-    // 2. Busca ad accounts - corrigido: usa timezone_name ao inves de timezone
+    // 2. Busca TODAS as ad accounts do workspace - removido filtro por client_id
+    // Isso garante que todas as contas aparecem na página, mesmo sem sync configurado
     const { data: adAccounts, error: adAccountsError } = await supabaseAdmin
       .from("meta_ad_accounts")
       .select("id, meta_ad_account_id, name, currency, timezone_name, account_status")
@@ -95,19 +96,20 @@ Deno.serve(async (req: Request) => {
       console.error("Erro ao buscar ad accounts:", adAccountsError);
     }
 
-    // 3. Busca sync states
+    // 3. Busca sync states - MANTÉM filtro por client_id apenas nos estados
+    // Isso permite filtrar dados de sincronização sem esconder contas
     let syncStatesQuery = supabaseAdmin
       .from("meta_sync_state")
       .select("*");
 
-    // Filtra por workspace apenas se a tabela tiver essa coluna
-    // Como a tabela pode nao ter workspace_id, vamos filtrar pelas contas do workspace
+    // Filtra por workspace através das contas
     const accountIds = adAccounts?.map((a) => a.meta_ad_account_id) || [];
-    
+
     if (accountIds.length > 0) {
       syncStatesQuery = syncStatesQuery.in("meta_ad_account_id", accountIds);
     }
 
+    // Filtro por client_id aplicado APENAS aos sync states, não às contas
     if (clientId) {
       syncStatesQuery = syncStatesQuery.eq("client_id", clientId);
     }
@@ -219,6 +221,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // Monta resposta
+    // IMPORTANTE: Retorna TODAS as contas do workspace, independente de terem sync_state
+    // Contas sem sync_state terão valores null, mas aparecerão na lista
     const response = {
       workspace: {
         id: workspace.id,
@@ -232,7 +236,7 @@ Deno.serve(async (req: Request) => {
       } : null,
       health_status: healthStatus,
       ad_accounts: adAccounts?.map((acc) => {
-        // Busca o sync state correspondente para obter last_success_at
+        // Busca o sync state correspondente (pode não existir para contas recém-vinculadas)
         const syncState = syncStates?.find((s) => s.meta_ad_account_id === acc.meta_ad_account_id);
         // Busca metricas do ultimo job completado
         const lastJobMetrics = lastCompletedJobsByAccount[acc.meta_ad_account_id];
@@ -245,10 +249,12 @@ Deno.serve(async (req: Request) => {
           timezone: acc.timezone_name, // Mapeado corretamente
           status: acc.account_status,
           freshness: accountFreshness[acc.meta_ad_account_id] || null,
-          // Informacoes detalhadas de ultima sincronizacao
+          // Informacoes detalhadas de ultima sincronizacao (null se nunca sincronizou)
           last_sync_at: syncState?.last_success_at || lastJobMetrics?.ended_at || null,
           last_sync_duration: lastJobMetrics?.duration_seconds || null,
           last_sync_records_count: lastJobMetrics?.total_records_synced || null,
+          // Indica se a conta tem configuração de sync
+          has_sync_config: !!syncState,
         };
       }) || [],
       sync_states: syncStates?.map((state) => ({

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, AlertCircle, Loader, RefreshCw } from 'lucide-react';
+import { CheckCircle, AlertCircle, Loader, RefreshCw, XCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { supabase } from '../../lib/supabase';
@@ -22,6 +22,9 @@ export const SimpleMetaConnect: React.FC = () => {
   // Estados para progresso da sincronização
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Estado para Token System User
+  const [systemUserToken, setSystemUserToken] = useState<string>('');
 
   // Verificar se já existe conexão Meta ativa
   useEffect(() => {
@@ -95,6 +98,7 @@ export const SimpleMetaConnect: React.FC = () => {
 
   /**
    * Verifica se já existe uma conexão Meta ativa para este usuário
+   * e carrega o Token System User salvo
    */
   const checkExistingConnection = async () => {
     try {
@@ -114,6 +118,17 @@ export const SimpleMetaConnect: React.FC = () => {
       if (data) {
         setConnectionData(data);
         setStatus('connected');
+
+        // Busca o Token System User salvo no banco
+        const { data: tokenData } = await supabase
+          .from('oauth_tokens')
+          .select('system_user_token')
+          .eq('connection_id', data.id)
+          .maybeSingle();
+
+        if (tokenData?.system_user_token) {
+          setSystemUserToken(tokenData.system_user_token);
+        }
       }
     } catch (err) {
       console.error('Erro ao verificar conexão existente:', err);
@@ -389,6 +404,7 @@ export const SimpleMetaConnect: React.FC = () => {
 
   /**
    * Finaliza a conexão salvando a conta selecionada no banco
+   * Salva também o Token System User se fornecido
    */
   const handleAccountSelect = async (accountId: string) => {
     setLoading(true);
@@ -434,7 +450,7 @@ export const SimpleMetaConnect: React.FC = () => {
         throw new Error('Token de acesso inválido ou muito curto');
       }
 
-      // Salva token OAuth de forma segura
+      // Salva token OAuth de forma segura, incluindo o Token System User se fornecido
       const { error: tokenError } = await supabase
         .from('oauth_tokens')
         .insert({
@@ -442,6 +458,7 @@ export const SimpleMetaConnect: React.FC = () => {
           connection_id: connection.id,
           platform: 'meta',
           access_token: cleanToken,
+          system_user_token: systemUserToken.trim() || null, // Salva o Token System User
           account_id: selectedAcc.id,
           expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 dias
         });
@@ -462,6 +479,32 @@ export const SimpleMetaConnect: React.FC = () => {
     } catch (err: any) {
       console.error('Erro ao salvar conexão:', err);
       setError(err.message || 'Erro ao conectar');
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Salva ou atualiza o Token System User no banco de dados
+   */
+  const handleSaveSystemUserToken = async () => {
+    if (!connectionData) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { error } = await supabase
+        .from('oauth_tokens')
+        .update({ system_user_token: systemUserToken.trim() || null })
+        .eq('connection_id', connectionData.id);
+
+      if (error) throw error;
+
+      alert('Token System User salvo com sucesso!');
+    } catch (err: any) {
+      console.error('Erro ao salvar Token System User:', err);
+      setError(err.message || 'Erro ao salvar token');
+    } finally {
       setLoading(false);
     }
   };
@@ -685,6 +728,24 @@ export const SimpleMetaConnect: React.FC = () => {
       {status === 'selecting' && (
         <div>
           <h4 className="font-medium text-gray-900 mb-3">Selecione uma conta</h4>
+
+          {/* Campo para Token System User (opcional) */}
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Token System User (opcional)
+            </label>
+            <input
+              type="text"
+              value={systemUserToken}
+              onChange={(e) => setSystemUserToken(e.target.value)}
+              placeholder="Cole aqui o Token System User do Meta"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
+            />
+            <p className="text-xs text-gray-600 mt-2">
+              💡 Token de longa duração para sincronização avançada (pode ser adicionado depois)
+            </p>
+          </div>
+
           <div className="space-y-2 mb-4">
             {accounts.map((account) => (
               <button
@@ -778,6 +839,41 @@ export const SimpleMetaConnect: React.FC = () => {
               Última sincronização: {new Date(connectionData.last_sync).toLocaleString('pt-BR')}
             </p>
           </div>
+
+          {/* Campo para Token System User - visível mesmo após conectado */}
+          <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Token System User
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={systemUserToken}
+                onChange={(e) => setSystemUserToken(e.target.value)}
+                placeholder="Cole aqui o Token System User do Meta"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveSystemUserToken}
+                disabled={loading || !systemUserToken.trim()}
+              >
+                Salvar
+              </Button>
+            </div>
+            <p className="text-xs text-gray-600 mt-2">
+              {systemUserToken ? (
+                <span className="flex items-center gap-1 text-green-600">
+                  <CheckCircle className="w-3 h-3" />
+                  Token configurado e salvo
+                </span>
+              ) : (
+                '💡 Token de longa duração para sincronização avançada (opcional)'
+              )}
+            </p>
+          </div>
+
           <div className="flex space-x-2">
             <Button
               variant="outline"
