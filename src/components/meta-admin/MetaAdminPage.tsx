@@ -28,6 +28,7 @@ import {
   SyncStatusResponse,
 } from '../../lib/services/MetaSystemUserService';
 import { supabase } from '../../lib/supabase';
+import { forceSessionRefresh, isRLSError } from '../../utils/sessionRefresh';
 
 interface ConnectionStatus {
   connected: boolean;
@@ -136,10 +137,34 @@ export const MetaAdminPage: React.FC = () => {
         console.error('[MetaAdminPage] Mensagem:', error.message);
         console.error('[MetaAdminPage] Detalhes:', error.details);
 
-        // Se o erro for de RLS (permissão negada), sugere ação
-        if (error.code === 'PGRST116' || error.message?.includes('policy')) {
-          console.error('[MetaAdminPage] 🔒 ERRO DE RLS: As políticas de segurança estão bloqueando o acesso');
-          console.error('[MetaAdminPage] SOLUÇÃO: Faça logout e login novamente para renovar as permissões');
+        // Se o erro for de RLS (permissão negada), tenta renovar sessão automaticamente
+        if (isRLSError(error)) {
+          console.error('[MetaAdminPage] 🔒 ERRO DE RLS DETECTADO - Tentando renovar sessão...');
+
+          const refreshed = await forceSessionRefresh();
+
+          if (refreshed) {
+            console.log('[MetaAdminPage] ✓ Sessão renovada, tentando contar novamente...');
+            // Aguarda 500ms para garantir que o novo token foi propagado
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Tenta contar novamente com o novo token
+            const { count: retryCount, error: retryError } = await supabase
+              .from('meta_ad_accounts')
+              .select('*', { count: 'exact', head: true })
+              .eq('workspace_id', workspaceId);
+
+            if (retryError) {
+              console.error('[MetaAdminPage] ❌ Ainda com erro após refresh:', retryError);
+              setDbAccountCount(null);
+            } else {
+              console.log(`[MetaAdminPage] ✓✓ SUCESSO após refresh! Contas: ${retryCount}`);
+              setDbAccountCount(retryCount);
+              return; // Sai da função com sucesso
+            }
+          } else {
+            console.error('[MetaAdminPage] ❌ Falha ao renovar sessão');
+          }
         }
 
         setDbAccountCount(null);
