@@ -388,7 +388,12 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
    * Salva em: meta_connections, meta_ad_accounts e oauth_tokens
    */
   const handleFinishSetup = async () => {
+    console.log('🎯 [handleFinishSetup] Iniciando...');
+    console.log('🎯 [handleFinishSetup] selectedAccountsIds:', selectedAccountsIds);
+    console.log('🎯 [handleFinishSetup] Callback presente:', !!onConnectionSuccess);
+
     if (selectedAccountsIds.length === 0) {
+      console.error('❌ [handleFinishSetup] Nenhuma conta selecionada');
       setError('Selecione pelo menos uma conta de anúncios');
       return;
     }
@@ -397,13 +402,17 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
     setError(null);
 
     try {
+      console.log('🎯 [handleFinishSetup] Buscando usuário autenticado...');
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
+      console.log('✅ [handleFinishSetup] Usuário:', user.id);
 
       const accessToken = sessionStorage.getItem('meta_temp_token');
       if (!accessToken) throw new Error('Token não encontrado');
+      console.log('✅ [handleFinishSetup] Token encontrado');
 
       const businessId = sessionStorage.getItem('meta_temp_business_id') || businessManagerId;
+      console.log('✅ [handleFinishSetup] Business ID:', businessId);
 
       // Busca ou cria workspace
       let workspace = workspaceId;
@@ -554,13 +563,14 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
         if (tokenError) throw tokenError;
       }
 
-      console.log('✅ Token OAuth salvo');
+      console.log('✅ [handleFinishSetup] Token OAuth salvo');
 
       // Limpa tokens temporários
       sessionStorage.removeItem('meta_temp_token');
       sessionStorage.removeItem('meta_temp_business_id');
 
       // Prepara dados das contas conectadas ANTES de qualquer mudança de estado
+      console.log('🎯 [handleFinishSetup] Preparando dados das contas...');
       const connectedAccounts = selectedAccountsIds.map(accountId => {
         const account = accounts.find(acc => acc.id === accountId);
         return {
@@ -568,28 +578,44 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
           name: account?.name || 'Unknown Account',
         };
       });
+      console.log('✅ [handleFinishSetup] Contas preparadas:', connectedAccounts);
 
       // Atualiza estado
+      console.log('🎯 [handleFinishSetup] Atualizando estado da conexão...');
       setConnectionData({ id: connectionId, workspace_id: workspace, status: 'connected' });
       setStatus('connected');
+      console.log('✅ [handleFinishSetup] Estado atualizado');
 
-      // Chama callback de sucesso IMEDIATAMENTE se fornecido (para wizard continuar)
-      if (onConnectionSuccess) {
-        console.log('🚀 Chamando callback onConnectionSuccess com contas:', connectedAccounts);
-        onConnectionSuccess(connectedAccounts);
-      }
+      setLoading(false);
 
       // Só mostra alert se não houver callback (uso standalone)
       if (!onConnectionSuccess) {
         alert(`✅ Conexão Meta configurada com sucesso!\n\n${selectedAccountsIds.length} conta(s) vinculada(s) ao workspace.`);
       }
 
+      // Chama callback de sucesso em um pequeno delay para garantir que o estado foi atualizado
+      if (onConnectionSuccess) {
+        console.log('🚀🚀🚀 [handleFinishSetup] CHAMANDO CALLBACK onConnectionSuccess');
+        console.log('🚀 [handleFinishSetup] Contas enviadas:', connectedAccounts);
+
+        // Usa setTimeout para garantir que não há race condition
+        setTimeout(() => {
+          try {
+            console.log('🚀 [handleFinishSetup] Executando callback agora...');
+            onConnectionSuccess(connectedAccounts);
+            console.log('✅ [handleFinishSetup] Callback executado com sucesso!');
+          } catch (callbackError) {
+            console.error('❌ [handleFinishSetup] Erro ao executar callback:', callbackError);
+          }
+        }, 100);
+      } else {
+        console.log('⚠️ [handleFinishSetup] Nenhum callback fornecido');
+      }
+
       // Recarrega a conexão em segundo plano (não afeta o wizard)
       checkExistingConnection().catch(err => {
         console.error('Erro ao recarregar conexão:', err);
       });
-
-      setLoading(false);
     } catch (err: any) {
       console.error('❌ Erro ao salvar conexão:', err);
       setError(err.message || 'Erro ao conectar');
