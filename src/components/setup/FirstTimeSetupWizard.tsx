@@ -60,6 +60,9 @@ export const FirstTimeSetupWizard: React.FC<FirstTimeSetupWizardProps> = ({
   // Modo de organização escolhido
   const [setupMode, setSetupMode] = useState<SetupMode>('one-per-account');
 
+  // Feedback de sucesso na conexão
+  const [showConnectionSuccess, setShowConnectionSuccess] = useState(false);
+
   // Hook de automação
   const {
     loading,
@@ -85,8 +88,12 @@ export const FirstTimeSetupWizard: React.FC<FirstTimeSetupWizardProps> = ({
     // Marca step de connection como completo
     completeSetupStep(userId, workspaceId, 'connection');
 
-    // Avança para o passo 2
-    setCurrentStep(2);
+    // Mostra feedback de sucesso por 1.5 segundos antes de avançar
+    setShowConnectionSuccess(true);
+    setTimeout(() => {
+      setShowConnectionSuccess(false);
+      setCurrentStep(2);
+    }, 1500);
   };
 
   /**
@@ -225,11 +232,25 @@ export const FirstTimeSetupWizard: React.FC<FirstTimeSetupWizardProps> = ({
                 </p>
               </div>
 
-              <SimpleMetaConnect
-                onConnectionSuccess={handleMetaConnected}
-                onCancel={onClose}
-                hideIfConnected={false}
-              />
+              {/* Feedback de sucesso */}
+              {showConnectionSuccess && (
+                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center justify-center text-green-800">
+                    <CheckCircle className="w-5 h-5 mr-2" />
+                    <span className="font-medium">
+                      Conexão realizada com sucesso! Avançando...
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {!showConnectionSuccess && (
+                <SimpleMetaConnect
+                  onConnectionSuccess={handleMetaConnected}
+                  onCancel={onClose}
+                  hideIfConnected={false}
+                />
+              )}
             </div>
           )}
 

@@ -541,7 +541,10 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
       setStatus('connected');
       setLoading(false);
 
-      alert(`✅ Conexão Meta configurada com sucesso!\n\n${selectedAccountsIds.length} conta(s) vinculada(s) ao workspace.`);
+      // Só mostra alert se não houver callback (uso standalone)
+      if (!onConnectionSuccess) {
+        alert(`✅ Conexão Meta configurada com sucesso!\n\n${selectedAccountsIds.length} conta(s) vinculada(s) ao workspace.`);
+      }
 
       // Recarrega a conexão
       await checkExistingConnection();
