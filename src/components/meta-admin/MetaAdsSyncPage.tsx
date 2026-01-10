@@ -213,8 +213,9 @@ export const MetaAdsSyncPage: React.FC = () => {
   const loadStatus = async () => {
     setLoading(true);
     try {
-      console.log('[MetaAdsSyncPage] Carregando status para client:', selectedClient?.id);
-      const status = await getMetaSyncStatus(selectedClient?.id);
+      console.log('[MetaAdsSyncPage] Carregando status');
+      // NÃO passa client_id para obter TODAS as contas do workspace
+      const status = await getMetaSyncStatus();
       console.log('[MetaAdsSyncPage] Status recebido:', {
         connection: status.connection,
         ad_accounts_count: status.ad_accounts?.length || 0,

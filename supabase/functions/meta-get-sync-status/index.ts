@@ -95,22 +95,30 @@ Deno.serve(async (req: Request) => {
       console.error("Erro ao buscar ad accounts:", adAccountsError);
     }
 
+    console.log(`[meta-get-sync-status] workspace_id: ${workspace.id}`);
+    console.log(`[meta-get-sync-status] Found ${adAccounts?.length || 0} ad accounts`);
+    if (adAccounts && adAccounts.length > 0) {
+      console.log(`[meta-get-sync-status] First account:`, adAccounts[0]);
+    }
+
     // 3. Busca sync states
+    // IMPORTANTE: Busca TODOS os sync_states das contas do workspace
+    // Não filtra por client_id aqui, pois queremos mostrar todas as contas disponíveis
+    const accountIds = adAccounts?.map((a) => a.meta_ad_account_id) || [];
+
     let syncStatesQuery = supabaseAdmin
       .from("meta_sync_state")
       .select("*");
 
-    // Filtra por workspace apenas se a tabela tiver essa coluna
-    // Como a tabela pode nao ter workspace_id, vamos filtrar pelas contas do workspace
-    const accountIds = adAccounts?.map((a) => a.meta_ad_account_id) || [];
-    
     if (accountIds.length > 0) {
       syncStatesQuery = syncStatesQuery.in("meta_ad_account_id", accountIds);
     }
 
-    if (clientId) {
-      syncStatesQuery = syncStatesQuery.eq("client_id", clientId);
-    }
+    // Apenas filtra por client_id se explicitamente passado E se queremos filtrar contas específicas
+    // Para a página Meta Ads Sync, não passamos client_id para ver TODAS as contas
+    // if (clientId) {
+    //   syncStatesQuery = syncStatesQuery.eq("client_id", clientId);
+    // }
 
     const { data: syncStates } = await syncStatesQuery;
 
