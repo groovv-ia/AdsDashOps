@@ -37,6 +37,9 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
   onCancel,
   hideIfConnected = false,
 }) => {
+  // Debug: log quando componente é montado
+  console.log('🔧 [SimpleMetaConnect] Componente montado. Callback presente:', !!onConnectionSuccess);
+
   // Estados para controle do fluxo
   const [status, setStatus] = useState<'disconnected' | 'connecting' | 'selecting' | 'connected'>('disconnected');
   const [loading, setLoading] = useState(false);
@@ -173,6 +176,27 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
 
         if (tokenData?.system_user_token) {
           setSystemUserToken(tokenData.system_user_token);
+        }
+
+        // Se há callback e já está conectado (caso wizard), busca contas e chama callback
+        if (onConnectionSuccess) {
+          console.log('🔧 [SimpleMetaConnect] Conexão já existe e callback presente, buscando contas...');
+
+          // Busca contas vinculadas
+          const { data: metaAccounts } = await supabase
+            .from('meta_ad_accounts')
+            .select('ad_account_id, name')
+            .eq('workspace_id', workspace.id);
+
+          if (metaAccounts && metaAccounts.length > 0) {
+            const accountsList = metaAccounts.map(acc => ({
+              id: acc.ad_account_id,
+              name: acc.name,
+            }));
+
+            console.log('🚀 [SimpleMetaConnect] Chamando callback com contas existentes:', accountsList);
+            onConnectionSuccess(accountsList);
+          }
         }
       }
     } catch (err) {
@@ -536,30 +560,36 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
       sessionStorage.removeItem('meta_temp_token');
       sessionStorage.removeItem('meta_temp_business_id');
 
+      // Prepara dados das contas conectadas ANTES de qualquer mudança de estado
+      const connectedAccounts = selectedAccountsIds.map(accountId => {
+        const account = accounts.find(acc => acc.id === accountId);
+        return {
+          id: accountId,
+          name: account?.name || 'Unknown Account',
+        };
+      });
+
       // Atualiza estado
       setConnectionData({ id: connectionId, workspace_id: workspace, status: 'connected' });
       setStatus('connected');
-      setLoading(false);
+
+      // Chama callback de sucesso IMEDIATAMENTE se fornecido (para wizard continuar)
+      if (onConnectionSuccess) {
+        console.log('🚀 Chamando callback onConnectionSuccess com contas:', connectedAccounts);
+        onConnectionSuccess(connectedAccounts);
+      }
 
       // Só mostra alert se não houver callback (uso standalone)
       if (!onConnectionSuccess) {
         alert(`✅ Conexão Meta configurada com sucesso!\n\n${selectedAccountsIds.length} conta(s) vinculada(s) ao workspace.`);
       }
 
-      // Recarrega a conexão
-      await checkExistingConnection();
+      // Recarrega a conexão em segundo plano (não afeta o wizard)
+      checkExistingConnection().catch(err => {
+        console.error('Erro ao recarregar conexão:', err);
+      });
 
-      // Chama callback de sucesso se fornecido
-      if (onConnectionSuccess) {
-        const connectedAccounts = selectedAccountsIds.map(accountId => {
-          const account = accounts.find(acc => acc.id === accountId);
-          return {
-            id: accountId,
-            name: account?.name || 'Unknown Account',
-          };
-        });
-        onConnectionSuccess(connectedAccounts);
-      }
+      setLoading(false);
     } catch (err: any) {
       console.error('❌ Erro ao salvar conexão:', err);
       setError(err.message || 'Erro ao conectar');

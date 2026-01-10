@@ -82,15 +82,23 @@ export const FirstTimeSetupWizard: React.FC<FirstTimeSetupWizardProps> = ({
    * Handler quando Meta é conectado com sucesso (Passo 1)
    */
   const handleMetaConnected = (accounts: Array<{ id: string; name: string }>) => {
-    console.log('✅ Meta conectado com sucesso!', accounts);
+    console.log('🎉 [Wizard] handleMetaConnected chamado com contas:', accounts);
+    console.log('🎉 [Wizard] Quantidade de contas:', accounts.length);
+
     setConnectedAccounts(accounts);
 
     // Marca step de connection como completo
-    completeSetupStep(userId, workspaceId, 'connection');
+    completeSetupStep(userId, workspaceId, 'connection').then(() => {
+      console.log('✅ [Wizard] Step de connection marcado como completo');
+    }).catch(err => {
+      console.error('❌ [Wizard] Erro ao marcar step:', err);
+    });
 
     // Mostra feedback de sucesso por 1.5 segundos antes de avançar
+    console.log('🎉 [Wizard] Mostrando feedback de sucesso e avançando para passo 2 em 1.5s...');
     setShowConnectionSuccess(true);
     setTimeout(() => {
+      console.log('🎉 [Wizard] Avançando para passo 2');
       setShowConnectionSuccess(false);
       setCurrentStep(2);
     }, 1500);
