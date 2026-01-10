@@ -3,28 +3,39 @@ import { CheckCircle, AlertCircle, Loader, RefreshCw, XCircle } from 'lucide-rea
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { supabase } from '../../lib/supabase';
-import { MetaSyncService, SyncProgress } from '../../lib/services/MetaSyncService';
 
 /**
  * Componente simplificado para conexão com Meta Ads
- * Fluxo: Clicar → Autorizar no popup → Selecionar conta → Pronto!
+ *
+ * Fluxo corrigido:
+ * 1. OAuth → Obtém token
+ * 2. Busca informações do usuário Meta e Business Manager
+ * 3. Busca contas de anúncios
+ * 4. Usuário seleciona conta(s) e pode fornecer Token System User
+ * 5. Salva em meta_connections, meta_ad_accounts e oauth_tokens
+ *
+ * Estrutura de dados:
+ * - meta_connections: Conexão do workspace com Meta (business_manager_id, status, scopes)
+ * - meta_ad_accounts: Contas de anúncios vinculadas ao workspace
+ * - oauth_tokens: Tokens OAuth (access_token e system_user_token)
  */
 export const SimpleMetaConnect: React.FC = () => {
   // Estados para controle do fluxo
-  const [status, setStatus] = useState<'disconnected' | 'connecting' | 'selecting' | 'connected' | 'syncing'>('disconnected');
+  const [status, setStatus] = useState<'disconnected' | 'connecting' | 'selecting' | 'connected'>('disconnected');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
-  const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
+  const [selectedAccountsIds, setSelectedAccountsIds] = useState<string[]>([]);
   const [connectionData, setConnectionData] = useState<any>(null);
-  const [showDirectConnect, setShowDirectConnect] = useState(false);
-
-  // Estados para progresso da sincronização
-  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   // Estado para Token System User
   const [systemUserToken, setSystemUserToken] = useState<string>('');
+
+  // Informações do usuário Meta
+  const [metaUserId, setMetaUserId] = useState<string | null>(null);
+  const [metaUserName, setMetaUserName] = useState<string | null>(null);
+  const [businessManagerId, setBusinessManagerId] = useState<string | null>(null);
 
   // Verificar se já existe conexão Meta ativa
   useEffect(() => {
@@ -97,7 +108,7 @@ export const SimpleMetaConnect: React.FC = () => {
   }, []);
 
   /**
-   * Verifica se já existe uma conexão Meta ativa para este usuário
+   * Verifica se já existe uma conexão Meta ativa para este workspace
    * e carrega o Token System User salvo
    */
   const checkExistingConnection = async () => {
@@ -105,25 +116,42 @@ export const SimpleMetaConnect: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('data_connections')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('platform', 'Meta')
-        .eq('status', 'connected')
+      // Busca workspace do usuário
+      const { data: workspace } = await supabase
+        .from('workspaces')
+        .select('id, name')
+        .eq('owner_id', user.id)
         .maybeSingle();
 
-      if (error) throw error;
+      if (!workspace) {
+        console.log('⚠️ Nenhum workspace encontrado para o usuário');
+        return;
+      }
 
-      if (data) {
-        setConnectionData(data);
+      setWorkspaceId(workspace.id);
+
+      // Verifica se existe meta_connection para este workspace
+      const { data: metaConnection } = await supabase
+        .from('meta_connections')
+        .select('*')
+        .eq('workspace_id', workspace.id)
+        .maybeSingle();
+
+      if (metaConnection && metaConnection.status === 'connected') {
+        console.log('✅ Conexão Meta encontrada:', metaConnection);
+        setConnectionData(metaConnection);
         setStatus('connected');
+        setBusinessManagerId(metaConnection.business_manager_id);
 
         // Busca o Token System User salvo no banco
+        // O token está em oauth_tokens vinculado ao user_id com platform='meta'
         const { data: tokenData } = await supabase
           .from('oauth_tokens')
           .select('system_user_token')
-          .eq('connection_id', data.id)
+          .eq('user_id', user.id)
+          .eq('platform', 'meta')
+          .order('created_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         if (tokenData?.system_user_token) {
@@ -132,29 +160,6 @@ export const SimpleMetaConnect: React.FC = () => {
       }
     } catch (err) {
       console.error('Erro ao verificar conexão existente:', err);
-    }
-  };
-
-  /**
-   * Conecta diretamente usando o token do ambiente (para desenvolvimento/teste)
-   */
-  const handleDirectConnect = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const accessToken = import.meta.env.VITE_META_ACCESS_TOKEN;
-
-      if (!accessToken) {
-        throw new Error('Token de acesso não configurado no ambiente');
-      }
-
-      console.log('Conectando diretamente com token do ambiente...');
-      await fetchAccounts(accessToken);
-    } catch (err: any) {
-      console.error('Erro ao conectar:', err);
-      setError(err.message || 'Erro ao conectar');
-      setLoading(false);
     }
   };
 
@@ -181,7 +186,6 @@ export const SimpleMetaConnect: React.FC = () => {
     console.log('  - Redirect URI:', redirectUri);
     console.log('  - Scope:', scope);
     console.log('  - State:', state);
-    console.log('  - Current Origin:', window.location.origin);
 
     // Validação: Client ID obrigatório
     if (!clientId) {
@@ -206,40 +210,10 @@ export const SimpleMetaConnect: React.FC = () => {
     // Constrói URL de autorização do Facebook
     const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${state}`;
 
-    console.log('🚀 [Meta Connect] URL de autorização construída');
-    console.log('🚀 [Meta Connect] Tentando redirecionar para:', authUrl.substring(0, 100) + '...');
-
-    // Instruções em caso de erro
-    console.log('');
-    console.log('⚠️ [Meta Connect] SE RECEBER ERRO 400 (Bad Request):');
-    console.log('');
-    console.log('   CAUSA MAIS COMUM: URL de redirecionamento não autorizada');
-    console.log('');
-    console.log('   SOLUÇÃO PASSO A PASSO:');
-    console.log('   1. Acesse: https://developers.facebook.com/apps/' + clientId);
-    console.log('   2. Vá em: Use cases → Customize → Add');
-    console.log('   3. Selecione: "Other" → "Business Management"');
-    console.log('   4. Volte e vá em: Settings → Basic');
-    console.log('   5. Em "App Domains", adicione: adsops.bolt.host');
-    console.log('   6. Clique em "Add Platform" → "Website"');
-    console.log('   7. Em "Site URL", adicione: ' + redirectUri);
-    console.log('   8. Salve as alterações');
-    console.log('   9. Vá em: App Review → Permissions and Features');
-    console.log('   10. Certifique-se que estas permissões estão ativas:');
-    console.log('       - ads_management');
-    console.log('       - ads_read');
-    console.log('       - business_management');
-    console.log('');
-    console.log('   IMPORTANTE: O App precisa estar em modo "Development"');
-    console.log('   ou as permissões precisam estar aprovadas pelo Facebook.');
-    console.log('');
+    console.log('🚀 [Meta Connect] Redirecionando para autorização...');
 
     try {
-      // Tenta redirecionar
-      console.log('🚀 [Meta Connect] Executando redirecionamento...');
       window.location.href = authUrl;
-
-      // Se chegou aqui, o redirecionamento está em andamento
       console.log('✅ [Meta Connect] Redirecionamento iniciado');
     } catch (err: any) {
       console.error('❌ [Meta Connect] Erro ao tentar redirecionar:', err);
@@ -260,20 +234,12 @@ export const SimpleMetaConnect: React.FC = () => {
       const clientSecret = import.meta.env.VITE_META_APP_SECRET;
       const redirectUri = import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
 
-      console.log('🔄 [Exchange Token] Parâmetros:', {
-        clientId: clientId ? `${clientId.substring(0, 10)}...` : '❌ NÃO CONFIGURADO',
-        clientSecret: clientSecret ? `${clientSecret.substring(0, 10)}...` : '❌ NÃO CONFIGURADO',
-        redirectUri,
-        codeLength: code.length,
-      });
-
       if (!clientId || !clientSecret) {
         throw new Error('Client ID ou Client Secret não configurados no .env');
       }
 
       console.log('🔄 [Exchange Token] Fazendo requisição para Graph API...');
 
-      // Monta a URL completa para debug
       const tokenUrl = 'https://graph.facebook.com/v19.0/oauth/access_token';
       const params = new URLSearchParams({
         client_id: clientId,
@@ -282,55 +248,30 @@ export const SimpleMetaConnect: React.FC = () => {
         code: code,
       });
 
-      console.log('🔄 [Exchange Token] URL completa:', `${tokenUrl}?${params.toString().replace(clientSecret, '***')}`);
-
       const response = await fetch(tokenUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: params,
       });
 
-      console.log('🔄 [Exchange Token] Status da resposta:', response.status, response.statusText);
-
       const data = await response.json();
 
-      console.log('🔄 [Exchange Token] Resposta recebida:', {
-        hasAccessToken: !!data.access_token,
-        hasError: !!data.error,
-        tokenType: data.token_type,
-        responseStatus: response.status,
-      });
-
       if (data.error) {
-        console.error('❌ [Exchange Token] Erro na resposta do Facebook:', JSON.stringify(data.error, null, 2));
-
-        // Mapeia erros comuns para mensagens mais amigáveis
-        let errorMessage = data.error.message || 'Erro ao obter token';
-
-        if (data.error.code === 100) {
-          errorMessage = 'Parâmetros inválidos. Verifique as configurações do App no Facebook.';
-        } else if (data.error.message?.includes('redirect_uri')) {
-          errorMessage = 'URL de redirecionamento inválida. Configure no Facebook: Settings > Basic > Add Platform > Website.';
-        } else if (data.error.message?.includes('code')) {
-          errorMessage = 'Código de autorização inválido ou expirado. Tente conectar novamente.';
-        }
-
-        throw new Error(errorMessage);
+        console.error('❌ [Exchange Token] Erro na resposta do Facebook:', data.error);
+        throw new Error(data.error.message || 'Erro ao obter token');
       }
 
       if (!data.access_token) {
-        console.error('❌ [Exchange Token] Token não recebido na resposta:', JSON.stringify(data, null, 2));
-        throw new Error('Token de acesso não recebido. Resposta inesperada do servidor.');
+        console.error('❌ [Exchange Token] Token não recebido');
+        throw new Error('Token de acesso não recebido');
       }
 
       console.log('✅ [Exchange Token] Token obtido com sucesso!');
-      console.log('🔄 [Exchange Token] Buscando contas com o token...');
 
-      // Busca contas com o token obtido
-      await fetchAccounts(data.access_token);
+      // Busca informações do usuário Meta e contas
+      await fetchMetaUserInfoAndAccounts(data.access_token);
     } catch (err: any) {
-      console.error('❌ [Exchange Token] Erro ao trocar código por token:', err);
-      console.error('❌ [Exchange Token] Stack trace:', err.stack);
+      console.error('❌ [Exchange Token] Erro:', err);
       setError(err.message || 'Erro ao obter token de acesso');
       setStatus('disconnected');
       setLoading(false);
@@ -338,75 +279,79 @@ export const SimpleMetaConnect: React.FC = () => {
   };
 
   /**
-   * Busca todas as contas de anúncios do Meta do usuário
+   * Busca informações do usuário Meta, Business Manager e contas de anúncios
    */
-  const fetchAccounts = async (accessToken: string) => {
+  const fetchMetaUserInfoAndAccounts = async (accessToken: string) => {
     try {
-      console.log('📋 [Fetch Accounts] Buscando contas de anúncios do Meta');
-      console.log('📋 [Fetch Accounts] Token length:', accessToken.length);
+      console.log('📋 [Fetch Info] Buscando informações do usuário Meta');
 
-      const apiUrl = `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id,account_status,currency&access_token=${accessToken}`;
-      console.log('📋 [Fetch Accounts] Fazendo requisição para:', apiUrl.replace(accessToken, 'TOKEN_HIDDEN'));
+      // 1. Busca info do usuário
+      const userResponse = await fetch(`https://graph.facebook.com/v19.0/me?access_token=${accessToken}`);
+      const userData = await userResponse.json();
 
-      const response = await fetch(apiUrl);
+      if (userData.error) throw new Error(userData.error.message);
 
-      console.log('📋 [Fetch Accounts] Resposta recebida:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-      });
+      console.log('✅ Usuário Meta:', userData.name, userData.id);
+      setMetaUserId(userData.id);
+      setMetaUserName(userData.name);
 
-      const data = await response.json();
+      // 2. Busca Business Managers do usuário
+      const businessesResponse = await fetch(
+        `https://graph.facebook.com/v19.0/me/businesses?access_token=${accessToken}`
+      );
+      const businessesData = await businessesResponse.json();
 
-      console.log('📋 [Fetch Accounts] Dados recebidos:', {
-        hasData: !!data.data,
-        hasError: !!data.error,
-        accountCount: data.data?.length || 0,
-      });
-
-      if (data.error) {
-        console.error('❌ [Fetch Accounts] Erro na resposta:', data.error);
-        throw new Error(data.error.message || 'Erro ao buscar contas');
+      let businessId = null;
+      if (businessesData.data && businessesData.data.length > 0) {
+        businessId = businessesData.data[0].id;
+        console.log('✅ Business Manager:', businessesData.data[0].name, businessId);
+        setBusinessManagerId(businessId);
       }
 
-      const accountsList = data.data || [];
+      // 3. Busca contas de anúncios
+      console.log('📋 [Fetch Accounts] Buscando contas de anúncios');
+      const accountsResponse = await fetch(
+        `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id,account_status,currency,timezone_name&access_token=${accessToken}`
+      );
+      const accountsData = await accountsResponse.json();
 
-      console.log('📋 [Fetch Accounts] Contas encontradas:', accountsList.length);
+      if (accountsData.error) throw new Error(accountsData.error.message);
+
+      const accountsList = accountsData.data || [];
+      console.log('✅ Contas encontradas:', accountsList.length);
 
       if (accountsList.length === 0) {
-        console.warn('⚠️ [Fetch Accounts] Nenhuma conta de anúncios encontrada');
         setError('Nenhuma conta de anúncios encontrada. Verifique se sua conta Meta tem acesso a contas de anúncios.');
         setStatus('disconnected');
         setLoading(false);
         return;
       }
 
-      // Log das contas encontradas
-      accountsList.forEach((acc: any, index: number) => {
-        console.log(`  ${index + 1}. ${acc.name} (ID: ${acc.account_id}, Status: ${acc.account_status}, Moeda: ${acc.currency})`);
-      });
-
-      console.log('✅ [Fetch Accounts] Salvando token temporário e exibindo seleção de contas');
-
       // Salva token temporariamente para uso posterior
       sessionStorage.setItem('meta_temp_token', accessToken);
+      sessionStorage.setItem('meta_temp_business_id', businessId || '');
 
       setAccounts(accountsList);
       setStatus('selecting');
       setLoading(false);
     } catch (err: any) {
-      console.error('❌ [Fetch Accounts] Erro ao buscar contas:', err);
-      setError(err.message || 'Erro ao buscar contas de anúncios');
+      console.error('❌ [Fetch Info] Erro:', err);
+      setError(err.message || 'Erro ao buscar informações do Meta');
       setStatus('disconnected');
       setLoading(false);
     }
   };
 
   /**
-   * Finaliza a conexão salvando a conta selecionada no banco
-   * Salva também o Token System User se fornecido
+   * Finaliza a conexão salvando as contas selecionadas no banco
+   * Salva em: meta_connections, meta_ad_accounts e oauth_tokens
    */
-  const handleAccountSelect = async (accountId: string) => {
+  const handleFinishSetup = async () => {
+    if (selectedAccountsIds.length === 0) {
+      setError('Selecione pelo menos uma conta de anúncios');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -417,67 +362,174 @@ export const SimpleMetaConnect: React.FC = () => {
       const accessToken = sessionStorage.getItem('meta_temp_token');
       if (!accessToken) throw new Error('Token não encontrado');
 
-      const selectedAcc = accounts.find(acc => acc.id === accountId);
-      if (!selectedAcc) throw new Error('Conta não encontrada');
+      const businessId = sessionStorage.getItem('meta_temp_business_id') || businessManagerId;
 
-      // Salva conexão no banco de dados
-      const { data: connection, error: insertError } = await supabase
-        .from('data_connections')
-        .insert({
-          user_id: user.id,
-          name: `Meta Ads - ${selectedAcc.name}`,
-          platform: 'Meta',
-          type: 'advertising',
-          status: 'connected',
-          config: {
-            accountId: selectedAcc.id,
-            accountName: selectedAcc.name,
-            currency: selectedAcc.currency,
-          },
-          logo: '/meta-icon.svg',
-          description: 'Facebook e Instagram Ads',
-          last_sync: new Date().toISOString(),
-        })
-        .select()
-        .single();
+      // Busca ou cria workspace
+      let workspace = workspaceId;
+      if (!workspace) {
+        const { data: workspaceData } = await supabase
+          .from('workspaces')
+          .select('id')
+          .eq('owner_id', user.id)
+          .maybeSingle();
 
-      if (insertError) throw insertError;
+        if (workspaceData) {
+          workspace = workspaceData.id;
+        } else {
+          // Cria workspace
+          const { data: newWorkspace, error: workspaceError } = await supabase
+            .from('workspaces')
+            .insert({
+              name: `${user.email}'s Workspace`,
+              owner_id: user.id,
+            })
+            .select()
+            .single();
 
-      // Limpa e valida o token antes de salvar
-      const cleanToken = accessToken.trim();
-
-      if (!cleanToken || cleanToken.length < 50) {
-        throw new Error('Token de acesso inválido ou muito curto');
+          if (workspaceError) throw workspaceError;
+          workspace = newWorkspace.id;
+        }
+        setWorkspaceId(workspace);
       }
 
-      // Salva token OAuth de forma segura, incluindo o Token System User se fornecido
-      const { error: tokenError } = await supabase
+      console.log('🔧 Salvando conexão Meta no workspace:', workspace);
+
+      // 1. Cria ou atualiza meta_connection
+      const { data: existingConnection } = await supabase
+        .from('meta_connections')
+        .select('id')
+        .eq('workspace_id', workspace)
+        .maybeSingle();
+
+      let connectionId: string;
+
+      if (existingConnection) {
+        // Atualiza conexão existente
+        const { data: updatedConnection, error: updateError } = await supabase
+          .from('meta_connections')
+          .update({
+            status: 'connected',
+            business_manager_id: businessId,
+            granted_scopes: ['ads_read', 'ads_management', 'business_management'],
+            last_validated_at: new Date().toISOString(),
+          })
+          .eq('id', existingConnection.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        connectionId = updatedConnection.id;
+      } else {
+        // Cria nova conexão
+        const { data: newConnection, error: insertError } = await supabase
+          .from('meta_connections')
+          .insert({
+            workspace_id: workspace,
+            status: 'connected',
+            business_manager_id: businessId,
+            granted_scopes: ['ads_read', 'ads_management', 'business_management'],
+            last_validated_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        connectionId = newConnection.id;
+      }
+
+      console.log('✅ Meta Connection criada/atualizada:', connectionId);
+
+      // 2. Salva contas de anúncios selecionadas em meta_ad_accounts
+      for (const accountId of selectedAccountsIds) {
+        const account = accounts.find(acc => acc.id === accountId);
+        if (!account) continue;
+
+        // Verifica se a conta já existe
+        const { data: existingAccount } = await supabase
+          .from('meta_ad_accounts')
+          .select('id')
+          .eq('workspace_id', workspace)
+          .eq('meta_ad_account_id', account.id)
+          .maybeSingle();
+
+        if (!existingAccount) {
+          // Insere nova conta
+          const { error: accountError } = await supabase
+            .from('meta_ad_accounts')
+            .insert({
+              workspace_id: workspace,
+              meta_ad_account_id: account.id,
+              name: account.name,
+              currency: account.currency,
+              timezone_name: account.timezone_name || 'UTC',
+              account_status: account.account_status,
+              primary_connection_id: connectionId,
+            });
+
+          if (accountError) {
+            console.error('❌ Erro ao salvar conta:', account.name, accountError);
+          } else {
+            console.log('✅ Conta salva:', account.name);
+          }
+        } else {
+          console.log('ℹ️ Conta já existe:', account.name);
+        }
+      }
+
+      // 3. Salva ou atualiza oauth_tokens
+      const { data: existingToken } = await supabase
         .from('oauth_tokens')
-        .insert({
-          user_id: user.id,
-          connection_id: connection.id,
-          platform: 'meta',
-          access_token: cleanToken,
-          system_user_token: systemUserToken.trim() || null, // Salva o Token System User
-          account_id: selectedAcc.id,
-          expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 dias
-        });
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('platform', 'meta')
+        .maybeSingle();
 
-      if (tokenError) throw tokenError;
+      if (existingToken) {
+        // Atualiza token existente
+        const { error: tokenError } = await supabase
+          .from('oauth_tokens')
+          .update({
+            access_token: accessToken,
+            system_user_token: systemUserToken.trim() || null,
+            expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 dias
+            last_refreshed_at: new Date().toISOString(),
+          })
+          .eq('id', existingToken.id);
 
-      // Limpa token temporário
+        if (tokenError) throw tokenError;
+      } else {
+        // Cria novo token
+        const { error: tokenError } = await supabase
+          .from('oauth_tokens')
+          .insert({
+            user_id: user.id,
+            connection_id: connectionId,
+            platform: 'meta',
+            access_token: accessToken,
+            system_user_token: systemUserToken.trim() || null,
+            expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 dias
+          });
+
+        if (tokenError) throw tokenError;
+      }
+
+      console.log('✅ Token OAuth salvo');
+
+      // Limpa tokens temporários
       sessionStorage.removeItem('meta_temp_token');
+      sessionStorage.removeItem('meta_temp_business_id');
 
-      setConnectionData(connection);
+      // Atualiza estado
+      setConnectionData({ id: connectionId, workspace_id: workspace, status: 'connected' });
       setStatus('connected');
       setLoading(false);
 
-      // Inicia sincronização automática
-      setTimeout(() => {
-        syncData(connection.id);
-      }, 1000);
+      alert(`✅ Conexão Meta configurada com sucesso!\n\n${selectedAccountsIds.length} conta(s) vinculada(s) ao workspace.`);
+
+      // Recarrega a conexão
+      await checkExistingConnection();
     } catch (err: any) {
-      console.error('Erro ao salvar conexão:', err);
+      console.error('❌ Erro ao salvar conexão:', err);
       setError(err.message || 'Erro ao conectar');
       setLoading(false);
     }
@@ -493,14 +545,18 @@ export const SimpleMetaConnect: React.FC = () => {
     setError(null);
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
       const { error } = await supabase
         .from('oauth_tokens')
         .update({ system_user_token: systemUserToken.trim() || null })
-        .eq('connection_id', connectionData.id);
+        .eq('user_id', user.id)
+        .eq('platform', 'meta');
 
       if (error) throw error;
 
-      alert('Token System User salvo com sucesso!');
+      alert('✅ Token System User salvo com sucesso!');
     } catch (err: any) {
       console.error('Erro ao salvar Token System User:', err);
       setError(err.message || 'Erro ao salvar token');
@@ -510,99 +566,56 @@ export const SimpleMetaConnect: React.FC = () => {
   };
 
   /**
-   * Callback para receber progresso da sincronização
-   */
-  const handleSyncProgress = (progress: SyncProgress) => {
-    setSyncProgress(progress);
-
-    // Se a sincronização foi concluída, atualiza status
-    if (progress.phase === 'complete') {
-      setStatus('connected');
-      setIsSyncing(false);
-      setTimeout(() => {
-        setSyncProgress(null);
-        checkExistingConnection();
-      }, 3000);
-    } else if (progress.phase === 'error') {
-      setIsSyncing(false);
-      setError(progress.message);
-    }
-  };
-
-  /**
-   * Inicia sincronização de dados da conta Meta
-   */
-  const syncData = async (connectionId: string) => {
-    try {
-      console.log('Iniciando sincronização de dados da Meta...', connectionId);
-
-      setIsSyncing(true);
-      setStatus('syncing');
-      setSyncProgress(null);
-      setError(null);
-
-      // Busca o token de acesso
-      const { data: tokenData } = await supabase
-        .from('oauth_tokens')
-        .select('access_token')
-        .eq('connection_id', connectionId)
-        .maybeSingle();
-
-      const accessToken = tokenData?.access_token || import.meta.env.VITE_META_ACCESS_TOKEN;
-
-      if (!accessToken) {
-        throw new Error('Token de acesso não encontrado');
-      }
-
-      // Cria instância do serviço de sincronização com callback de progresso
-      const syncService = new MetaSyncService(accessToken, handleSyncProgress);
-
-      // Inicia sincronização
-      await syncService.syncConnection(connectionId);
-
-      console.log('Sincronização concluída com sucesso!');
-
-    } catch (err: any) {
-      console.error('Erro ao iniciar sincronização:', err);
-      setError('Erro ao sincronizar: ' + err.message);
-      setIsSyncing(false);
-      setStatus('connected');
-    }
-  };
-
-  /**
    * Desconecta a conta Meta
    */
   const handleDisconnect = async () => {
-    if (!confirm('Deseja realmente desconectar sua conta Meta?')) return;
+    if (!confirm('Deseja realmente desconectar sua conta Meta?\n\nIsso removerá todas as contas de anúncios vinculadas.')) return;
 
     setLoading(true);
 
     try {
-      if (connectionData) {
-        // Remove token OAuth
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      if (workspaceId) {
+        // Remove meta_connections (isso removerá em cascata as contas)
+        await supabase
+          .from('meta_connections')
+          .delete()
+          .eq('workspace_id', workspaceId);
+
+        // Remove oauth_tokens
         await supabase
           .from('oauth_tokens')
           .delete()
-          .eq('connection_id', connectionData.id);
-
-        // Remove conexão
-        await supabase
-          .from('data_connections')
-          .delete()
-          .eq('id', connectionData.id);
+          .eq('user_id', user.id)
+          .eq('platform', 'meta');
       }
 
       setConnectionData(null);
       setStatus('disconnected');
       setAccounts([]);
-      setSelectedAccount(null);
+      setSelectedAccountsIds([]);
+      setSystemUserToken('');
     } catch (err) {
       console.error('Erro ao desconectar:', err);
       setError('Erro ao desconectar');
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * Toggle seleção de conta
+   */
+  const toggleAccountSelection = (accountId: string) => {
+    setSelectedAccountsIds(prev => {
+      if (prev.includes(accountId)) {
+        return prev.filter(id => id !== accountId);
+      } else {
+        return [...prev, accountId];
+      }
+    });
   };
 
   /**
@@ -639,44 +652,8 @@ export const SimpleMetaConnect: React.FC = () => {
           <div className="flex items-start">
             <XCircle className="w-5 h-5 text-red-600 mr-3 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <h4 className="text-sm font-semibold text-red-900 mb-1">Erro na Conexão</h4>
-              <p className="text-sm text-red-800 mb-2">{error}</p>
-
-              {/* Instruções para erro de redirect_uri */}
-              {error.includes('redirect_uri') && (
-                <div className="mt-2 p-2 bg-red-100 rounded text-xs text-red-900">
-                  <strong>Como corrigir:</strong>
-                  <ol className="list-decimal ml-4 mt-1 space-y-1">
-                    <li>Acesse: <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer" className="underline">Facebook Developers</a></li>
-                    <li>Selecione seu App</li>
-                    <li>Vá em: Settings → Basic → Add Platform → Website</li>
-                    <li>Adicione: <code className="bg-white px-1 rounded">{import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`}</code></li>
-                    <li>Salve e tente novamente</li>
-                  </ol>
-                </div>
-              )}
-
-              {/* Instruções para ERRO 400 - Caso mais comum */}
-              {!error.includes('redirect_uri') && !error.includes('cancelada') && (
-                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
-                  <strong className="text-yellow-900 block mb-2">💡 Se você viu um erro 400 (Bad Request):</strong>
-                  <div className="text-yellow-800 space-y-1">
-                    <p className="font-medium">A causa mais comum é a URL de redirecionamento não autorizada.</p>
-                    <p className="mt-2 font-medium">Configure no Facebook:</p>
-                    <ol className="list-decimal ml-4 mt-1 space-y-0.5">
-                      <li>Acesse: <a href={`https://developers.facebook.com/apps/${import.meta.env.VITE_META_APP_ID}`} target="_blank" rel="noopener noreferrer" className="underline">Facebook App</a></li>
-                      <li>Use cases → Customize → Add → "Business Management"</li>
-                      <li>Settings → Basic → App Domains → Adicione: <code className="bg-white px-1 rounded">adsops.bolt.host</code></li>
-                      <li>Add Platform → Website → Site URL: <code className="bg-white px-1 rounded">{import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`}</code></li>
-                      <li>Salve todas as alterações</li>
-                      <li>App Review → Permissions → Verifique: ads_read, ads_management, business_management</li>
-                    </ol>
-                    <p className="mt-2 text-yellow-700">
-                      ⚠️ Importante: O App deve estar em modo "Development" ou as permissões aprovadas.
-                    </p>
-                  </div>
-                </div>
-              )}
+              <h4 className="text-sm font-semibold text-red-900 mb-1">Erro</h4>
+              <p className="text-sm text-red-800">{error}</p>
             </div>
             <button
               onClick={() => setError(null)}
@@ -694,22 +671,9 @@ export const SimpleMetaConnect: React.FC = () => {
           <p className="text-gray-600 mb-4">
             Conecte sua conta Meta para importar dados de campanhas do Facebook e Instagram Ads.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button onClick={handleConnect} loading={loading} disabled={loading}>
-              Conectar com Meta (OAuth)
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleDirectConnect}
-              loading={loading}
-              disabled={loading}
-            >
-              Usar Token Configurado
-            </Button>
-          </div>
-          <p className="text-xs text-gray-500 mt-3">
-            💡 Use "Token Configurado" se você já configurou o VITE_META_ACCESS_TOKEN no arquivo .env
-          </p>
+          <Button onClick={handleConnect} loading={loading} disabled={loading}>
+            Conectar com Meta
+          </Button>
         </div>
       )}
 
@@ -717,17 +681,14 @@ export const SimpleMetaConnect: React.FC = () => {
       {status === 'connecting' && (
         <div className="text-center py-8">
           <Loader className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Aguardando autorização...</p>
-          <p className="text-sm text-gray-500 mt-2">
-            Complete a autorização na janela que foi aberta
-          </p>
+          <p className="text-gray-600">Processando autorização...</p>
         </div>
       )}
 
-      {/* Estado: Selecionando conta */}
+      {/* Estado: Selecionando contas */}
       {status === 'selecting' && (
         <div>
-          <h4 className="font-medium text-gray-900 mb-3">Selecione uma conta</h4>
+          <h4 className="font-medium text-gray-900 mb-3">Selecione as contas de anúncios</h4>
 
           {/* Campo para Token System User (opcional) */}
           <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -746,98 +707,74 @@ export const SimpleMetaConnect: React.FC = () => {
             </p>
           </div>
 
-          <div className="space-y-2 mb-4">
+          <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
             {accounts.map((account) => (
               <button
                 key={account.id}
-                onClick={() => handleAccountSelect(account.id)}
+                onClick={() => toggleAccountSelection(account.id)}
                 disabled={loading}
                 className={`w-full p-3 border-2 rounded-lg text-left transition-all ${
-                  selectedAccount === account.id
+                  selectedAccountsIds.includes(account.id)
                     ? 'border-blue-500 bg-blue-50'
                     : 'border-gray-200 hover:border-gray-300'
                 } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                <div className="font-medium text-gray-900">{account.name}</div>
-                <div className="text-sm text-gray-600">
-                  ID: {account.account_id} • {account.currency}
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedAccountsIds.includes(account.id)}
+                    readOnly
+                    className="mr-3 h-4 w-4 text-blue-600 rounded"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">{account.name}</div>
+                    <div className="text-sm text-gray-600">
+                      ID: {account.account_id} • {account.currency} • {account.account_status}
+                    </div>
+                  </div>
                 </div>
               </button>
             ))}
           </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setStatus('disconnected');
-              setAccounts([]);
-              sessionStorage.removeItem('meta_temp_token');
-            }}
-            disabled={loading}
-          >
-            Cancelar
-          </Button>
-        </div>
-      )}
 
-      {/* Estado: Sincronizando */}
-      {status === 'syncing' && (
-        <div>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <div className="flex items-center space-x-3 mb-3">
-              <Loader className="w-5 h-5 text-blue-600 animate-spin" />
-              <p className="text-sm font-medium text-blue-800">
-                Sincronizando dados do Meta Ads...
-              </p>
-            </div>
-
-            {syncProgress && (
-              <div className="space-y-2">
-                {/* Barra de progresso */}
-                <div className="w-full bg-blue-100 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${syncProgress.percentage}%` }}
-                  />
-                </div>
-
-                {/* Mensagem de progresso */}
-                <p className="text-xs text-blue-700">
-                  {syncProgress.message}
-                </p>
-
-                {/* Contador de itens processados */}
-                {syncProgress.total > 0 && (
-                  <p className="text-xs text-blue-600">
-                    {syncProgress.current} de {syncProgress.total} processados ({syncProgress.percentage}%)
-                  </p>
-                )}
-              </div>
-            )}
-
-            {!syncProgress && (
-              <p className="text-xs text-blue-600">
-                Preparando sincronização...
-              </p>
-            )}
+          <div className="flex space-x-2">
+            <Button
+              onClick={handleFinishSetup}
+              disabled={loading || selectedAccountsIds.length === 0}
+              loading={loading}
+            >
+              Conectar {selectedAccountsIds.length > 0 && `(${selectedAccountsIds.length})`}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setStatus('disconnected');
+                setAccounts([]);
+                setSelectedAccountsIds([]);
+                sessionStorage.removeItem('meta_temp_token');
+                sessionStorage.removeItem('meta_temp_business_id');
+              }}
+              disabled={loading}
+            >
+              Cancelar
+            </Button>
           </div>
-
-          <p className="text-xs text-gray-500">
-            Este processo pode levar alguns minutos dependendo da quantidade de campanhas.
-            A sincronização continua em background e você pode navegar normalmente.
-          </p>
         </div>
       )}
 
       {/* Estado: Conectado */}
-      {status === 'connected' && connectionData && !isSyncing && (
+      {status === 'connected' && connectionData && (
         <div>
           <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-            <p className="text-sm text-green-800">
-              <strong>{connectionData.name}</strong> está conectado e sincronizado.
+            <p className="text-sm text-green-800 flex items-center">
+              <CheckCircle className="w-4 h-4 mr-2" />
+              <strong>Conexão Meta ativa</strong>
             </p>
-            <p className="text-xs text-green-600 mt-1">
-              Última sincronização: {new Date(connectionData.last_sync).toLocaleString('pt-BR')}
-            </p>
+            {businessManagerId && (
+              <p className="text-xs text-green-600 mt-1">
+                Business Manager ID: {businessManagerId}
+              </p>
+            )}
           </div>
 
           {/* Campo para Token System User - visível mesmo após conectado */}
@@ -866,7 +803,7 @@ export const SimpleMetaConnect: React.FC = () => {
               {systemUserToken ? (
                 <span className="flex items-center gap-1 text-green-600">
                   <CheckCircle className="w-3 h-3" />
-                  Token configurado e salvo
+                  Token configurado
                 </span>
               ) : (
                 '💡 Token de longa duração para sincronização avançada (opcional)'
@@ -878,38 +815,11 @@ export const SimpleMetaConnect: React.FC = () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => syncData(connectionData.id)}
-              icon={RefreshCw}
-              disabled={isSyncing}
-            >
-              Sincronizar Agora
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
               onClick={handleDisconnect}
-              disabled={loading || isSyncing}
+              disabled={loading}
             >
               Desconectar
             </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Mensagem de erro */}
-      {error && (
-        <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-start space-x-2">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm text-red-800">{error}</p>
-              <button
-                onClick={() => setError(null)}
-                className="text-xs text-red-600 underline mt-1"
-              >
-                Fechar
-              </button>
-            </div>
           </div>
         </div>
       )}
