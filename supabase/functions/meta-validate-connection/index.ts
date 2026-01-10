@@ -231,45 +231,70 @@ Deno.serve(async (req: Request) => {
     const adAccountsCount = allAdAccounts.length;
     console.log(`[meta-validate-connection] Discovered ${adAccountsCount} ad accounts in total`);
 
-    // 4. Buscar ou criar workspace do usuário
+    // 4. Buscar ou criar workspace do usuário (primeiro como owner, depois como membro)
     let workspaceId: string;
 
-    const { data: existingWorkspace } = await supabaseAdmin
+    console.log(`[meta-validate-connection] Buscando workspace para user_id: ${user.id}`);
+
+    // Tenta buscar como owner direto
+    const { data: ownedWorkspace } = await supabaseAdmin
       .from("workspaces")
       .select("id")
       .eq("owner_id", user.id)
       .maybeSingle();
 
-    if (existingWorkspace) {
-      workspaceId = existingWorkspace.id;
+    if (ownedWorkspace) {
+      console.log(`[meta-validate-connection] ✓ Workspace encontrado como owner: ${ownedWorkspace.id}`);
+      workspaceId = ownedWorkspace.id;
     } else {
-      // Cria novo workspace
-      const { data: newWorkspace, error: createError } = await supabaseAdmin
-        .from("workspaces")
-        .insert({
-          name: `Workspace de ${user.email}`,
-          owner_id: user.id,
-        })
-        .select("id")
-        .single();
+      console.log(`[meta-validate-connection] Não é owner, buscando como membro...`);
 
-      if (createError || !newWorkspace) {
-        return new Response(
-          JSON.stringify({ error: "Failed to create workspace", details: createError?.message }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
+      // Se não é owner, busca como membro
+      const { data: memberWorkspace } = await supabaseAdmin
+        .from("workspace_members")
+        .select(`
+          workspace_id,
+          workspaces!inner (
+            id
+          )
+        `)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (memberWorkspace && memberWorkspace.workspaces) {
+        console.log(`[meta-validate-connection] ✓ Workspace encontrado como membro: ${memberWorkspace.workspaces.id}`);
+        workspaceId = memberWorkspace.workspaces.id;
+      } else {
+        console.log(`[meta-validate-connection] Nenhum workspace encontrado, criando novo...`);
+
+        // Cria novo workspace apenas se não for membro de nenhum
+        const { data: newWorkspace, error: createError } = await supabaseAdmin
+          .from("workspaces")
+          .insert({
+            name: `Workspace de ${user.email}`,
+            owner_id: user.id,
+          })
+          .select("id")
+          .single();
+
+        if (createError || !newWorkspace) {
+          return new Response(
+            JSON.stringify({ error: "Failed to create workspace", details: createError?.message }),
+            {
+              status: 500,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+        workspaceId = newWorkspace.id;
+
+        // Adiciona o owner como membro
+        await supabaseAdmin.from("workspace_members").insert({
+          workspace_id: workspaceId,
+          user_id: user.id,
+          role: "owner",
+        });
       }
-      workspaceId = newWorkspace.id;
-
-      // Adiciona o owner como membro
-      await supabaseAdmin.from("workspace_members").insert({
-        workspace_id: workspaceId,
-        user_id: user.id,
-        role: "owner",
-      });
     }
 
     // 5. Criptografar o token usando a função do banco (se existir)
