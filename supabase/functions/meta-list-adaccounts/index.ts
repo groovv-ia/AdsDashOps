@@ -95,12 +95,41 @@ Deno.serve(async (req: Request) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Busca o workspace do usuário
-    const { data: workspace } = await supabaseAdmin
+    // Busca o workspace do usuário (primeiro como owner, depois como membro)
+    console.log(`[meta-list-adaccounts] Buscando workspace para user_id: ${user.id}`);
+
+    let workspace: { id: string } | null = null;
+
+    // Tenta buscar como owner direto
+    const { data: ownedWorkspace } = await supabaseAdmin
       .from("workspaces")
       .select("id")
       .eq("owner_id", user.id)
       .maybeSingle();
+
+    if (ownedWorkspace) {
+      console.log(`[meta-list-adaccounts] ✓ Workspace encontrado como owner: ${ownedWorkspace.id}`);
+      workspace = ownedWorkspace;
+    } else {
+      console.log(`[meta-list-adaccounts] Não é owner, buscando como membro...`);
+
+      // Se não é owner, busca como membro
+      const { data: memberWorkspace } = await supabaseAdmin
+        .from("workspace_members")
+        .select(`
+          workspace_id,
+          workspaces!inner (
+            id
+          )
+        `)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (memberWorkspace && memberWorkspace.workspaces) {
+        console.log(`[meta-list-adaccounts] ✓ Workspace encontrado como membro: ${memberWorkspace.workspaces.id}`);
+        workspace = memberWorkspace.workspaces;
+      }
+    }
 
     if (!workspace) {
       return new Response(
