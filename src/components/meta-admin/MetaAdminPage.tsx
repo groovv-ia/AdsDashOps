@@ -72,35 +72,83 @@ export const MetaAdminPage: React.FC = () => {
    */
   const loadDirectAccountCount = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-      // Busca workspace do usuário
-      const { data: workspace } = await supabase
+      if (userError) {
+        console.error('[MetaAdminPage] Erro ao buscar usuário:', userError);
+        return;
+      }
+
+      if (!user) {
+        console.log('[MetaAdminPage] Usuário não autenticado');
+        return;
+      }
+
+      console.log('[MetaAdminPage] Buscando workspace para usuário:', user.email);
+
+      // Busca workspace do usuário (como owner)
+      const { data: workspaceOwner, error: workspaceOwnerError } = await supabase
         .from('workspaces')
         .select('id')
         .eq('owner_id', user.id)
         .maybeSingle();
 
-      if (!workspace) {
-        console.log('[MetaAdminPage] Workspace não encontrado');
+      if (workspaceOwnerError) {
+        console.error('[MetaAdminPage] Erro ao buscar workspace como owner:', workspaceOwnerError);
+      }
+
+      // Se não encontrou como owner, busca como membro
+      let workspaceId: string | null = workspaceOwner?.id || null;
+
+      if (!workspaceId) {
+        console.log('[MetaAdminPage] Workspace não encontrado como owner, buscando como membro...');
+        const { data: workspaceMember, error: workspaceMemberError } = await supabase
+          .from('workspace_members')
+          .select('workspace_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (workspaceMemberError) {
+          console.error('[MetaAdminPage] Erro ao buscar workspace como membro:', workspaceMemberError);
+        }
+
+        workspaceId = workspaceMember?.workspace_id || null;
+      }
+
+      if (!workspaceId) {
+        console.error('[MetaAdminPage] ⚠️ Workspace não encontrado para usuário:', user.email);
+        console.error('[MetaAdminPage] Verifique se o workspace foi criado corretamente');
+        setDbAccountCount(0);
         return;
       }
+
+      console.log('[MetaAdminPage] ✓ Workspace encontrado:', workspaceId);
 
       // Conta quantas contas existem no banco
       const { count, error } = await supabase
         .from('meta_ad_accounts')
         .select('*', { count: 'exact', head: true })
-        .eq('workspace_id', workspace.id);
+        .eq('workspace_id', workspaceId);
 
       if (error) {
-        console.error('[MetaAdminPage] Erro ao contar contas no banco:', error);
+        console.error('[MetaAdminPage] ❌ Erro ao contar contas no banco:', error);
+        console.error('[MetaAdminPage] Código do erro:', error.code);
+        console.error('[MetaAdminPage] Mensagem:', error.message);
+        console.error('[MetaAdminPage] Detalhes:', error.details);
+
+        // Se o erro for de RLS (permissão negada), sugere ação
+        if (error.code === 'PGRST116' || error.message?.includes('policy')) {
+          console.error('[MetaAdminPage] 🔒 ERRO DE RLS: As políticas de segurança estão bloqueando o acesso');
+          console.error('[MetaAdminPage] SOLUÇÃO: Faça logout e login novamente para renovar as permissões');
+        }
+
+        setDbAccountCount(null);
       } else {
-        console.log(`[MetaAdminPage] Contas no banco de dados: ${count}`);
+        console.log(`[MetaAdminPage] ✓ Contas no banco de dados: ${count}`);
         setDbAccountCount(count);
       }
     } catch (err) {
-      console.error('[MetaAdminPage] Erro ao buscar contagem direta:', err);
+      console.error('[MetaAdminPage] ❌ Erro ao buscar contagem direta:', err);
     }
   };
 
@@ -161,9 +209,14 @@ export const MetaAdminPage: React.FC = () => {
     setSuccess(null);
 
     try {
+      console.log('[MetaAdminPage] Iniciando validação da conexão...');
       const result = await validateMetaConnection(businessManagerId, systemUserToken);
 
       if (result.status === 'connected') {
+        console.log('[MetaAdminPage] ✓ Conexão validada com sucesso');
+        console.log('[MetaAdminPage] Workspace ID:', result.workspace_id);
+        console.log('[MetaAdminPage] Contas encontradas:', result.adaccounts_count);
+
         setConnectionStatus({
           connected: true,
           businessManagerId: result.business_manager_id,
@@ -176,11 +229,17 @@ export const MetaAdminPage: React.FC = () => {
         );
         setSystemUserToken('');
 
+        // Aguarda 2 segundos para garantir que as contas foram salvas no banco
+        console.log('[MetaAdminPage] Aguardando 2s para sincronização do banco...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
         // Recarrega lista de contas e contagem direta
+        console.log('[MetaAdminPage] Recarregando dados...');
         await loadAdAccounts();
         await loadSyncStatus();
         await loadDirectAccountCount();
       } else {
+        console.error('[MetaAdminPage] ❌ Erro na validação:', result.error);
         setError(result.error || 'Erro ao validar conexao');
         if (result.missing_scopes && result.missing_scopes.length > 0) {
           setError(
@@ -190,6 +249,7 @@ export const MetaAdminPage: React.FC = () => {
         }
       }
     } catch (err) {
+      console.error('[MetaAdminPage] ❌ Exceção durante validação:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {
       setValidating(false);
@@ -333,6 +393,25 @@ export const MetaAdminPage: React.FC = () => {
                   <p className="text-xs text-blue-600 font-mono mt-1">
                     [Debug] {dbAccountCount} contas salvas no banco de dados
                   </p>
+                )}
+                {connectionStatus?.adAccountsCount && dbAccountCount === 0 && (
+                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-xs text-yellow-800 font-semibold mb-1">
+                      ⚠️ Contas não salvas no banco de dados
+                    </p>
+                    <p className="text-xs text-yellow-700 mb-2">
+                      As contas foram detectadas mas não estão visíveis devido às políticas de segurança.
+                    </p>
+                    <button
+                      onClick={async () => {
+                        await supabase.auth.signOut();
+                        window.location.href = '/';
+                      }}
+                      className="text-xs bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700"
+                    >
+                      Fazer Logout e Relogar
+                    </button>
+                  </div>
                 )}
                 {connectionStatus.lastValidated && (
                   <p className="text-xs text-gray-500 mt-1">
