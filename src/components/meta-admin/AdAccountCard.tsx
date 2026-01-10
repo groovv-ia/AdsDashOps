@@ -422,13 +422,10 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
 
       {/* Estado sem metricas */}
       {!account.metrics && (
-        <div className="bg-gradient-to-br from-gray-50 to-blue-50/30 rounded-lg p-6 mb-4 text-center border border-gray-200">
-          <BarChart3 className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-          <p className="text-sm font-medium text-gray-700 mb-1">
-            Nenhum dado sincronizado
-          </p>
-          <p className="text-xs text-gray-500">
-            Clique em "Sincronizar" para extrair métricas
+        <div className="bg-gray-50 rounded-lg p-6 mb-4 text-center">
+          <BarChart3 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">
+            Sincronize para ver metricas
           </p>
         </div>
       )}
