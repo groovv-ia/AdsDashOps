@@ -765,6 +765,8 @@ export const MetaAdsSyncPage: React.FC = () => {
               status={
                 syncStatus.health_status === 'healthy'
                   ? 'synced'
+                  : syncStatus.health_status === 'pending_first_sync'
+                  ? 'never'
                   : syncStatus.health_status === 'stale'
                   ? 'stale'
                   : 'error'
@@ -789,6 +791,22 @@ export const MetaAdsSyncPage: React.FC = () => {
             </Button>
           </div>
         </div>
+
+        {/* Aviso quando contas estão aguardando primeira sincronização */}
+        {syncStatus.health_status === 'pending_first_sync' && accountCards.length > 0 && (
+          <Card className="bg-blue-50 border-blue-200">
+            <div className="flex items-start space-x-3">
+              <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="font-medium text-blue-900">Contas Conectadas - Aguardando Primeira Sincronização</h3>
+                <p className="text-sm text-blue-700 mt-1">
+                  {accountCards.length} conta{accountCards.length !== 1 ? 's' : ''} de anúncio{accountCards.length !== 1 ? 's foram' : ' foi'} conectada{accountCards.length !== 1 ? 's' : ''} com sucesso.
+                  Clique no botão "Sincronizar" em cada conta abaixo para começar a importar os dados de campanhas, conjuntos e anúncios.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Seletor de Periodo */}
         <Card className="bg-gradient-to-r from-gray-50 to-white">
@@ -841,18 +859,20 @@ export const MetaAdsSyncPage: React.FC = () => {
           <Card className="text-center py-12">
             <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Nenhuma conta de anúncio vinculada
+              Nenhuma conta de anúncio encontrada
             </h3>
             <p className="text-gray-600 mb-4">
-              Sua conexão com o Meta está ativa, mas você precisa vincular as contas de anúncio que deseja sincronizar.
+              {syncStatus.connection?.status === 'connected'
+                ? 'Sua conexão com o Meta está ativa, mas nenhuma conta de anúncio foi encontrada. Verifique se o token tem acesso às contas.'
+                : 'Configure a conexão com o Meta Ads para começar a sincronizar dados.'}
             </p>
             <div className="space-y-3">
               <Button onClick={() => (window.location.href = '#meta-admin')} className="mx-auto">
                 <Layers className="w-4 h-4 mr-2" />
-                Vincular Contas de Anúncio
+                {syncStatus.connection?.status === 'connected' ? 'Revalidar Conexão' : 'Configurar Conexão'}
               </Button>
               <p className="text-sm text-gray-500">
-                Vá para "Meta Admin" e clique em "Listar e Vincular Contas"
+                Vá para "Meta Admin" e {syncStatus.connection?.status === 'connected' ? 'revalide sua conexão' : 'configure sua conexão com o Business Manager'}
               </p>
             </div>
           </Card>

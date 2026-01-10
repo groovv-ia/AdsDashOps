@@ -307,7 +307,67 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 7. Retornar sucesso
+    // 7. Persistir ad accounts descobertas na tabela meta_ad_accounts
+    // Mapeia status numérico do Meta para texto
+    const mapAccountStatus = (status: number): string => {
+      const statusMap: Record<number, string> = {
+        1: "ACTIVE",
+        2: "DISABLED",
+        3: "UNSETTLED",
+        7: "PENDING_RISK_REVIEW",
+        8: "PENDING_SETTLEMENT",
+        9: "IN_GRACE_PERIOD",
+        100: "PENDING_CLOSURE",
+        101: "CLOSED",
+        201: "ANY_ACTIVE",
+        202: "ANY_CLOSED",
+      };
+      return statusMap[status] || "UNKNOWN";
+    };
+
+    if (adAccountsData.data && adAccountsData.data.length > 0) {
+      const adAccountsToUpsert = adAccountsData.data.map((acc) => ({
+        workspace_id: workspaceId,
+        meta_ad_account_id: acc.id,
+        name: acc.name,
+        currency: acc.currency || "USD",
+        timezone_name: acc.timezone_name || "UTC",
+        account_status: mapAccountStatus(acc.account_status),
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error: upsertAdAccountsError } = await supabaseAdmin
+        .from("meta_ad_accounts")
+        .upsert(adAccountsToUpsert, {
+          onConflict: "meta_ad_account_id",
+          ignoreDuplicates: false,
+        });
+
+      if (upsertAdAccountsError) {
+        console.error("Failed to save ad accounts:", upsertAdAccountsError);
+        // Não falha a operação inteira, apenas loga o erro
+      } else {
+        console.log(`Successfully saved ${adAccountsToUpsert.length} ad accounts`);
+
+        // 8. Criar registros em meta_sync_state para cada conta
+        // Permite que as contas sejam sincronizadas posteriormente
+        for (const acc of adAccountsData.data) {
+          await supabaseAdmin
+            .from("meta_sync_state")
+            .upsert(
+              {
+                workspace_id: workspaceId,
+                meta_ad_account_id: acc.id,
+                sync_enabled: true,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "workspace_id,meta_ad_account_id" }
+            );
+        }
+      }
+    }
+
+    // 9. Retornar sucesso
     return new Response(
       JSON.stringify({
         status: "connected",

@@ -186,36 +186,54 @@ Deno.serve(async (req: Request) => {
 
     // Calcula health status geral
     // Considera dados "frescos" se sincronizados nas ultimas 48h
-    // Isso evita marcar como "desatualizado" logo apos uma sincronizacao bem-sucedida
+    // Novo estado: "pending_first_sync" para contas conectadas mas nunca sincronizadas
     let healthStatus = "healthy";
     const now = new Date();
     const twoDaysAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
 
     if (!metaConnection || metaConnection.status !== "connected") {
       healthStatus = "disconnected";
-    } else if (syncStates && syncStates.length > 0) {
-      // Verifica se ha erros RECENTES (ultimas 48h)
-      const hasRecentError = syncStates.some((s) => {
-        if (!s.last_error) return false;
-        // Se nao tiver last_success_at, considera o erro como recente
-        if (!s.last_success_at) return true;
-        // Se o ultimo sucesso foi antes do erro (ou seja, erro ainda nao foi resolvido)
-        // Mas so considera "error" se o sucesso foi ha menos de 48h
-        const lastSuccess = new Date(s.last_success_at);
-        return lastSuccess < twoDaysAgo;
-      });
+    } else if (adAccounts && adAccounts.length > 0) {
+      // Se tem contas vinculadas, verifica o status de sincronização
+      const hasAnySyncState = syncStates && syncStates.length > 0;
 
-      // Verifica se dados estao desatualizados (mais de 48h sem sincronizacao bem-sucedida)
-      const hasStaleData = syncStates.some((s) => {
-        if (!s.last_success_at) return true;
-        return new Date(s.last_success_at) < twoDaysAgo;
-      });
+      if (!hasAnySyncState) {
+        // Contas conectadas mas sem nenhum sync_state = aguardando primeira sincronização
+        healthStatus = "pending_first_sync";
+      } else {
+        // Verifica se ha erros RECENTES (ultimas 48h)
+        const hasRecentError = syncStates.some((s) => {
+          if (!s.last_error) return false;
+          // Se nao tiver last_success_at, considera o erro como recente
+          if (!s.last_success_at) return true;
+          // Se o ultimo sucesso foi antes do erro (ou seja, erro ainda nao foi resolvido)
+          // Mas so considera "error" se o sucesso foi ha menos de 48h
+          const lastSuccess = new Date(s.last_success_at);
+          return lastSuccess < twoDaysAgo;
+        });
 
-      if (hasRecentError) {
-        healthStatus = "error";
-      } else if (hasStaleData) {
-        healthStatus = "stale";
+        // Verifica se há contas nunca sincronizadas
+        const hasNeverSynced = syncStates.some((s) => !s.last_success_at);
+
+        // Verifica se dados estao desatualizados (mais de 48h sem sincronizacao bem-sucedida)
+        // Mas só para contas que já foram sincronizadas alguma vez
+        const hasStaleData = syncStates.some((s) => {
+          if (!s.last_success_at) return false; // Ignora contas nunca sincronizadas
+          return new Date(s.last_success_at) < twoDaysAgo;
+        });
+
+        if (hasRecentError) {
+          healthStatus = "error";
+        } else if (hasNeverSynced) {
+          // Prioriza "aguardando primeira sincronização" sobre "desatualizado"
+          healthStatus = "pending_first_sync";
+        } else if (hasStaleData) {
+          healthStatus = "stale";
+        }
       }
+    } else {
+      // Conectado mas sem contas vinculadas
+      healthStatus = "pending_first_sync";
     }
 
     // Monta resposta

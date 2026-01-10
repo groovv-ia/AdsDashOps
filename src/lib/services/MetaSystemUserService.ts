@@ -123,7 +123,7 @@ export interface SyncStatusResponse {
     granted_scopes: string[];
     last_validated_at: string;
   } | null;
-  health_status: 'healthy' | 'stale' | 'error' | 'disconnected';
+  health_status: 'healthy' | 'stale' | 'error' | 'disconnected' | 'pending_first_sync';
   ad_accounts: Array<{
     id: string;
     meta_id: string;

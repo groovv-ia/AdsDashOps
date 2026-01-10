@@ -167,6 +167,8 @@ export const MetaAdminPage: React.FC = () => {
     switch (status) {
       case 'healthy':
         return 'text-green-600 bg-green-100';
+      case 'pending_first_sync':
+        return 'text-blue-600 bg-blue-100';
       case 'stale':
         return 'text-yellow-600 bg-yellow-100';
       case 'error':
@@ -180,6 +182,8 @@ export const MetaAdminPage: React.FC = () => {
     switch (status) {
       case 'healthy':
         return 'Saudavel';
+      case 'pending_first_sync':
+        return 'Aguardando Sincronizacao';
       case 'stale':
         return 'Desatualizado';
       case 'error':
