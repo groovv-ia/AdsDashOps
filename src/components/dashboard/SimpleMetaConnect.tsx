@@ -588,7 +588,12 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
 
       if (error) throw error;
 
-      alert('✅ Token System User salvo com sucesso!');
+      // Só mostra alert se não houver callback (uso standalone)
+      if (!onConnectionSuccess) {
+        alert('✅ Token System User salvo com sucesso!');
+      } else {
+        console.log('✅ Token System User salvo com sucesso!');
+      }
     } catch (err: any) {
       console.error('Erro ao salvar Token System User:', err);
       setError(err.message || 'Erro ao salvar token');
@@ -731,17 +736,17 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
           {/* Campo para Token System User (opcional) */}
           <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Token System User (opcional)
+              Token System User <span className="text-gray-500 font-normal">(opcional - pode adicionar depois)</span>
             </label>
             <input
               type="text"
               value={systemUserToken}
               onChange={(e) => setSystemUserToken(e.target.value)}
-              placeholder="Cole aqui o Token System User do Meta"
+              placeholder="Cole aqui o Token System User do Meta (opcional)"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
             />
             <p className="text-xs text-gray-600 mt-2">
-              💡 Token de longa duração para sincronização avançada (pode ser adicionado depois)
+              💡 Token de longa duração para sincronização avançada. Você pode conectar agora sem ele e adicionar depois.
             </p>
           </div>
 
@@ -780,8 +785,9 @@ export const SimpleMetaConnect: React.FC<SimpleMetaConnectProps> = ({
               onClick={handleFinishSetup}
               disabled={loading || selectedAccountsIds.length === 0}
               loading={loading}
+              className="flex-1"
             >
-              Conectar {selectedAccountsIds.length > 0 && `(${selectedAccountsIds.length})`}
+              {loading ? 'Conectando...' : `Conectar ${selectedAccountsIds.length > 0 ? `(${selectedAccountsIds.length} conta${selectedAccountsIds.length > 1 ? 's' : ''})` : ''}`}
             </Button>
             <Button
               variant="outline"
