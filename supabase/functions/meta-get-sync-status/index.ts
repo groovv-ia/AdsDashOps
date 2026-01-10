@@ -122,6 +122,11 @@ Deno.serve(async (req: Request) => {
 
     const { data: syncStates } = await syncStatesQuery;
 
+    console.log(`[meta-get-sync-status] Found ${syncStates?.length || 0} sync states`);
+    if (syncStates && syncStates.length > 0) {
+      console.log(`[meta-get-sync-status] First sync state:`, syncStates[0]);
+    }
+
     // 4. Busca jobs recentes (com erro ou em execucao)
     const { data: recentJobs } = await supabaseAdmin
       .from("meta_sync_jobs")
@@ -245,6 +250,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // Monta resposta
+    console.log(`[meta-get-sync-status] Preparing response with ${adAccounts?.length || 0} ad accounts`);
+
     const response = {
       workspace: {
         id: workspace.id,

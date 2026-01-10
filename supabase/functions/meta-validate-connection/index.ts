@@ -53,6 +53,10 @@ interface MetaAdAccountsResponse {
     currency: string;
     timezone_name: string;
   }>;
+  paging?: {
+    cursors: { after: string };
+    next: string;
+  };
   error?: {
     message: string;
     code: number;
@@ -185,13 +189,47 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 3. Buscar ad accounts acessíveis
-    const adAccountsResponse = await fetch(
-      `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_status,currency,timezone_name&access_token=${system_user_token}`
-    );
-    const adAccountsData: MetaAdAccountsResponse = await adAccountsResponse.json();
+    // 3. Buscar ad accounts acessíveis com paginação completa
+    const allAdAccounts: Array<{
+      id: string;
+      name: string;
+      account_status: number;
+      currency: string;
+      timezone_name: string;
+    }> = [];
 
-    const adAccountsCount = adAccountsData.data?.length || 0;
+    let nextUrl: string | null =
+      `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_status,currency,timezone_name&limit=100&access_token=${system_user_token}`;
+
+    // Loop para buscar todas as páginas de ad accounts
+    while (nextUrl) {
+      const adAccountsResponse = await fetch(nextUrl);
+      const adAccountsData: MetaAdAccountsResponse = await adAccountsResponse.json();
+
+      if (adAccountsData.error) {
+        return new Response(
+          JSON.stringify({
+            error: "Meta API error fetching ad accounts",
+            details: adAccountsData.error.message,
+            status: "invalid",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      if (adAccountsData.data) {
+        allAdAccounts.push(...adAccountsData.data);
+      }
+
+      // Verifica se há próxima página
+      nextUrl = adAccountsData.paging?.next || null;
+    }
+
+    const adAccountsCount = allAdAccounts.length;
+    console.log(`[meta-validate-connection] Discovered ${adAccountsCount} ad accounts in total`);
 
     // 4. Buscar ou criar workspace do usuário
     let workspaceId: string;
@@ -325,8 +363,8 @@ Deno.serve(async (req: Request) => {
       return statusMap[status] || "UNKNOWN";
     };
 
-    if (adAccountsData.data && adAccountsData.data.length > 0) {
-      const adAccountsToUpsert = adAccountsData.data.map((acc) => ({
+    if (allAdAccounts.length > 0) {
+      const adAccountsToUpsert = allAdAccounts.map((acc) => ({
         workspace_id: workspaceId,
         meta_ad_account_id: acc.id,
         name: acc.name,
@@ -347,12 +385,13 @@ Deno.serve(async (req: Request) => {
         console.error("Failed to save ad accounts:", upsertAdAccountsError);
         // Não falha a operação inteira, apenas loga o erro
       } else {
-        console.log(`Successfully saved ${adAccountsToUpsert.length} ad accounts`);
+        console.log(`[meta-validate-connection] Successfully saved ${adAccountsToUpsert.length} ad accounts to meta_ad_accounts`);
 
         // 8. Criar registros em meta_sync_state para cada conta
         // Permite que as contas sejam sincronizadas posteriormente
-        for (const acc of adAccountsData.data) {
-          await supabaseAdmin
+        let syncStateCreatedCount = 0;
+        for (const acc of allAdAccounts) {
+          const { error: syncStateError } = await supabaseAdmin
             .from("meta_sync_state")
             .upsert(
               {
@@ -363,7 +402,14 @@ Deno.serve(async (req: Request) => {
               },
               { onConflict: "workspace_id,meta_ad_account_id" }
             );
+
+          if (!syncStateError) {
+            syncStateCreatedCount++;
+          } else {
+            console.error(`Failed to create sync_state for account ${acc.id}:`, syncStateError);
+          }
         }
+        console.log(`[meta-validate-connection] Created/updated ${syncStateCreatedCount} records in meta_sync_state`);
       }
     }
 

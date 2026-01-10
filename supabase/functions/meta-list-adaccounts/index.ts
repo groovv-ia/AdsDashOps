@@ -163,7 +163,7 @@ Deno.serve(async (req: Request) => {
       meta_ad_account_id: acc.id,
       name: acc.name,
       currency: acc.currency || "USD",
-      timezone: acc.timezone_name || "UTC",
+      timezone_name: acc.timezone_name || "UTC",
       account_status: mapAccountStatus(acc.account_status),
       updated_at: new Date().toISOString(),
     }));
@@ -177,7 +177,9 @@ Deno.serve(async (req: Request) => {
         });
 
       if (upsertError) {
-        console.error("Upsert error:", upsertError);
+        console.error("[meta-list-adaccounts] Upsert error:", upsertError);
+      } else {
+        console.log(`[meta-list-adaccounts] Successfully saved ${adAccountsToUpsert.length} ad accounts to meta_ad_accounts`);
       }
     }
 
