@@ -154,7 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       onClick={() => toggleSection(section.id)}
                       className={`
-                        w-full flex items-center justify-between px-3 py-2.5 rounded-lg
+                        w-full flex items-center justify-between px-3 py-3 rounded-lg
                         transition-all duration-200 group
                         ${isActive
                           ? 'bg-white shadow-sm border border-slate-200'
@@ -165,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <div className="flex items-center gap-3">
                         <section.icon className="w-5 h-5" />
                         <span className={`
-                          font-semibold text-sm
+                          font-semibold text-[15px] tracking-tight
                           ${isActive ? 'text-slate-900' : 'text-slate-700'}
                         `}>
                           {section.title}
@@ -192,7 +192,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               key={itemIndex}
                               onClick={() => handlePageClick(item.page)}
                               className={`
-                                w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left
+                                w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
                                 transition-all duration-150
                                 ${isItemActive
                                   ? section.id === 'meta'
@@ -203,13 +203,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               `}
                             >
                               <item.icon className={`
-                                w-4 h-4 flex-shrink-0
+                                w-[18px] h-[18px] flex-shrink-0
                                 ${isItemActive
                                   ? section.id === 'meta' ? 'text-blue-500' : 'text-emerald-500'
                                   : 'text-slate-400'
                                 }
                               `} />
-                              <span className="text-sm">{item.label}</span>
+                              <span className="text-[14px] font-medium">{item.label}</span>
                             </button>
                           );
                         })}
@@ -232,10 +232,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     key={index}
                     onClick={() => handlePageClick(item.page)}
                     className={`
-                      w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
+                      w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left
                       transition-all duration-150
                       ${isItemActive
-                        ? 'bg-white shadow-sm border border-slate-200 text-slate-900 font-medium'
+                        ? 'bg-white shadow-sm border border-slate-200 text-slate-900'
                         : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
                       }
                     `}
@@ -244,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       w-5 h-5 flex-shrink-0
                       ${isItemActive ? 'text-slate-700' : 'text-slate-400'}
                     `} />
-                    <span className="text-sm">{item.label}</span>
+                    <span className="text-[15px] font-medium tracking-tight">{item.label}</span>
                   </button>
                 );
               })}
@@ -259,11 +259,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="absolute bottom-0 left-0 w-16 h-16 bg-gradient-to-tr from-emerald-500/20 to-transparent rounded-full blur-xl" />
 
               <div className="relative z-10">
-                <h3 className="font-semibold text-white text-sm mb-1">Upgrade para Pro</h3>
-                <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                <h3 className="font-semibold text-white text-[15px] mb-1">Upgrade para Pro</h3>
+                <p className="text-[13px] text-slate-400 mb-3 leading-relaxed">
                   Analises avancadas e campanhas ilimitadas
                 </p>
-                <button className="w-full bg-white text-slate-900 text-xs font-medium py-2 rounded-lg hover:bg-slate-100 transition-colors">
+                <button className="w-full bg-white text-slate-900 text-[13px] font-semibold py-2.5 rounded-lg hover:bg-slate-100 transition-colors">
                   Fazer Upgrade
                 </button>
               </div>
