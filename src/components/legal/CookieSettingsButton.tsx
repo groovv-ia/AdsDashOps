@@ -5,8 +5,10 @@ import { useCookieConsent } from '../../contexts/CookieConsentContext';
 /**
  * Componente CookieSettingsButton
  *
- * Botão flutuante que aparece após o usuário dar consentimento inicial.
- * Permite reabrir as configurações de cookies a qualquer momento.
+ * Botao flutuante para configurar preferencias de cookies.
+ * Fica escondido apos o usuario aceitar/rejeitar a politica de cookies,
+ * mantendo a interface limpa. O usuario pode acessar as configuracoes
+ * de cookies atraves da pagina de Configuracoes caso precise alterar.
  *
  * @example
  * <CookieSettingsButton />
@@ -15,8 +17,9 @@ export const CookieSettingsButton: React.FC = () => {
   const { hasConsented, openPreferences } = useCookieConsent();
   const [isHovered, setIsHovered] = useState(false);
 
-  // Só mostra o botão se o usuário já deu consentimento
-  if (!hasConsented) {
+  // Esconde o botao apos o usuario dar consentimento (aceitar ou rejeitar)
+  // O usuario pode alterar as preferencias na pagina de Configuracoes
+  if (hasConsented) {
     return null;
   }
 
