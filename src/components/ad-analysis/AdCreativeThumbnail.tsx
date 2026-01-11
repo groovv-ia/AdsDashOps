@@ -3,10 +3,16 @@
  *
  * Exibe miniatura do criativo de um anuncio.
  * Suporta imagens, videos e estados de loading/erro.
+ *
+ * Melhorias:
+ * - Indicador de qualidade da imagem (HD/SD/Low)
+ * - Melhor tratamento de fallbacks
+ * - Suporte a imagens HD quando disponíveis
+ * - Indicador de status de sincronização
  */
 
 import React from 'react';
-import { Image, Play, AlertCircle, Loader2 } from 'lucide-react';
+import { Image, Play, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import type { MetaAdCreative } from '../../types/adAnalysis';
 
 // Props do componente
@@ -17,6 +23,8 @@ interface AdCreativeThumbnailProps {
   size?: 'sm' | 'md' | 'lg';
   onClick?: () => void;
   showTypeIndicator?: boolean;
+  showQualityIndicator?: boolean; // Novo: mostra indicador de qualidade
+  useHdWhenAvailable?: boolean; // Novo: usa imagem HD quando disponível
   className?: string;
 }
 
@@ -48,6 +56,8 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
   size = 'md',
   onClick,
   showTypeIndicator = true,
+  showQualityIndicator = false,
+  useHdWhenAvailable = true,
   className = '',
 }) => {
   // Classes base do container
@@ -95,9 +105,22 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     );
   }
 
-  // URL da imagem (thumbnail ou image_url)
-  const imageUrl = creative.thumbnail_url || creative.image_url;
+  // Seleciona URL da imagem (HD se disponível e solicitado)
+  const imageUrl = (useHdWhenAvailable && creative.image_url_hd)
+    ? creative.image_url_hd
+    : (creative.thumbnail_url || creative.image_url);
+
   const isVideo = creative.creative_type === 'video';
+  const quality = creative.thumbnail_quality || 'unknown';
+  const isHdQuality = quality === 'hd';
+
+  // Helper para obter cor do indicador de qualidade
+  const getQualityColor = () => {
+    if (quality === 'hd') return 'bg-green-500';
+    if (quality === 'sd') return 'bg-yellow-500';
+    if (quality === 'low') return 'bg-orange-500';
+    return 'bg-gray-400';
+  };
 
   // Sem imagem disponivel
   if (!imageUrl) {
@@ -106,6 +129,7 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
       ad_id: creative.ad_id,
       creative_type: creative.creative_type,
       has_title: !!creative.title,
+      fetch_status: creative.fetch_status,
     });
     return (
       <div
@@ -117,6 +141,10 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
           <Play className={`${iconSizes[size]} text-gray-400`} />
         ) : (
           <Image className={`${iconSizes[size]} text-gray-300`} />
+        )}
+        {/* Indicador de status incompleto */}
+        {creative.fetch_status !== 'success' && (
+          <div className="absolute bottom-0 right-0 w-2 h-2 bg-yellow-400 rounded-full"></div>
         )}
       </div>
     );
@@ -164,6 +192,24 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
         <div className="absolute bottom-0 right-0 px-1 py-0.5 bg-black/60 rounded-tl text-white text-[8px] uppercase font-medium">
           {creative.creative_type === 'video' ? 'VID' : 'IMG'}
         </div>
+      )}
+
+      {/* Indicador de qualidade HD (opcional) */}
+      {showQualityIndicator && quality !== 'unknown' && (
+        <div className="absolute top-1 right-1 flex items-center gap-0.5 px-1 py-0.5 bg-black/70 rounded text-white">
+          {isHdQuality && <Sparkles className="w-2 h-2" />}
+          <span className="text-[7px] uppercase font-bold">
+            {quality}
+          </span>
+        </div>
+      )}
+
+      {/* Indicador de qualidade - bolinha colorida no canto superior esquerdo */}
+      {showQualityIndicator && quality !== 'unknown' && (
+        <div
+          className={`absolute top-1 left-1 w-1.5 h-1.5 rounded-full ${getQualityColor()}`}
+          title={`Qualidade: ${quality.toUpperCase()}`}
+        ></div>
       )}
     </div>
   );

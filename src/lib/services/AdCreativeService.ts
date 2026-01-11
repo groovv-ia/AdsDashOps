@@ -4,6 +4,12 @@
  * Serviço para gerenciar criativos de anúncios e análises de IA.
  * Integra com Edge Functions do Supabase para buscar dados do Meta
  * e realizar análises com GPT-4 Vision.
+ *
+ * Melhorias:
+ * - Sistema de retry automático para criativos incompletos
+ * - Validação de completude dos dados
+ * - Tracking de tentativas e qualidade
+ * - Cache inteligente com TTL
  */
 
 import { supabase } from '../supabase';
@@ -20,6 +26,62 @@ import type {
 
 // URL base das Edge Functions
 const FUNCTIONS_URL = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
+
+// TTL do cache em dias (criativos sao revalidados apos esse periodo)
+const CREATIVE_CACHE_TTL_DAYS = 7;
+
+// Maximo de tentativas de fetch antes de marcar como failed
+const MAX_FETCH_ATTEMPTS = 3;
+
+/**
+ * Verifica se um criativo tem dados completos (imagem OU textos)
+ */
+function isCreativeComplete(creative: MetaAdCreative): boolean {
+  const hasImage = !!(creative.thumbnail_url || creative.image_url);
+  const hasTexts = !!(creative.title || creative.body || creative.description);
+  return hasImage || hasTexts;
+}
+
+/**
+ * Verifica se um criativo está expirado e precisa ser revalidado
+ */
+function isCreativeExpired(creative: MetaAdCreative): boolean {
+  if (!creative.last_validated_at) return true;
+
+  const lastValidated = new Date(creative.last_validated_at);
+  const now = new Date();
+  const daysSinceValidation = (now.getTime() - lastValidated.getTime()) / (1000 * 60 * 60 * 24);
+
+  return daysSinceValidation > CREATIVE_CACHE_TTL_DAYS;
+}
+
+/**
+ * Verifica se um criativo deve ser rebuscado
+ * Rebusca se: incompleto, expirado, ou com menos de 3 tentativas e status != success
+ */
+function shouldRefetchCreative(creative: MetaAdCreative): boolean {
+  // Se chegou ao limite de tentativas e falhou, não tenta mais
+  if (creative.fetch_attempts >= MAX_FETCH_ATTEMPTS && creative.fetch_status === 'failed') {
+    return false;
+  }
+
+  // Se não está completo e ainda tem tentativas, rebusca
+  if (!creative.is_complete && creative.fetch_attempts < MAX_FETCH_ATTEMPTS) {
+    return true;
+  }
+
+  // Se está expirado, rebusca
+  if (isCreativeExpired(creative)) {
+    return true;
+  }
+
+  // Se está marcado como partial ou pending, rebusca
+  if (creative.fetch_status === 'partial' || creative.fetch_status === 'pending') {
+    return true;
+  }
+
+  return false;
+}
 
 /**
  * Busca o criativo de um anúncio do Meta
@@ -454,18 +516,8 @@ export async function fetchAdCreativesBatch(
 }
 
 /**
- * Verifica se um criativo tem dados completos (imagem ou textos)
- * Criativos incompletos serao rebuscados da API
- */
-function isCreativeComplete(creative: MetaAdCreative): boolean {
-  const hasImage = !!(creative.thumbnail_url || creative.image_url);
-  const hasTexts = !!(creative.title || creative.body || creative.description);
-  return hasImage || hasTexts;
-}
-
-/**
  * Busca criativos do cache local (Supabase) em lote
- * Filtra criativos incompletos para que sejam rebuscados
+ * Filtra criativos que precisam ser rebuscados (incompletos, expirados, etc)
  */
 export async function getCreativesFromCacheBatch(
   adIds: string[]
@@ -489,22 +541,31 @@ export async function getCreativesFromCacheBatch(
     return {};
   }
 
-  // Mapeia por ad_id, filtrando criativos incompletos
+  // Mapeia por ad_id, filtrando criativos que precisam ser rebuscados
   const creativesMap: Record<string, MetaAdCreative> = {};
+  let needsRefetchCount = 0;
+  let expiredCount = 0;
   let incompleteCount = 0;
 
   if (data) {
     for (const creative of data) {
-      // So adiciona ao cache se tiver dados completos
-      if (isCreativeComplete(creative)) {
-        creativesMap[creative.ad_id] = creative;
-      } else {
-        incompleteCount++;
+      // Verifica se precisa rebuscar
+      if (shouldRefetchCreative(creative)) {
+        needsRefetchCount++;
+        if (isCreativeExpired(creative)) expiredCount++;
+        if (!isCreativeComplete(creative)) incompleteCount++;
+        continue; // Não adiciona ao cache, será rebuscado
       }
+
+      // Adiciona ao cache apenas se estiver OK
+      creativesMap[creative.ad_id] = creative;
     }
   }
 
-  console.log(`[AdCreativeService] Encontrados ${Object.keys(creativesMap).length} criativos completos no cache (${incompleteCount} incompletos serao rebuscados)`);
+  console.log(`[AdCreativeService] Encontrados ${Object.keys(creativesMap).length} criativos validos no cache`);
+  if (needsRefetchCount > 0) {
+    console.log(`[AdCreativeService] ${needsRefetchCount} criativos serao rebuscados (${incompleteCount} incompletos, ${expiredCount} expirados)`);
+  }
 
   return creativesMap;
 }

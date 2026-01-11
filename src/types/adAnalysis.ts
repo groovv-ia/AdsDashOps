@@ -6,7 +6,13 @@
  */
 
 // Tipos de criativos suportados
-export type CreativeType = 'image' | 'video' | 'carousel' | 'unknown';
+export type CreativeType = 'image' | 'video' | 'carousel' | 'dynamic' | 'unknown';
+
+// Qualidade da thumbnail/imagem
+export type ThumbnailQuality = 'hd' | 'sd' | 'low' | 'unknown';
+
+// Status do fetch do criativo
+export type FetchStatus = 'success' | 'partial' | 'failed' | 'pending';
 
 // Níveis de prioridade para recomendações
 export type RecommendationPriority = 'high' | 'medium' | 'low';
@@ -23,7 +29,11 @@ export interface MetaAdCreative {
   meta_creative_id: string | null;
   creative_type: CreativeType;
   image_url: string | null;
+  image_url_hd: string | null; // URL em alta definição quando disponível
   thumbnail_url: string | null;
+  thumbnail_quality: ThumbnailQuality; // Qualidade da thumbnail
+  image_width: number | null; // Largura da imagem em pixels
+  image_height: number | null; // Altura da imagem em pixels
   video_url: string | null;
   video_id: string | null;
   preview_url: string | null;
@@ -32,9 +42,15 @@ export interface MetaAdCreative {
   description: string | null;
   call_to_action: string | null;
   link_url: string | null;
+  is_complete: boolean; // Se tem dados completos (imagem OU textos)
+  fetch_status: FetchStatus; // Status do fetch
+  fetch_attempts: number; // Número de tentativas de fetch
+  last_validated_at: string | null; // Última validação
+  error_message: string | null; // Última mensagem de erro
   extra_data: Record<string, unknown>;
   fetched_at: string;
   created_at: string;
+  updated_at?: string; // Última atualização
 }
 
 // Interface para análise detalhada de elementos visuais específicos

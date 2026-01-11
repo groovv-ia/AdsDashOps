@@ -4,9 +4,17 @@
  * Busca criativos de multiplos anuncios do Meta Ads API em lote.
  * Suporta todos os tipos de criativos: imagem, video, carrossel, dinamico.
  * Inclui busca de textos de posts via effective_object_story_id.
+ * Otimizado para buscar thumbnails em HD e garantir 100% de sincronizacao.
  *
  * POST /functions/v1/meta-fetch-ad-creatives-batch
  * Body: { ad_ids: string[], meta_ad_account_id: string }
+ *
+ * Melhorias:
+ * - Busca thumbnails em HD priorizando maior resolucao
+ * - Detecta qualidade da imagem (hd/sd/low)
+ * - Extrai dimensoes das imagens quando disponiveis
+ * - Tracking de tentativas e status de fetch
+ * - Validacao de completude dos criativos
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -139,6 +147,39 @@ const imageHashCache = new Map<string, string>();
 // Cache para post data (evita requisicoes duplicadas)
 const postDataCache = new Map<string, PostData>();
 
+// Interface para resultado de imagem com qualidade e dimensoes
+interface ImageResult {
+  url: string | null;
+  url_hd: string | null;
+  width: number | null;
+  height: number | null;
+  quality: 'hd' | 'sd' | 'low' | 'unknown';
+}
+
+/**
+ * Determina qualidade da imagem baseado nas dimensões
+ */
+function determineImageQuality(width: number | null, height: number | null): 'hd' | 'sd' | 'low' | 'unknown' {
+  if (!width || !height) return 'unknown';
+
+  // HD: >= 1280x720 ou >= 720x1280 (landscape ou portrait)
+  if ((width >= 1280 && height >= 720) || (width >= 720 && height >= 1280)) {
+    return 'hd';
+  }
+
+  // SD: >= 640x480 ou >= 480x640
+  if ((width >= 640 && height >= 480) || (width >= 480 && height >= 640)) {
+    return 'sd';
+  }
+
+  // Low: qualquer coisa menor
+  if (width > 0 && height > 0) {
+    return 'low';
+  }
+
+  return 'unknown';
+}
+
 /**
  * Busca dados do post do Facebook pelo effective_object_story_id
  */
@@ -209,54 +250,113 @@ async function convertImageHashToUrl(
 }
 
 /**
- * Busca thumbnail de video
+ * Busca thumbnail de video em HD com informações completas
  */
-async function fetchVideoThumbnail(videoId: string, accessToken: string): Promise<string | null> {
+async function fetchVideoThumbnailHD(videoId: string, accessToken: string): Promise<ImageResult> {
   try {
     const url = `https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails,picture,source&access_token=${accessToken}`;
     const response = await fetch(url);
     const data = await response.json();
 
-    // Tenta thumbnails primeiro (melhor qualidade)
-    if (data.thumbnails?.data && data.thumbnails.data.length > 0) {
-      const sorted = data.thumbnails.data.sort((a: { width: number }, b: { width: number }) => b.width - a.width);
-      return sorted[0].uri;
+    if (data.error) {
+      console.error(`Video thumbnail error for ${videoId}:`, data.error);
+      return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
     }
 
-    // Fallback para picture
-    if (data.picture) {
-      return data.picture;
+    let bestThumbnail: { uri: string; width: number; height: number } | null = null;
+    let hdThumbnail: { uri: string; width: number; height: number } | null = null;
+
+    // Processa thumbnails se existirem
+    if (data.thumbnails?.data && data.thumbnails.data.length > 0) {
+      // Ordena por tamanho (maior primeiro)
+      const sorted = data.thumbnails.data.sort((a: { width: number; height: number }, b: { width: number; height: number }) =>
+        (b.width * b.height) - (a.width * a.height)
+      );
+
+      bestThumbnail = sorted[0];
+
+      // Busca thumbnail HD (>= 1280x720)
+      hdThumbnail = sorted.find((t: { width: number; height: number }) =>
+        t.width >= 1280 && t.height >= 720
+      ) || null;
     }
+
+    // Se temos thumbnail HD, usa ele como principal
+    if (hdThumbnail) {
+      const quality = determineImageQuality(hdThumbnail.width, hdThumbnail.height);
+      return {
+        url: hdThumbnail.uri,
+        url_hd: hdThumbnail.uri,
+        width: hdThumbnail.width,
+        height: hdThumbnail.height,
+        quality,
+      };
+    }
+
+    // Se temos thumbnail normal, usa como fallback
+    if (bestThumbnail) {
+      const quality = determineImageQuality(bestThumbnail.width, bestThumbnail.height);
+      return {
+        url: bestThumbnail.uri,
+        url_hd: null,
+        width: bestThumbnail.width,
+        height: bestThumbnail.height,
+        quality,
+      };
+    }
+
+    // Fallback para picture do video
+    if (data.picture) {
+      return {
+        url: data.picture,
+        url_hd: null,
+        width: null,
+        height: null,
+        quality: 'unknown',
+      };
+    }
+
+    return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
   } catch (err) {
-    console.error(`Erro ao buscar thumbnail do video ${videoId}:`, err);
+    console.error(`Error fetching video thumbnail for ${videoId}:`, err);
+    return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
   }
-  return null;
 }
 
 /**
  * Extrai URL de imagem de todas as fontes possiveis
+ * Retorna ImageResult com informações de qualidade e dimensões
  */
 async function extractImageUrl(
   creative: MetaCreativeData,
   adAccountId: string,
   accessToken: string,
   postData?: PostData | null
-): Promise<string | null> {
+): Promise<ImageResult> {
+  // Helper para processar URL simples
+  const processUrl = (url: string): ImageResult => ({
+    url,
+    url_hd: url,
+    width: null,
+    height: null,
+    quality: 'unknown'
+  });
+
   // 1. URL direta do criativo
   if (creative.image_url) {
-    return creative.image_url;
+    return processUrl(creative.image_url);
   }
 
   if (creative.thumbnail_url) {
-    return creative.thumbnail_url;
+    return processUrl(creative.thumbnail_url);
   }
 
   // 2. De post data
   if (postData?.full_picture) {
-    return postData.full_picture;
+    return processUrl(postData.full_picture);
   }
   if (postData?.picture) {
-    return postData.picture;
+    return processUrl(postData.picture);
   }
 
   const linkData = creative.object_story_spec?.link_data;
@@ -267,28 +367,28 @@ async function extractImageUrl(
 
   // 3. Picture de link_data
   if (linkData?.picture) {
-    return linkData.picture;
+    return processUrl(linkData.picture);
   }
 
   // 4. Image URL de video_data
   if (videoData?.image_url) {
-    return videoData.image_url;
+    return processUrl(videoData.image_url);
   }
 
   // 5. URL de photo_data
   if (photoData?.url) {
-    return photoData.url;
+    return processUrl(photoData.url);
   }
 
   // 6. Primeiro item de carrossel (child_attachments)
   if (linkData?.child_attachments && linkData.child_attachments.length > 0) {
     const firstChild = linkData.child_attachments[0];
     if (firstChild.picture) {
-      return firstChild.picture;
+      return processUrl(firstChild.picture);
     }
     if (firstChild.image_hash) {
       const url = await convertImageHashToUrl(firstChild.image_hash, adAccountId, accessToken);
-      if (url) return url;
+      if (url) return processUrl(url);
     }
   }
 
@@ -296,11 +396,11 @@ async function extractImageUrl(
   if (templateData?.child_attachments && templateData.child_attachments.length > 0) {
     const firstChild = templateData.child_attachments[0];
     if (firstChild.picture) {
-      return firstChild.picture;
+      return processUrl(firstChild.picture);
     }
     if (firstChild.image_hash) {
       const url = await convertImageHashToUrl(firstChild.image_hash, adAccountId, accessToken);
-      if (url) return url;
+      if (url) return processUrl(url);
     }
   }
 
@@ -308,11 +408,11 @@ async function extractImageUrl(
   if (assetFeed?.images && assetFeed.images.length > 0) {
     const firstImage = assetFeed.images[0];
     if (firstImage.url) {
-      return firstImage.url;
+      return processUrl(firstImage.url);
     }
     if (firstImage.hash) {
       const url = await convertImageHashToUrl(firstImage.hash, adAccountId, accessToken);
-      if (url) return url;
+      if (url) return processUrl(url);
     }
   }
 
@@ -320,11 +420,11 @@ async function extractImageUrl(
   if (assetFeed?.videos && assetFeed.videos.length > 0) {
     const firstVideo = assetFeed.videos[0];
     if (firstVideo.thumbnail_url) {
-      return firstVideo.thumbnail_url;
+      return processUrl(firstVideo.thumbnail_url);
     }
     if (firstVideo.video_id) {
-      const thumb = await fetchVideoThumbnail(firstVideo.video_id, accessToken);
-      if (thumb) return thumb;
+      const thumbResult = await fetchVideoThumbnailHD(firstVideo.video_id, accessToken);
+      if (thumbResult.url) return thumbResult;
     }
   }
 
@@ -332,7 +432,7 @@ async function extractImageUrl(
   if (postData?.attachments?.data && postData.attachments.data.length > 0) {
     const firstAttachment = postData.attachments.data[0];
     if (firstAttachment.media?.image?.src) {
-      return firstAttachment.media.image.src;
+      return processUrl(firstAttachment.media.image.src);
     }
   }
 
@@ -346,17 +446,17 @@ async function extractImageUrl(
 
   for (const hash of hashesToTry) {
     const url = await convertImageHashToUrl(hash, adAccountId, accessToken);
-    if (url) return url;
+    if (url) return processUrl(url);
   }
 
   // 12. Busca thumbnail de video se houver video_id
   const videoId = creative.video_id || videoData?.video_id;
   if (videoId) {
-    const thumb = await fetchVideoThumbnail(videoId, accessToken);
-    if (thumb) return thumb;
+    const thumbResult = await fetchVideoThumbnailHD(videoId, accessToken);
+    if (thumbResult.url) return thumbResult;
   }
 
-  return null;
+  return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
 }
 
 /**
@@ -506,7 +606,11 @@ async function processAdResponse(
         meta_creative_id: null,
         creative_type: "unknown",
         image_url: null,
+        image_url_hd: null,
         thumbnail_url: null,
+        thumbnail_quality: 'unknown',
+        image_width: null,
+        image_height: null,
         video_url: null,
         video_id: null,
         preview_url: adData.preview_shareable_link || null,
@@ -515,6 +619,11 @@ async function processAdResponse(
         description: null,
         call_to_action: null,
         link_url: null,
+        is_complete: false,
+        fetch_status: 'pending',
+        fetch_attempts: 1,
+        last_validated_at: new Date().toISOString(),
+        error_message: null,
         extra_data: { ad_name: adData.name, ad_status: adData.status },
         fetched_at: new Date().toISOString(),
       },
@@ -534,21 +643,36 @@ async function processAdResponse(
   // Extrai tipo
   const creativeType = determineCreativeType(creative);
 
-  // Extrai URL da imagem (passa postData para fallback)
-  const imageUrl = await extractImageUrl(creative, metaAdAccountId, accessToken, postData);
+  // Extrai URL da imagem com qualidade e dimensoes (passa postData para fallback)
+  const imageResult = await extractImageUrl(creative, metaAdAccountId, accessToken, postData);
 
   // Video ID e URL
   const videoId = creative.video_id || videoData?.video_id || assetFeed?.videos?.[0]?.video_id || null;
   const videoUrl = videoId ? `https://www.facebook.com/ads/videos/${videoId}` : null;
 
-  // Para videos, busca thumbnail se nao tiver imagem
-  let thumbnailUrl = imageUrl;
-  if (creativeType === "video" && videoId && !thumbnailUrl) {
-    thumbnailUrl = await fetchVideoThumbnail(videoId, accessToken);
+  // Para videos, busca thumbnail em HD se nao tiver imagem
+  let finalImageResult = imageResult;
+  if (creativeType === "video" && videoId && !finalImageResult.url) {
+    finalImageResult = await fetchVideoThumbnailHD(videoId, accessToken);
   }
 
   // Extrai textos (inclui dados do post)
   const { title, body, description, callToAction, linkUrl } = extractTexts(creative, postData);
+
+  // Determina se o criativo está completo
+  const hasImage = !!finalImageResult.url;
+  const hasTexts = !!(title || body || description);
+  const isComplete = hasImage || hasTexts;
+
+  // Determina status do fetch
+  let fetchStatus: 'success' | 'partial' | 'failed' | 'pending';
+  if (hasImage && hasTexts) {
+    fetchStatus = 'success';
+  } else if (hasImage || hasTexts) {
+    fetchStatus = 'partial';
+  } else {
+    fetchStatus = 'pending';
+  }
 
   const record = {
     workspace_id: workspaceId,
@@ -556,8 +680,12 @@ async function processAdResponse(
     meta_ad_account_id: metaAdAccountId,
     meta_creative_id: creative.id || null,
     creative_type: creativeType,
-    image_url: imageUrl,
-    thumbnail_url: thumbnailUrl,
+    image_url: finalImageResult.url,
+    image_url_hd: finalImageResult.url_hd,
+    thumbnail_url: finalImageResult.url,
+    thumbnail_quality: finalImageResult.quality,
+    image_width: finalImageResult.width,
+    image_height: finalImageResult.height,
     video_url: videoUrl,
     video_id: videoId,
     preview_url: adData.preview_shareable_link || null,
@@ -566,6 +694,11 @@ async function processAdResponse(
     description,
     call_to_action: callToAction,
     link_url: linkUrl,
+    is_complete: isComplete,
+    fetch_status: fetchStatus,
+    fetch_attempts: 1,
+    last_validated_at: new Date().toISOString(),
+    error_message: null,
     extra_data: {
       ad_name: adData.name,
       ad_status: adData.status,
