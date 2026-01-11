@@ -23,6 +23,7 @@ import {
   Sparkles,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
   Layers,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
@@ -203,6 +204,9 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Mensagens
   const [error, setError] = useState<string | null>(null);
+
+  // Estado para controlar expansao da secao de contas sem dados (colapsado por padrao)
+  const [isEmptyAccountsExpanded, setIsEmptyAccountsExpanded] = useState(false);
 
   // Estado do modal de detalhes do anuncio
   const [adDetailModal, setAdDetailModal] = useState<AdDetailModalState>({
@@ -1062,6 +1066,38 @@ export const MetaAdsSyncPage: React.FC = () => {
     return filtered;
   }, [accountCards, searchQuery, statusFilter, syncFilter, activityFilter, sortBy]);
 
+  // Separa contas com dados das contas sem dados
+  // Usa a mesma logica do filtro de atividade para determinar se a conta tem dados
+  const { accountsWithData, accountsWithoutData } = useMemo(() => {
+    // Funcao auxiliar para verificar se uma conta tem dados
+    const hasAccountData = (account: AdAccountData): boolean => {
+      const hasSyncedData = (account.metrics?.total_rows || 0) > 0;
+      const hasSpend = (account.metrics?.total_spend || 0) > 0;
+      const hasActiveAds = (account.entityCounts?.ad?.active || 0) > 0;
+      const hasActiveAdsets = (account.entityCounts?.adset?.active || 0) > 0;
+      const hasActiveCampaigns = (account.entityCounts?.campaign?.active || 0) > 0;
+      return hasSyncedData || hasSpend || hasActiveAds || hasActiveAdsets || hasActiveCampaigns;
+    };
+
+    const withData: AdAccountData[] = [];
+    const withoutData: AdAccountData[] = [];
+
+    filteredAndSortedAccounts.forEach((account) => {
+      if (hasAccountData(account)) {
+        withData.push(account);
+      } else {
+        withoutData.push(account);
+      }
+    });
+
+    return { accountsWithData: withData, accountsWithoutData: withoutData };
+  }, [filteredAndSortedAccounts]);
+
+  // Funcao para alternar expansao da secao de contas sem dados
+  const toggleEmptyAccounts = () => {
+    setIsEmptyAccountsExpanded((prev) => !prev);
+  };
+
   // Breadcrumb items
   const breadcrumbItems = useMemo(() => createBreadcrumbItems(navigationState), [navigationState]);
 
@@ -1359,17 +1395,71 @@ export const MetaAdsSyncPage: React.FC = () => {
             </Button>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredAndSortedAccounts.map((account) => (
-              <AdAccountCard
-                key={account.id}
-                account={account}
-                isSelected={false}
-                isSyncing={syncingAccountId === account.id}
-                onSelect={handleSelectAccount}
-                onSync={handleSyncAccount}
-              />
-            ))}
+          <div className="space-y-6">
+            {/* Secao de Contas com Dados - visivel quando nao ha filtro ou filtro 'with-data' */}
+            {activityFilter !== 'without-data' && accountsWithData.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Contas com Dados ({accountsWithData.length})
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {accountsWithData.map((account) => (
+                    <AdAccountCard
+                      key={account.id}
+                      account={account}
+                      isSelected={false}
+                      isSyncing={syncingAccountId === account.id}
+                      onSelect={handleSelectAccount}
+                      onSync={handleSyncAccount}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Secao de Contas sem Dados - colapsavel */}
+            {activityFilter !== 'with-data' && accountsWithoutData.length > 0 && (
+              <div className="space-y-4">
+                {/* Header clicavel da secao */}
+                <button
+                  onClick={toggleEmptyAccounts}
+                  className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    {/* Icone de expansao/colapso */}
+                    {isEmptyAccountsExpanded || activityFilter === 'without-data' ? (
+                      <ChevronDown className="w-5 h-5 text-gray-500" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-gray-500" />
+                    )}
+                    <h3 className="text-lg font-semibold text-gray-700">
+                      Contas sem Dados ({accountsWithoutData.length})
+                    </h3>
+                  </div>
+                  <span className="text-sm text-gray-500">
+                    {isEmptyAccountsExpanded || activityFilter === 'without-data' ? 'Clique para colapsar' : 'Clique para expandir'}
+                  </span>
+                </button>
+
+                {/* Grid de contas sem dados - visivel quando expandido ou filtro 'without-data' ativo */}
+                {(isEmptyAccountsExpanded || activityFilter === 'without-data') && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {accountsWithoutData.map((account) => (
+                      <AdAccountCard
+                        key={account.id}
+                        account={account}
+                        isSelected={false}
+                        isSyncing={syncingAccountId === account.id}
+                        onSelect={handleSelectAccount}
+                        onSync={handleSyncAccount}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
