@@ -175,6 +175,11 @@ body {
   }
 }
 
+/* Utility class for fade in animation */
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
 @keyframes slideInFromTop {
   from {
     opacity: 0;
