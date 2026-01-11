@@ -251,21 +251,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </nav>
 
-          {/* Card de Upgrade */}
+          {/* Card de Upgrade - Design com imagem e estilo claro */}
           <div className="p-3 flex-shrink-0">
-            <div className="p-4 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl relative overflow-hidden">
-              {/* Decoracao de fundo */}
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/20 to-transparent rounded-full blur-2xl" />
-              <div className="absolute bottom-0 left-0 w-16 h-16 bg-gradient-to-tr from-emerald-500/20 to-transparent rounded-full blur-xl" />
+            <div className="p-4 bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-100 rounded-2xl relative overflow-hidden border border-blue-100/50">
+              {/* Linhas decorativas de fundo */}
+              <div className="absolute inset-0 opacity-30">
+                <div className="absolute top-4 right-4 w-16 h-16 border-2 border-blue-300 rounded-lg transform rotate-12" />
+                <div className="absolute top-8 right-8 w-12 h-12 border-2 border-blue-200 rounded-lg transform -rotate-6" />
+              </div>
 
-              <div className="relative z-10">
-                <h3 className="font-semibold text-white text-[15px] mb-1">Upgrade para Pro</h3>
-                <p className="text-[13px] text-slate-400 mb-3 leading-relaxed">
-                  Analises avancadas e campanhas ilimitadas
+              {/* Conteudo principal */}
+              <div className="relative z-10 flex flex-col items-center text-center">
+                {/* Imagem circular da pessoa */}
+                <div className="w-16 h-16 rounded-full overflow-hidden border-4 border-white shadow-lg mb-3 bg-blue-600">
+                  <img
+                    src="/image copy copy copy.png"
+                    alt="Upgrade Pro"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                {/* Textos */}
+                <h3 className="font-bold text-slate-800 text-[15px] mb-1">Upgrade para Pro</h3>
+                <p className="text-[12px] text-slate-600 mb-4 leading-relaxed">
+                  Obtenha analises avancadas e campanhas ilimitadas
                 </p>
-                <button className="w-full bg-white text-slate-900 text-[13px] font-semibold py-2.5 rounded-lg hover:bg-slate-100 transition-colors">
-                  Fazer Upgrade
-                </button>
+
+                {/* Botao e icone decorativo */}
+                <div className="w-full flex items-center gap-2">
+                  {/* Icone decorativo de IA */}
+                  <div className="w-9 h-9 rounded-full bg-white shadow-md flex items-center justify-center flex-shrink-0 border border-blue-100">
+                    <img
+                      src="/ai-line.svg"
+                      alt="AI"
+                      className="w-5 h-5"
+                    />
+                  </div>
+                  {/* Botao de Upgrade */}
+                  <button className="flex-1 bg-blue-600 text-white text-[13px] font-semibold py-2.5 rounded-xl hover:bg-blue-700 transition-colors shadow-md shadow-blue-200">
+                    Fazer Upgrade
+                  </button>
+                </div>
               </div>
             </div>
           </div>
