@@ -1012,16 +1012,21 @@ export const MetaAdsSyncPage: React.FC = () => {
     // Considera "com dados" se:
     // - Tem dados sincronizados (total_rows > 0) OU
     // - Tem anuncios ativos (entityCounts.ad.active > 0) OU
-    // - Foi sincronizado pelo menos uma vez (lastSyncAt existe)
+    // - Tem campanhas ativas (entityCounts.campaign.active > 0) OU
+    // - Tem gasto registrado (metrics.total_spend > 0)
     if (activityFilter !== 'all') {
       filtered = filtered.filter((account) => {
+        // Verifica se ha dados sincronizados no banco
         const hasSyncedData = (account.metrics?.total_rows || 0) > 0;
+        // Verifica se ha gasto registrado
+        const hasSpend = (account.metrics?.total_spend || 0) > 0;
+        // Verifica se ha entidades ativas no Meta
         const hasActiveAds = (account.entityCounts?.ad?.active || 0) > 0;
+        const hasActiveAdsets = (account.entityCounts?.adset?.active || 0) > 0;
         const hasActiveCampaigns = (account.entityCounts?.campaign?.active || 0) > 0;
-        const wasSynced = !!account.lastSyncAt;
 
-        // Considera "com dados" se tem dados sincronizados, anuncios ativos ou campanhas ativas
-        const hasData = hasSyncedData || hasActiveAds || hasActiveCampaigns || wasSynced;
+        // Considera "com dados" apenas se tem dados reais (nao apenas se foi sincronizado)
+        const hasData = hasSyncedData || hasSpend || hasActiveAds || hasActiveAdsets || hasActiveCampaigns;
 
         if (activityFilter === 'with-data') {
           return hasData;
