@@ -153,10 +153,9 @@ export const MetaAdsSyncPage: React.FC = () => {
   });
 
   // Filtros de busca e ordenacao de contas
-  // Padrão: mostra apenas contas com dados recentes (esconde contas inativas/sem métricas)
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [syncFilter, setSyncFilter] = useState<SyncFilter>('with-data');
+  const [syncFilter, setSyncFilter] = useState<SyncFilter>('all');
   const [sortBy, setSortBy] = useState<SortOption>('name-asc');
 
   // Mensagens
@@ -657,18 +656,6 @@ export const MetaAdsSyncPage: React.FC = () => {
           return account.syncStatus === 'never' || account.syncStatus === 'stale';
         } else if (syncFilter === 'error') {
           return account.syncStatus === 'error';
-        } else if (syncFilter === 'with-data') {
-          // Mostra apenas contas com dados/métricas recentes
-          // Critérios: (1) tem métricas com gasto > 0 OU (2) tem entidades ativas
-          const hasSpend = account.metrics && account.metrics.spend > 0;
-          const hasActiveEntities = account.entityCounts && (
-            (account.entityCounts.campaign?.active || 0) > 0 ||
-            (account.entityCounts.adset?.active || 0) > 0 ||
-            (account.entityCounts.ad?.active || 0) > 0
-          );
-          const hasRecentSync = account.syncStatus === 'synced' || account.syncStatus === 'stale';
-
-          return (hasSpend || hasActiveEntities) && hasRecentSync;
         }
         return true;
       });
