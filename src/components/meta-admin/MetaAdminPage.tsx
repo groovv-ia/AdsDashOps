@@ -29,7 +29,6 @@ import {
 } from '../../lib/services/MetaSystemUserService';
 import { supabase } from '../../lib/supabase';
 import { forceSessionRefresh, isRLSError } from '../../utils/sessionRefresh';
-import { WorkspaceIndicator } from '../workspaces';
 
 interface ConnectionStatus {
   connected: boolean;
@@ -379,12 +378,6 @@ export const MetaAdminPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Workspace Indicator */}
-      <WorkspaceIndicator
-        connectionCount={(connectionStatus?.adAccountsCount || adAccounts.length || 0)}
-        showNoConnectionAlert={!connectionStatus?.connected && !loadingStatus}
-      />
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
