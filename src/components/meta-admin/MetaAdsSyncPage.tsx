@@ -24,6 +24,9 @@ import {
   ExternalLink,
   ChevronRight,
   Layers,
+  Target,
+  FolderOpen,
+  Image,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -98,11 +101,11 @@ interface KPIs {
   roas: number;
 }
 
-// Niveis de entidade disponiveis
+// Niveis de entidade disponiveis com icones
 const LEVELS = [
-  { label: 'Campanhas', value: 'campaign' },
-  { label: 'Conjuntos', value: 'adset' },
-  { label: 'Anuncios', value: 'ad' },
+  { label: 'Campanhas', value: 'campaign', icon: Target },
+  { label: 'Conjuntos', value: 'adset', icon: FolderOpen },
+  { label: 'Anuncios', value: 'ad', icon: Image },
 ];
 
 // ============================================================
@@ -1497,24 +1500,41 @@ export const MetaAdsSyncPage: React.FC = () => {
           {/* Nivel - esconde quando estiver visualizando anuncios de um adset especifico */}
           {navigationState.currentView !== 'adset-detail' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">Nivel de Visualizacao</label>
-              <div className="flex space-x-2">
-                {LEVELS.map((level) => (
-                  <button
-                    key={level.value}
-                    onClick={() => setSelectedLevel(level.value)}
-                    className={`
-                      flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all
-                      ${
-                        selectedLevel === level.value
-                          ? 'bg-blue-600 text-white shadow-md scale-105'
-                          : 'bg-white text-gray-700 border border-gray-300 hover:border-blue-400 hover:bg-blue-50'
-                      }
-                    `}
-                  >
-                    {level.label}
-                  </button>
-                ))}
+              <label className="block text-sm font-medium text-gray-700 mb-4">Nível de Visualização</label>
+              <div className="grid grid-cols-3 gap-3">
+                {LEVELS.map((level) => {
+                  const Icon = level.icon;
+                  const isSelected = selectedLevel === level.value;
+
+                  return (
+                    <button
+                      key={level.value}
+                      onClick={() => setSelectedLevel(level.value)}
+                      className={`
+                        group relative flex items-center justify-center gap-2.5 px-5 py-3.5
+                        text-sm font-semibold rounded-xl transition-all duration-200
+                        ${
+                          isSelected
+                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-[1.02]'
+                            : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 hover:shadow-md'
+                        }
+                      `}
+                    >
+                      <Icon
+                        className={`
+                          w-5 h-5 transition-all duration-200
+                          ${isSelected ? 'text-white' : 'text-gray-500 group-hover:text-blue-600'}
+                        `}
+                      />
+                      <span>{level.label}</span>
+
+                      {/* Indicador visual de seleção */}
+                      {isSelected && (
+                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white shadow-sm" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
