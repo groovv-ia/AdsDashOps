@@ -250,35 +250,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </nav>
 
-          {/* Rodape fixo com icones de acao e banner de upgrade */}
-          <div className="flex-shrink-0 border-t border-slate-100">
-            {/* Barra de icones horizontais */}
-            <div className="flex items-center justify-between px-4 py-3">
-              {/* Icones de Ajuda e Configuracoes */}
-              <div className="flex items-center gap-1">
-                {footerItems.map((item, index) => {
-                  const isItemActive = currentPage === item.page;
-                  return (
-                    <button
-                      key={index}
-                      onClick={() => handlePageClick(item.page)}
-                      title={item.label}
-                      className={`
-                        p-2.5 rounded-lg transition-all duration-150
-                        ${isItemActive
-                          ? 'bg-slate-100 text-slate-900'
-                          : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
-                        }
-                      `}
-                    >
-                      <item.icon className="w-5 h-5" />
-                    </button>
-                  );
-                })}
-              </div>
+          {/* Banner de Upgrade Pro - acima do rodape */}
+          <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} />
 
-              {/* Banner de Upgrade Pro compacto */}
-              <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} compact />
+          {/* Rodape fixo com icones de acao */}
+          <div className="flex-shrink-0 border-t border-slate-100">
+            {/* Barra de icones horizontais centralizada */}
+            <div className="flex items-center justify-center gap-2 px-4 py-3">
+              {footerItems.map((item, index) => {
+                const isItemActive = currentPage === item.page;
+                return (
+                  <button
+                    key={index}
+                    onClick={() => handlePageClick(item.page)}
+                    title={item.label}
+                    className={`
+                      p-2.5 rounded-lg transition-all duration-150
+                      ${isItemActive
+                        ? 'bg-slate-100 text-slate-900'
+                        : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                      }
+                    `}
+                  >
+                    <item.icon className="w-5 h-5" />
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
