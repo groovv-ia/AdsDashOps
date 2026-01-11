@@ -99,14 +99,16 @@ export const UpgradeBanner: React.FC<UpgradeBannerProps> = ({ onUpgradeClick }) 
             Obtenha analises avancadas e campanhas ilimitadas
           </p>
 
-          {/* Botao CTA azul com bordas arredondadas */}
+          {/* Botao CTA com gradiente azul para violeta */}
           <button
             onClick={handleUpgradeClick}
             className="
               w-full py-2.5 px-4 rounded-xl
-              bg-blue-500 hover:bg-blue-600
+              bg-gradient-to-r from-blue-500 via-blue-600 to-violet-600
+              hover:from-blue-600 hover:via-blue-700 hover:to-violet-700
               text-white text-[13px] font-medium
-              transition-colors duration-200
+              transition-all duration-200
+              shadow-sm hover:shadow-md
             "
           >
             Fazer Upgrade
