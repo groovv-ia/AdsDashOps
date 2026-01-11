@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { DashboardDataService } from '../lib/services/DashboardDataService';
+import { useCurrentWorkspace } from '../contexts/WorkspaceContext';
 import {
   mockCampaigns,
   mockMetrics,
@@ -36,6 +37,7 @@ interface DashboardData {
  * Mantém interface idêntica aos dados mockados para compatibilidade total.
  */
 export const useDashboardData = (): DashboardData => {
+  const currentWorkspace = useCurrentWorkspace();
   const [campaigns, setCampaigns] = useState<Campaign[]>(mockCampaigns);
   const [metrics, setMetrics] = useState<AdMetrics[]>(mockMetrics);
   const [adSets, setAdSets] = useState<AdSet[]>(mockAdSets);
@@ -58,8 +60,21 @@ export const useDashboardData = (): DashboardData => {
 
       console.log('\n🔄 Iniciando carregamento de dados do dashboard...');
 
+      // Se não houver workspace, usa dados mockados
+      if (!currentWorkspace?.id) {
+        console.log('⚠️ Nenhum workspace selecionado, usando dados de demonstração');
+        setCampaigns(mockCampaigns);
+        setMetrics(mockMetrics);
+        setAdSets(mockAdSets);
+        setAds(mockAds);
+        setAdAccounts(mockAdAccounts);
+        setIsUsingRealData(false);
+        setLoading(false);
+        return;
+      }
+
       // Busca todos os dados do banco em paralelo
-      const data = await dataService.fetchAllDashboardData();
+      const data = await dataService.fetchAllDashboardData(currentWorkspace.id);
 
       console.log('📄 Resultado da busca:', {
         hasRealData: data.hasRealData,
@@ -125,10 +140,10 @@ export const useDashboardData = (): DashboardData => {
     await loadData();
   };
 
-  // Carrega dados ao montar o componente
+  // Carrega dados ao montar o componente ou quando o workspace mudar
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentWorkspace?.id]);
 
   return {
     campaigns,
