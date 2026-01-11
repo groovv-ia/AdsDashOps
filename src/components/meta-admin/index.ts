@@ -12,6 +12,7 @@ export { BreadcrumbNav, createBreadcrumbItems } from './BreadcrumbNav';
 export type { BreadcrumbItem, NavigationState } from './BreadcrumbNav';
 export { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
 export type { PeriodPreset } from './PeriodSelector';
+export { EnhancedPeriodSelector } from './EnhancedPeriodSelector';
 export { AccountFilters } from './AccountFilters';
 export type { StatusFilter, SyncFilter, SortOption } from './AccountFilters';
 export { BatchSyncConfirmDialog } from './BatchSyncConfirmDialog';

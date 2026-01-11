@@ -30,6 +30,7 @@ import { Button } from '../ui/Button';
 import { AdAccountCard, AdAccountData } from './AdAccountCard';
 import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems } from './BreadcrumbNav';
 import { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
+import { EnhancedPeriodSelector } from './EnhancedPeriodSelector';
 import { SyncStatusBadge, SyncStatus } from './SyncStatusBadge';
 import { AccountFilters, StatusFilter, SyncFilter, SortOption } from './AccountFilters';
 import { BatchSyncConfirmDialog, BatchSyncConfig } from './BatchSyncConfirmDialog';
@@ -1480,32 +1481,34 @@ export const MetaAdsSyncPage: React.FC = () => {
 
       {/* Filtros */}
       <Card className="relative z-20">
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Periodo */}
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Periodo</label>
-            <PeriodSelector
+        <div className="space-y-6">
+          {/* Periodo - Versao aprimorada */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">Periodo de Analise</label>
+            <EnhancedPeriodSelector
               selectedPeriod={selectedPeriod}
               onPeriodChange={handlePeriodChange}
-              size="md"
             />
           </div>
 
+          {/* Separador visual */}
+          <div className="border-t border-gray-200" />
+
           {/* Nivel - esconde quando estiver visualizando anuncios de um adset especifico */}
           {navigationState.currentView !== 'adset-detail' && (
-            <div className="flex-1 min-w-[150px]">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nivel</label>
-              <div className="flex space-x-1">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">Nivel de Visualizacao</label>
+              <div className="flex space-x-2">
                 {LEVELS.map((level) => (
                   <button
                     key={level.value}
                     onClick={() => setSelectedLevel(level.value)}
                     className={`
-                      flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors
+                      flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all
                       ${
                         selectedLevel === level.value
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          ? 'bg-blue-600 text-white shadow-md scale-105'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:border-blue-400 hover:bg-blue-50'
                       }
                     `}
                   >
@@ -1518,8 +1521,8 @@ export const MetaAdsSyncPage: React.FC = () => {
 
           {/* Indicador quando estiver dentro de um adset */}
           {navigationState.currentView === 'adset-detail' && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
-              <Layers className="w-4 h-4 text-blue-600" />
+            <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 rounded-lg border border-blue-200">
+              <Layers className="w-5 h-5 text-blue-600" />
               <span className="text-sm font-medium text-blue-700">
                 Visualizando anuncios do conjunto
               </span>
@@ -1529,7 +1532,7 @@ export const MetaAdsSyncPage: React.FC = () => {
 
         {/* Mensagem de erro */}
         {error && (
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
             <div className="flex items-center space-x-2">
               <AlertCircle className="w-5 h-5 text-red-500" />
               <span className="text-sm text-red-700">{error}</span>
