@@ -32,6 +32,8 @@ import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems }
 import { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
 import { SyncStatusBadge, SyncStatus } from './SyncStatusBadge';
 import { AccountFilters, StatusFilter, SyncFilter, SortOption, ActivityFilter } from './AccountFilters';
+import { BatchSyncConfirmDialog, BatchSyncConfig } from './BatchSyncConfirmDialog';
+import { BatchSyncProgressModal, BatchSyncResult, BatchSyncStats, BatchSyncStatus } from './BatchSyncProgressModal';
 import {
   runMetaSync,
   getMetaSyncStatus,
@@ -126,6 +128,24 @@ export const MetaAdsSyncPage: React.FC = () => {
   const [syncingAccountId, setSyncingAccountId] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncProgress, setSyncProgress] = useState<number>(0);
+
+  // Estado de sincronizacao em lote (batch sync)
+  const [showBatchConfirmDialog, setShowBatchConfirmDialog] = useState(false);
+  const [showBatchProgressModal, setShowBatchProgressModal] = useState(false);
+  const [batchSyncResults, setBatchSyncResults] = useState<BatchSyncResult[]>([]);
+  const [batchSyncStats, setBatchSyncStats] = useState<BatchSyncStats>({
+    total: 0,
+    completed: 0,
+    success: 0,
+    failed: 0,
+    skipped: 0,
+    totalInsights: 0,
+    totalCreatives: 0,
+    startTime: 0,
+  });
+  const [batchSyncComplete, setBatchSyncComplete] = useState(false);
+  const [batchSyncCancelled, setBatchSyncCancelled] = useState(false);
+  const batchCancelledRef = React.useRef(false);
 
   // Estado de dados
   const [insights, setInsights] = useState<InsightRow[]>([]);
@@ -434,34 +454,322 @@ export const MetaAdsSyncPage: React.FC = () => {
     }
   };
 
-  // Sincroniza todas as contas
-  const handleSyncAll = async () => {
+  // Abre o dialogo de confirmacao para sincronizar todas as contas
+  const handleOpenBatchSyncDialog = () => {
+    if (!syncStatus?.ad_accounts.length) return;
+    setShowBatchConfirmDialog(true);
+  };
+
+  // Verifica se uma conta foi sincronizada recentemente
+  const isRecentlySynced = (lastSyncAt: string | null, hours: number): boolean => {
+    if (!lastSyncAt) return false;
+    const lastSync = new Date(lastSyncAt);
+    const hoursSince = (Date.now() - lastSync.getTime()) / (1000 * 60 * 60);
+    return hoursSince < hours;
+  };
+
+  // Divide array em chunks para execucao paralela
+  const chunkArray = <T,>(array: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  };
+
+  // Sincroniza uma conta e retorna o resultado para o batch
+  const syncSingleAccount = async (
+    account: { id: string; meta_id: string; name: string; last_sync_at?: string | null },
+    syncCreatives: boolean
+  ): Promise<BatchSyncResult> => {
+    const startTime = Date.now();
+
+    try {
+      const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === selectedPeriod);
+      const daysBack = preset?.days === -1 || preset?.days === -2 ? 30 : Math.max(preset?.days || 7, 1);
+
+      const result = await runMetaSync({
+        mode: selectedPeriod === 'today' ? 'intraday' : 'backfill',
+        clientId: selectedClient?.id,
+        metaAdAccountId: account.meta_id,
+        daysBack,
+        levels: ['campaign', 'adset', 'ad'],
+        syncCreatives,
+      });
+
+      const duration = Date.now() - startTime;
+
+      if (result.errors.length > 0) {
+        return {
+          accountId: account.id,
+          accountName: account.name,
+          status: 'error',
+          error: result.errors.join('; '),
+          duration,
+          insightsSynced: result.insights_synced,
+          creativesSynced: result.creatives_synced,
+        };
+      }
+
+      return {
+        accountId: account.id,
+        accountName: account.name,
+        status: 'success',
+        duration,
+        insightsSynced: result.insights_synced,
+        creativesSynced: result.creatives_synced,
+      };
+    } catch (err) {
+      const duration = Date.now() - startTime;
+      return {
+        accountId: account.id,
+        accountName: account.name,
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Erro desconhecido',
+        duration,
+      };
+    }
+  };
+
+  // Inicia sincronizacao em lote com configuracoes do usuario
+  const handleStartBatchSync = async (config: BatchSyncConfig) => {
     if (!syncStatus?.ad_accounts.length) return;
 
+    // Fecha dialogo de confirmacao e abre modal de progresso
+    setShowBatchConfirmDialog(false);
+    setShowBatchProgressModal(true);
+
+    // Reseta estados
+    batchCancelledRef.current = false;
+    setBatchSyncCancelled(false);
+    setBatchSyncComplete(false);
     setSyncing(true);
     setError(null);
 
-    try {
-      for (const account of syncStatus.ad_accounts) {
-        setSyncingAccountId(account.id);
-
-        // Busca a preferência de criativos do localStorage para cada conta
-        // Usa true como padrão se não encontrar preferência salva
-        let accountSyncCreatives = true;
-        try {
-          const saved = localStorage.getItem(`meta_sync_creatives_${account.meta_id}`);
-          accountSyncCreatives = saved !== null ? saved === 'true' : true;
-        } catch (error) {
-          console.error('Erro ao buscar preferência de criativos:', error);
-        }
-
-        await handleSyncAccount(account.id, accountSyncCreatives);
+    // Prepara lista de contas e resultados iniciais
+    const allAccounts = syncStatus.ad_accounts;
+    const initialResults: BatchSyncResult[] = allAccounts.map((acc) => {
+      // Verifica se deve pular por ter sido sincronizada recentemente
+      if (config.skipRecentlySync && isRecentlySynced(acc.last_sync_at, config.skipHours)) {
+        return {
+          accountId: acc.id,
+          accountName: acc.name,
+          status: 'skipped' as BatchSyncStatus,
+        };
       }
-    } finally {
-      setSyncing(false);
-      setSyncingAccountId(null);
+      return {
+        accountId: acc.id,
+        accountName: acc.name,
+        status: 'pending' as BatchSyncStatus,
+      };
+    });
+
+    setBatchSyncResults(initialResults);
+
+    // Calcula estatisticas iniciais
+    const skippedCount = initialResults.filter((r) => r.status === 'skipped').length;
+    setBatchSyncStats({
+      total: allAccounts.length,
+      completed: 0,
+      success: 0,
+      failed: 0,
+      skipped: skippedCount,
+      totalInsights: 0,
+      totalCreatives: 0,
+      startTime: Date.now(),
+    });
+
+    // Filtra apenas contas que precisam ser sincronizadas
+    const accountsToSync = allAccounts.filter((acc) => {
+      if (config.skipRecentlySync && isRecentlySynced(acc.last_sync_at, config.skipHours)) {
+        return false;
+      }
+      return true;
+    });
+
+    // Divide em chunks para execucao paralela
+    const chunks = chunkArray(accountsToSync, config.parallelLimit);
+
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    let totalInsightsCount = 0;
+    let totalCreativesCount = 0;
+
+    // Processa cada chunk sequencialmente, mas contas dentro do chunk em paralelo
+    for (const chunk of chunks) {
+      // Verifica se foi cancelado
+      if (batchCancelledRef.current) {
+        console.log('[BatchSync] Sincronizacao cancelada pelo usuario');
+        break;
+      }
+
+      // Marca contas do chunk como "syncing"
+      setBatchSyncResults((prev) =>
+        prev.map((r) => {
+          if (chunk.some((acc) => acc.id === r.accountId)) {
+            return { ...r, status: 'syncing' as BatchSyncStatus };
+          }
+          return r;
+        })
+      );
+
+      // Executa sincronizacoes em paralelo para este chunk
+      const chunkResults = await Promise.all(
+        chunk.map((account) => syncSingleAccount(account, config.syncCreatives))
+      );
+
+      // Atualiza resultados com os resultados do chunk
+      setBatchSyncResults((prev) =>
+        prev.map((r) => {
+          const chunkResult = chunkResults.find((cr) => cr.accountId === r.accountId);
+          if (chunkResult) {
+            return chunkResult;
+          }
+          return r;
+        })
+      );
+
+      // Atualiza estatisticas
+      for (const result of chunkResults) {
+        if (result.status === 'success') {
+          totalSuccess++;
+          totalInsightsCount += result.insightsSynced || 0;
+          totalCreativesCount += result.creativesSynced || 0;
+        } else if (result.status === 'error') {
+          totalFailed++;
+        }
+      }
+
+      setBatchSyncStats((prev) => ({
+        ...prev,
+        completed: prev.completed + chunkResults.length,
+        success: totalSuccess,
+        failed: totalFailed,
+        totalInsights: totalInsightsCount,
+        totalCreatives: totalCreativesCount,
+      }));
     }
+
+    // Marca como completo
+    setBatchSyncComplete(true);
+    setSyncing(false);
+
+    // Recarrega status das contas
+    await loadStatus();
   };
+
+  // Cancela sincronizacao em lote
+  const handleCancelBatchSync = () => {
+    batchCancelledRef.current = true;
+    setBatchSyncCancelled(true);
+  };
+
+  // Fecha modal de progresso
+  const handleCloseBatchModal = () => {
+    setShowBatchProgressModal(false);
+    setBatchSyncResults([]);
+    setBatchSyncComplete(false);
+    setBatchSyncCancelled(false);
+  };
+
+  // Tenta novamente apenas as contas que falharam
+  const handleRetryFailedAccounts = async () => {
+    if (!syncStatus?.ad_accounts.length) return;
+
+    // Encontra IDs das contas que falharam
+    const failedAccountIds = batchSyncResults
+      .filter((r) => r.status === 'error')
+      .map((r) => r.accountId);
+
+    if (failedAccountIds.length === 0) return;
+
+    // Reseta estados
+    batchCancelledRef.current = false;
+    setBatchSyncCancelled(false);
+    setBatchSyncComplete(false);
+    setSyncing(true);
+
+    // Atualiza resultados para marcar falhas como pendentes
+    setBatchSyncResults((prev) =>
+      prev.map((r) => {
+        if (r.status === 'error') {
+          return { ...r, status: 'pending' as BatchSyncStatus, error: undefined };
+        }
+        return r;
+      })
+    );
+
+    // Atualiza estatisticas
+    setBatchSyncStats((prev) => ({
+      ...prev,
+      completed: prev.completed - prev.failed,
+      failed: 0,
+      startTime: Date.now(),
+    }));
+
+    // Filtra contas que falharam
+    const accountsToRetry = syncStatus.ad_accounts.filter((acc) =>
+      failedAccountIds.includes(acc.id)
+    );
+
+    // Processa uma por uma (sem paralelismo para retry)
+    for (const account of accountsToRetry) {
+      if (batchCancelledRef.current) break;
+
+      // Marca como syncing
+      setBatchSyncResults((prev) =>
+        prev.map((r) => {
+          if (r.accountId === account.id) {
+            return { ...r, status: 'syncing' as BatchSyncStatus };
+          }
+          return r;
+        })
+      );
+
+      // Busca preferencia de criativos
+      let syncCreatives = true;
+      try {
+        const saved = localStorage.getItem(`meta_sync_creatives_${account.meta_id}`);
+        syncCreatives = saved !== null ? saved === 'true' : true;
+      } catch {
+        // Ignora erro
+      }
+
+      const result = await syncSingleAccount(account, syncCreatives);
+
+      // Atualiza resultado
+      setBatchSyncResults((prev) =>
+        prev.map((r) => {
+          if (r.accountId === account.id) {
+            return result;
+          }
+          return r;
+        })
+      );
+
+      // Atualiza estatisticas
+      setBatchSyncStats((prev) => ({
+        ...prev,
+        completed: prev.completed + 1,
+        success: result.status === 'success' ? prev.success + 1 : prev.success,
+        failed: result.status === 'error' ? prev.failed + 1 : prev.failed,
+        totalInsights: prev.totalInsights + (result.insightsSynced || 0),
+        totalCreatives: prev.totalCreatives + (result.creativesSynced || 0),
+      }));
+    }
+
+    setBatchSyncComplete(true);
+    setSyncing(false);
+    await loadStatus();
+  };
+
+  // Calcula quantas contas foram sincronizadas recentemente (para o dialogo)
+  const recentlySyncedCount = useMemo(() => {
+    if (!syncStatus?.ad_accounts) return 0;
+    return syncStatus.ad_accounts.filter((acc) =>
+      isRecentlySynced(acc.last_sync_at, 6)
+    ).length;
+  }, [syncStatus]);
 
   // ============================================================
   // FUNCOES DE NAVEGACAO
@@ -894,7 +1202,7 @@ export const MetaAdsSyncPage: React.FC = () => {
             />
 
             {/* Botao sincronizar todas */}
-            <Button onClick={handleSyncAll} disabled={syncing || accountCards.length === 0}>
+            <Button onClick={handleOpenBatchSyncDialog} disabled={syncing || accountCards.length === 0}>
               {syncing ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -1070,6 +1378,27 @@ export const MetaAdsSyncPage: React.FC = () => {
             </div>
           </Card>
         )}
+
+        {/* Modal de Confirmacao de Sincronizacao em Lote */}
+        <BatchSyncConfirmDialog
+          isOpen={showBatchConfirmDialog}
+          totalAccounts={accountCards.length}
+          recentlySyncedCount={recentlySyncedCount}
+          onConfirm={handleStartBatchSync}
+          onCancel={() => setShowBatchConfirmDialog(false)}
+        />
+
+        {/* Modal de Progresso de Sincronizacao em Lote */}
+        <BatchSyncProgressModal
+          isOpen={showBatchProgressModal}
+          results={batchSyncResults}
+          stats={batchSyncStats}
+          isComplete={batchSyncComplete}
+          isCancelled={batchSyncCancelled}
+          onCancel={handleCancelBatchSync}
+          onClose={handleCloseBatchModal}
+          onRetryFailed={handleRetryFailedAccounts}
+        />
       </div>
     );
   }

@@ -14,3 +14,7 @@ export { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodS
 export type { PeriodPreset } from './PeriodSelector';
 export { AccountFilters } from './AccountFilters';
 export type { StatusFilter, SyncFilter, SortOption } from './AccountFilters';
+export { BatchSyncConfirmDialog } from './BatchSyncConfirmDialog';
+export type { BatchSyncConfig } from './BatchSyncConfirmDialog';
+export { BatchSyncProgressModal } from './BatchSyncProgressModal';
+export type { BatchSyncResult, BatchSyncStats, BatchSyncStatus } from './BatchSyncProgressModal';
