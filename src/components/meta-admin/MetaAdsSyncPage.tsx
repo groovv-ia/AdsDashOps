@@ -1212,21 +1212,6 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-3">
-            {/* Status global */}
-            <SyncStatusBadge
-              status={
-                syncStatus.health_status === 'healthy'
-                  ? 'synced'
-                  : syncStatus.health_status === 'pending_first_sync'
-                  ? 'never'
-                  : syncStatus.health_status === 'stale'
-                  ? 'stale'
-                  : 'error'
-              }
-              showLabel
-              size="md"
-            />
-
             {/* Botao sincronizar todas */}
             <Button onClick={handleOpenBatchSyncDialog} disabled={syncing || accountCards.length === 0}>
               {syncing ? (
