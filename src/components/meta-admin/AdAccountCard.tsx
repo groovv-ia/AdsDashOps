@@ -385,16 +385,6 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     typeof account.metrics.spend === 'number' &&
     ((account.metrics.impressions || 0) > 0 || account.metrics.spend > 0);
 
-  // Calcula total de entidades ativas para badge de destaque
-  const totalActiveEntities = hasEntityCounts
-    ? (account.entityCounts?.campaign.active || 0) +
-      (account.entityCounts?.adset.active || 0) +
-      (account.entityCounts?.ad.active || 0)
-    : 0;
-
-  // Verifica se a conta tem dados significativos para mostrar badge de destaque
-  const hasSignificantData = hasMetrics || totalActiveEntities > 0;
-
   return (
     <Card
       className={`
@@ -424,17 +414,6 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
               {getStatusText()}
             </Badge>
             <span className="text-xs text-gray-500 font-mono">{account.metaId}</span>
-
-            {/* Badge de destaque quando a conta tem dados sincronizados */}
-            {hasSignificantData && (
-              <span
-                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border-2 bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-green-300 shadow-sm"
-                title={`${totalActiveEntities} entidade${totalActiveEntities !== 1 ? 's' : ''} ativa${totalActiveEntities !== 1 ? 's' : ''} com métricas`}
-              >
-                <BarChart3 className="w-3 h-3 mr-1" />
-                Dados Disponíveis
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -525,79 +504,53 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
       {/* Secao de indicadores de entidades (campanhas, conjuntos, anuncios) */}
       {hasEntityCounts && (
         <div className="mb-4 pb-4 border-b border-gray-200">
-          {/* Titulo da secao */}
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="w-4 h-4 text-blue-600" />
-            <h4 className="text-sm font-semibold text-gray-700">Estrutura da Conta</h4>
-          </div>
-
           {/* Badges de entidades em linha */}
           <div className="flex items-center justify-between gap-2 mb-3">
             {/* Campanhas */}
-            <div
-              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors cursor-help"
-              title={`${account.entityCounts?.campaign.active || 0} campanhas ativas de ${account.entityCounts?.campaign.total || 0} totais`}
-            >
-              <Layers className="w-4 h-4 text-blue-600" />
-              <div className="flex flex-col items-center">
-                <span className="text-xs font-bold">
-                  <span className="text-green-600">{account.entityCounts?.campaign.active || 0}</span>
-                  <span className="text-gray-400 mx-0.5">/</span>
-                  <span className="text-gray-600">{account.entityCounts?.campaign.total || 0}</span>
-                </span>
-                <span className="text-[10px] text-gray-500 font-medium">Campanhas</span>
-              </div>
+            <div className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-blue-50 rounded-lg border border-blue-100">
+              <Layers className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-xs font-medium">
+                <span className="text-green-600">{account.entityCounts?.campaign.active || 0}</span>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-600">{account.entityCounts?.campaign.total || 0}</span>
+              </span>
+              <span className="text-xs text-gray-500">camp.</span>
             </div>
             {/* Conjuntos */}
-            <div
-              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 bg-cyan-50 rounded-lg border border-cyan-200 hover:border-cyan-300 transition-colors cursor-help"
-              title={`${account.entityCounts?.adset.active || 0} conjuntos ativos de ${account.entityCounts?.adset.total || 0} totais`}
-            >
-              <Grid3X3 className="w-4 h-4 text-cyan-600" />
-              <div className="flex flex-col items-center">
-                <span className="text-xs font-bold">
-                  <span className="text-green-600">{account.entityCounts?.adset.active || 0}</span>
-                  <span className="text-gray-400 mx-0.5">/</span>
-                  <span className="text-gray-600">{account.entityCounts?.adset.total || 0}</span>
-                </span>
-                <span className="text-[10px] text-gray-500 font-medium">Conjuntos</span>
-              </div>
+            <div className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-cyan-50 rounded-lg border border-cyan-100">
+              <Grid3X3 className="w-3.5 h-3.5 text-cyan-600" />
+              <span className="text-xs font-medium">
+                <span className="text-green-600">{account.entityCounts?.adset.active || 0}</span>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-600">{account.entityCounts?.adset.total || 0}</span>
+              </span>
+              <span className="text-xs text-gray-500">conj.</span>
             </div>
             {/* Anuncios */}
-            <div
-              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 bg-teal-50 rounded-lg border border-teal-200 hover:border-teal-300 transition-colors cursor-help"
-              title={`${account.entityCounts?.ad.active || 0} anúncios ativos de ${account.entityCounts?.ad.total || 0} totais`}
-            >
-              <ImageIcon className="w-4 h-4 text-teal-600" />
-              <div className="flex flex-col items-center">
-                <span className="text-xs font-bold">
-                  <span className="text-green-600">{account.entityCounts?.ad.active || 0}</span>
-                  <span className="text-gray-400 mx-0.5">/</span>
-                  <span className="text-gray-600">{account.entityCounts?.ad.total || 0}</span>
-                </span>
-                <span className="text-[10px] text-gray-500 font-medium">Anúncios</span>
-              </div>
+            <div className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-teal-50 rounded-lg border border-teal-100">
+              <ImageIcon className="w-3.5 h-3.5 text-teal-600" />
+              <span className="text-xs font-medium">
+                <span className="text-green-600">{account.entityCounts?.ad.active || 0}</span>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-600">{account.entityCounts?.ad.total || 0}</span>
+              </span>
+              <span className="text-xs text-gray-500">ads</span>
             </div>
           </div>
           {/* Indicador de freshness dos dados */}
-          <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-200">
-            <Calendar className="w-3.5 h-3.5 text-gray-500" />
-            <span className="text-xs text-gray-600">
-              Dados até <span className="font-semibold text-gray-800">{formatRelativeTime(account.latestDataDate)}</span>
-            </span>
+          <div className="flex items-center justify-center gap-1.5 text-xs text-gray-500">
+            <Calendar className="w-3 h-3" />
+            <span>Dados ate <span className="font-medium text-gray-700">{formatRelativeTime(account.latestDataDate)}</span></span>
           </div>
         </div>
       )}
 
       {/* Estado sem metricas */}
-      {!account.metrics && !hasEntityCounts && (
-        <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-6 mb-4 text-center border-2 border-dashed border-gray-300">
-          <BarChart3 className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-gray-700 mb-1">
-            Nenhum dado sincronizado
-          </p>
-          <p className="text-xs text-gray-500">
-            Clique em "Sincronizar" abaixo para importar métricas
+      {!account.metrics && (
+        <div className="bg-gray-50 rounded-lg p-6 mb-4 text-center">
+          <BarChart3 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-500">
+            Sincronize para ver metricas
           </p>
         </div>
       )}

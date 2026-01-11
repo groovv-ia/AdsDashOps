@@ -50,7 +50,6 @@ import { useClient } from '../../contexts/ClientContext';
 import { AdDetailModal, AdCreativeThumbnail } from '../ad-analysis';
 import type { AdDetailModalState } from '../../types/adAnalysis';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
-import { useScrollRestoration } from '../../hooks/useScrollRestoration';
 import { ExportReportModal } from './ExportReportModal';
 import type { AnalysisLevel } from '../../types/metricsAnalysis';
 import type { PreloadedMetricsData } from '../../lib/services/MetricsAIAnalysisService';
@@ -129,13 +128,6 @@ export const MetaAdsSyncPage: React.FC = () => {
     selectedAdsetId: null,
     selectedAdsetName: null,
   });
-
-  // Hook para gerenciar scroll restoration
-  // Ativo apenas quando estamos na view de listagem de contas
-  const {
-    saveScrollPosition,
-    restoreScrollPosition,
-  } = useScrollRestoration('meta-accounts-list', navigationState.currentView === 'accounts');
 
   // Estado de sincronizacao
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
@@ -814,9 +806,6 @@ export const MetaAdsSyncPage: React.FC = () => {
     const account = getAccountById(accountId);
     if (!account) return;
 
-    // Salva a posição atual do scroll antes de navegar
-    saveScrollPosition();
-
     setNavigationState({
       currentView: 'account-detail',
       selectedAccountId: accountId,
@@ -1218,7 +1207,7 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   if (navigationState.currentView === 'accounts') {
     return (
-      <div className="space-y-6 animate-fadeIn">
+      <div className="space-y-6">
         {/* Header Principal */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center space-x-3">
@@ -1441,18 +1430,17 @@ export const MetaAdsSyncPage: React.FC = () => {
   const selectedAccount = getAccountById(navigationState.selectedAccountId || '');
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-6">
       {/* Header com Breadcrumb */}
       <div className="flex flex-col gap-4">
         {/* Botao Voltar e Breadcrumb */}
         <div className="flex items-center space-x-4">
           <button
             onClick={handleBackToAccounts}
-            className="flex items-center space-x-2 px-3 py-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors group"
-            title="Voltar para a lista de contas (sua posição de scroll será preservada)"
+            className="flex items-center space-x-2 px-3 py-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
           >
-            <ArrowLeft className="w-5 h-5 group-hover:transform group-hover:-translate-x-1 transition-transform" />
-            <span className="font-medium">Voltar para Contas</span>
+            <ArrowLeft className="w-5 h-5" />
+            <span className="font-medium">Voltar</span>
           </button>
 
           <BreadcrumbNav items={breadcrumbItems} onNavigate={handleBreadcrumbNavigate} />
