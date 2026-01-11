@@ -13,7 +13,8 @@ import { Button } from '../ui/Button';
 export type StatusFilter = 'all' | 'active' | 'paused';
 
 // Opcoes de sincronizacao para filtro
-export type SyncFilter = 'all' | 'synced' | 'not-synced' | 'error';
+// 'with-data' mostra apenas contas com metricas/dados recentes (gasto > 0 ou entidades ativas)
+export type SyncFilter = 'all' | 'synced' | 'not-synced' | 'error' | 'with-data';
 
 // Opcoes de ordenacao
 export type SortOption = 'name-asc' | 'name-desc' | 'spend-desc' | 'date-desc';
@@ -101,6 +102,7 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
             className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="all">Todas sincronizações</option>
+            <option value="with-data">✓ Com dados recentes</option>
             <option value="synced">Sincronizadas</option>
             <option value="not-synced">Não sincronizadas</option>
             <option value="error">Com erro</option>
