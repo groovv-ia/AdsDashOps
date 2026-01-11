@@ -12,19 +12,26 @@ interface ImageZoomModalProps {
   isOpen: boolean;
   onClose: () => void;
   imageUrl: string;
+  imageUrlHd?: string | null;
   alt?: string;
   title?: string;
+  quality?: 'hd' | 'sd' | 'low' | 'unknown';
 }
 
 export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
   isOpen,
   onClose,
   imageUrl,
+  imageUrlHd,
   alt = 'Imagem do anúncio',
   title,
+  quality = 'unknown',
 }) => {
   const [zoom, setZoom] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
+
+  // Usa URL HD se disponivel, senao usa a normal
+  const bestImageUrl = imageUrlHd || imageUrl;
 
   // Fecha modal com ESC
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -55,13 +62,21 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handlers de zoom
-  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3));
+  // Handlers de zoom - permite ate 4x
+  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 4));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
 
-  // Abre imagem em nova aba
+  // Abre imagem em nova aba (usa a melhor URL)
   const handleOpenExternal = () => {
-    window.open(imageUrl, '_blank', 'noopener,noreferrer');
+    window.open(bestImageUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  // Labels e cores para badges de qualidade
+  const qualityConfig = {
+    hd: { label: 'HD', color: 'bg-green-500/90' },
+    sd: { label: 'SD', color: 'bg-blue-500/90' },
+    low: { label: 'Low', color: 'bg-orange-500/90' },
+    unknown: { label: '', color: '' },
   };
 
   return (
@@ -80,9 +95,16 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
             {title && (
               <h3 className="text-white font-medium truncate max-w-md">{title}</h3>
             )}
-            <span className="text-gray-400 text-sm">
-              Zoom: {Math.round(zoom * 100)}%
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-gray-400 text-sm">
+                Zoom: {Math.round(zoom * 100)}%
+              </span>
+              {quality !== 'unknown' && qualityConfig[quality].label && (
+                <span className={`px-2 py-0.5 text-xs font-medium text-white rounded ${qualityConfig[quality].color}`}>
+                  {qualityConfig[quality].label}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Botões de ação */}
@@ -97,7 +119,7 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
             </button>
             <button
               onClick={handleZoomIn}
-              disabled={zoom >= 3}
+              disabled={zoom >= 4}
               className="p-2 text-white hover:bg-white/10 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Aumentar zoom"
             >
@@ -112,7 +134,7 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
               <ExternalLink className="w-5 h-5" />
             </button>
             <a
-              href={imageUrl}
+              href={bestImageUrl}
               download
               className="p-2 text-white hover:bg-white/10 rounded-lg transition-colors"
               title="Baixar imagem"
@@ -138,7 +160,7 @@ export const ImageZoomModal: React.FC<ImageZoomModalProps> = ({
             </div>
           )}
           <img
-            src={imageUrl}
+            src={bestImageUrl}
             alt={alt}
             onLoad={() => setIsLoading(false)}
             onError={() => setIsLoading(false)}
