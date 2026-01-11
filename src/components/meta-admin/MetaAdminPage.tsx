@@ -318,33 +318,50 @@ export const MetaAdminPage: React.FC = () => {
     setTimeout(() => setSuccess(null), 3000);
   };
 
-  const getHealthStatusColor = (status: string) => {
+  // Retorna cor do badge baseado no status da conexao e saude
+  const getConnectionBadgeStyle = (isConnected: boolean, healthStatus?: string) => {
+    // Se conectado, sempre mostra badge verde de conexao
+    if (isConnected) {
+      return 'text-emerald-700 bg-emerald-100 border border-emerald-300';
+    }
+    // Se nao conectado, mostra status de erro
+    return 'text-red-600 bg-red-100 border border-red-200';
+  };
+
+  // Retorna label do badge de conexao
+  const getConnectionBadgeLabel = (isConnected: boolean) => {
+    return isConnected ? 'Conectado' : 'Desconectado';
+  };
+
+  // Retorna cor do badge de sincronizacao (secundario)
+  const getSyncStatusColor = (status: string) => {
     switch (status) {
       case 'healthy':
-        return 'text-green-600 bg-green-100';
+        return 'text-green-600 bg-green-50 border border-green-200';
       case 'pending_first_sync':
-        return 'text-blue-600 bg-blue-100';
+        return 'text-blue-600 bg-blue-50 border border-blue-200';
       case 'stale':
-        return 'text-yellow-600 bg-yellow-100';
+        return 'text-amber-600 bg-amber-50 border border-amber-200';
       case 'error':
-        return 'text-red-600 bg-red-100';
+        return 'text-red-600 bg-red-50 border border-red-200';
       default:
-        return 'text-gray-600 bg-gray-100';
+        return 'text-gray-500 bg-gray-50 border border-gray-200';
     }
   };
 
-  const getHealthStatusLabel = (status: string) => {
+  // Retorna label do status de sincronizacao
+  const getSyncStatusLabel = (status: string) => {
     switch (status) {
       case 'healthy':
-        return 'Saudavel';
+        return 'Dados atualizados';
       case 'pending_first_sync':
-        return 'Aguardando Sincronizacao';
+        return 'Aguardando sincronizacao';
       case 'stale':
-        return 'Desatualizado';
+        return 'Sincronizar dados';
       case 'error':
-        return 'Com Erros';
+        return 'Erro na sincronizacao';
       default:
-        return 'Desconectado';
+        return 'Nao sincronizado';
     }
   };
 
@@ -392,40 +409,57 @@ export const MetaAdminPage: React.FC = () => {
 
       {/* Status Card */}
       {connectionStatus && (
-        <Card className="border-l-4 border-l-blue-500">
+        <Card className={`border-l-4 ${connectionStatus.connected ? 'border-l-emerald-500' : 'border-l-red-500'}`}>
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-4">
-              {connectionStatus.connected ? (
-                <CheckCircle className="w-8 h-8 text-green-500 flex-shrink-0" />
-              ) : (
-                <XCircle className="w-8 h-8 text-red-500 flex-shrink-0" />
-              )}
-              <div>
-                <h3 className="font-semibold text-gray-900">
-                  {connectionStatus.connected ? 'Conectado' : 'Desconectado'}
-                </h3>
+              {/* Icone de status com efeito visual */}
+              <div className={`relative p-2 rounded-xl ${connectionStatus.connected ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                {connectionStatus.connected ? (
+                  <>
+                    <CheckCircle className="w-7 h-7 text-emerald-600" />
+                    {/* Indicador de conexao ativa */}
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white">
+                      <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75" />
+                    </span>
+                  </>
+                ) : (
+                  <XCircle className="w-7 h-7 text-red-500" />
+                )}
+              </div>
+
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-1">
+                  <h3 className="font-semibold text-gray-900 text-lg">
+                    {connectionStatus.connected ? 'Meta Ads Conectado' : 'Desconectado'}
+                  </h3>
+                  {/* Badge de conexao - sempre mostra status da conexao */}
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getConnectionBadgeStyle(connectionStatus.connected)}`}>
+                    {getConnectionBadgeLabel(connectionStatus.connected)}
+                  </span>
+                </div>
+
                 {connectionStatus.businessManagerId && (
                   <p className="text-sm text-gray-600">
-                    Business Manager: {connectionStatus.businessManagerId}
+                    Business Manager: <span className="font-mono text-gray-800">{connectionStatus.businessManagerId}</span>
                   </p>
                 )}
                 {connectionStatus.adAccountsCount !== undefined && (
                   <p className="text-sm text-gray-600">
-                    {connectionStatus.adAccountsCount} conta(s) de anuncios
+                    {connectionStatus.adAccountsCount} conta(s) de anuncios vinculadas
                   </p>
                 )}
-                {dbAccountCount !== null && (
-                  <p className="text-xs text-blue-600 font-mono mt-1">
-                    [Debug] {dbAccountCount} contas salvas no banco de dados
+                {dbAccountCount !== null && dbAccountCount > 0 && (
+                  <p className="text-xs text-emerald-600 font-medium mt-1">
+                    {dbAccountCount} conta(s) prontas para sincronizacao
                   </p>
                 )}
                 {connectionStatus?.adAccountsCount && dbAccountCount === 0 && (
                   <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <p className="text-xs text-yellow-800 font-semibold mb-1">
-                      ⚠️ Contas não salvas no banco de dados
+                      Contas nao salvas no banco de dados
                     </p>
                     <p className="text-xs text-yellow-700 mb-2">
-                      As contas foram detectadas mas não estão visíveis devido às políticas de segurança.
+                      As contas foram detectadas mas nao estao visiveis devido as politicas de seguranca.
                     </p>
                     <button
                       onClick={async () => {
@@ -439,21 +473,25 @@ export const MetaAdminPage: React.FC = () => {
                   </div>
                 )}
                 {connectionStatus.lastValidated && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 mt-2">
                     Ultima validacao: {new Date(connectionStatus.lastValidated).toLocaleString('pt-BR')}
                   </p>
                 )}
               </div>
             </div>
 
-            {syncStatus && (
-              <span
-                className={`px-3 py-1 rounded-full text-sm font-medium ${getHealthStatusColor(
-                  syncStatus.health_status
-                )}`}
-              >
-                {getHealthStatusLabel(syncStatus.health_status)}
-              </span>
+            {/* Badge secundario de sincronizacao - so mostra se conectado */}
+            {syncStatus && connectionStatus.connected && (
+              <div className="flex flex-col items-end gap-2">
+                <span className={`px-3 py-1.5 rounded-lg text-xs font-medium ${getSyncStatusColor(syncStatus.health_status)}`}>
+                  {getSyncStatusLabel(syncStatus.health_status)}
+                </span>
+                {syncStatus.health_status === 'stale' && (
+                  <p className="text-xs text-amber-600">
+                    Acesse "Meta Ads Sync" para atualizar
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
@@ -464,7 +502,7 @@ export const MetaAdminPage: React.FC = () => {
                 {connectionStatus.scopes.map((scope) => (
                   <span
                     key={scope}
-                    className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full"
+                    className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs rounded-lg border border-blue-200 font-medium"
                   >
                     {scope}
                   </span>
