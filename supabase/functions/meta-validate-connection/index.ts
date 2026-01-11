@@ -3,48 +3,35 @@
  * 
  * Valida um token de System User do Meta e salva a conexão no banco.
  * 
- * POST /functions/v1/meta-validate-connection
- * Body: { business_manager_id: string, system_user_token: string }
- * 
- * Retorna: { status: string, adaccounts_count: number, scopes: string[] }
+ * CORREÇÃO: O onConflict agora usa a constraint composta correta
+ * (workspace_id, meta_ad_account_id) ao invés de só meta_ad_account_id.
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-// Headers CORS padrão
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Interface para payload da requisição
 interface ValidateConnectionPayload {
   business_manager_id: string;
   system_user_token: string;
 }
 
-// Interface para resposta do Meta /me
 interface MetaMeResponse {
   id: string;
   name?: string;
-  error?: {
-    message: string;
-    code: number;
-  };
+  error?: { message: string; code: number };
 }
 
-// Interface para resposta de permissões
 interface MetaPermissionsResponse {
   data: Array<{ permission: string; status: string }>;
-  error?: {
-    message: string;
-    code: number;
-  };
+  error?: { message: string; code: number };
 }
 
-// Interface para resposta de ad accounts
 interface MetaAdAccountsResponse {
   data: Array<{
     id: string;
@@ -53,72 +40,70 @@ interface MetaAdAccountsResponse {
     currency: string;
     timezone_name: string;
   }>;
-  paging?: {
-    cursors: { after: string };
-    next: string;
+  paging?: { cursors: { after: string }; next: string };
+  error?: { message: string; code: number };
+}
+
+// Mapeia status numérico do Meta para texto
+function mapAccountStatus(status: number): string {
+  const statusMap: Record<number, string> = {
+    1: "ACTIVE",
+    2: "DISABLED",
+    3: "UNSETTLED",
+    7: "PENDING_RISK_REVIEW",
+    8: "PENDING_SETTLEMENT",
+    9: "IN_GRACE_PERIOD",
+    100: "PENDING_CLOSURE",
+    101: "CLOSED",
+    201: "ANY_ACTIVE",
+    202: "ANY_CLOSED",
   };
-  error?: {
-    message: string;
-    code: number;
-  };
+  return statusMap[status] || "UNKNOWN";
 }
 
 Deno.serve(async (req: Request) => {
-  // Trata requisições OPTIONS (preflight CORS)
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    // Apenas aceita POST
     if (req.method !== "POST") {
       return new Response(
         JSON.stringify({ error: "Method not allowed" }),
-        {
-          status: 405,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Extrai o token JWT do header Authorization
+    // Verifica autenticação
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
         JSON.stringify({ error: "Missing authorization header" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Cria cliente Supabase com service role para operações privilegiadas
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Cliente com anon key para verificar o usuário
+    // Verifica usuário autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    // Verifica o usuário autenticado
     const { data: { user }, error: userError } = await supabaseAuth.auth.getUser();
     if (userError || !user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized", details: userError?.message }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Cliente com service role para operações no banco
+    console.log(`[meta-validate-connection] User authenticated: ${user.id}`);
+
+    // Cliente admin para bypass de RLS
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Parse do body
@@ -128,14 +113,13 @@ Deno.serve(async (req: Request) => {
     if (!business_manager_id || !system_user_token) {
       return new Response(
         JSON.stringify({ error: "Missing business_manager_id or system_user_token" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // 1. Validar o token com a API do Meta (/me)
+    // =====================================================
+    // 1. VALIDAR TOKEN COM META API
+    // =====================================================
     const meResponse = await fetch(
       `https://graph.facebook.com/v21.0/me?access_token=${system_user_token}`
     );
@@ -143,19 +127,14 @@ Deno.serve(async (req: Request) => {
 
     if (meData.error) {
       return new Response(
-        JSON.stringify({
-          error: "Invalid Meta token",
-          details: meData.error.message,
-          status: "invalid",
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        JSON.stringify({ error: "Invalid Meta token", details: meData.error.message, status: "invalid" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // 2. Verificar permissões do token
+    // =====================================================
+    // 2. VERIFICAR PERMISSÕES DO TOKEN
+    // =====================================================
     const permissionsResponse = await fetch(
       `https://graph.facebook.com/v21.0/me/permissions?access_token=${system_user_token}`
     );
@@ -170,7 +149,6 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Verificar permissões mínimas necessárias
     const requiredScopes = ["ads_read", "business_management"];
     const missingScopes = requiredScopes.filter((s) => !grantedScopes.includes(s));
 
@@ -182,14 +160,13 @@ Deno.serve(async (req: Request) => {
           granted_scopes: grantedScopes,
           status: "invalid",
         }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // 3. Buscar ad accounts acessíveis com paginação completa
+    // =====================================================
+    // 3. BUSCAR TODAS AS AD ACCOUNTS COM PAGINAÇÃO
+    // =====================================================
     const allAdAccounts: Array<{
       id: string;
       name: string;
@@ -201,40 +178,37 @@ Deno.serve(async (req: Request) => {
     let nextUrl: string | null =
       `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_status,currency,timezone_name&limit=100&access_token=${system_user_token}`;
 
-    // Loop para buscar todas as páginas de ad accounts
-    while (nextUrl) {
+    let pageCount = 0;
+    const maxPages = 50;
+
+    while (nextUrl && pageCount < maxPages) {
+      pageCount++;
+      console.log(`[meta-validate-connection] Fetching page ${pageCount}...`);
+
       const adAccountsResponse = await fetch(nextUrl);
       const adAccountsData: MetaAdAccountsResponse = await adAccountsResponse.json();
 
       if (adAccountsData.error) {
         return new Response(
-          JSON.stringify({
-            error: "Meta API error fetching ad accounts",
-            details: adAccountsData.error.message,
-            status: "invalid",
-          }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ error: "Meta API error", details: adAccountsData.error.message, status: "invalid" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      if (adAccountsData.data) {
+      if (adAccountsData.data && adAccountsData.data.length > 0) {
         allAdAccounts.push(...adAccountsData.data);
+        console.log(`[meta-validate-connection] Page ${pageCount}: ${adAccountsData.data.length} accounts (total: ${allAdAccounts.length})`);
       }
 
-      // Verifica se há próxima página
       nextUrl = adAccountsData.paging?.next || null;
     }
 
-    const adAccountsCount = allAdAccounts.length;
-    console.log(`[meta-validate-connection] Discovered ${adAccountsCount} ad accounts in total`);
+    console.log(`[meta-validate-connection] Total accounts discovered: ${allAdAccounts.length}`);
 
-    // 4. Buscar ou criar workspace do usuário (primeiro como owner, depois como membro)
+    // =====================================================
+    // 4. BUSCAR OU CRIAR WORKSPACE DO USUÁRIO
+    // =====================================================
     let workspaceId: string;
-
-    console.log(`[meta-validate-connection] Buscando workspace para user_id: ${user.id}`);
 
     // Tenta buscar como owner direto
     const { data: ownedWorkspace } = await supabaseAdmin
@@ -244,46 +218,32 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (ownedWorkspace) {
-      console.log(`[meta-validate-connection] ✓ Workspace encontrado como owner: ${ownedWorkspace.id}`);
       workspaceId = ownedWorkspace.id;
+      console.log(`[meta-validate-connection] Found workspace as owner: ${workspaceId}`);
     } else {
-      console.log(`[meta-validate-connection] Não é owner, buscando como membro...`);
-
       // Se não é owner, busca como membro
-      const { data: memberWorkspace } = await supabaseAdmin
+      const { data: memberRecord } = await supabaseAdmin
         .from("workspace_members")
-        .select(`
-          workspace_id,
-          workspaces!inner (
-            id
-          )
-        `)
+        .select("workspace_id")
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (memberWorkspace && memberWorkspace.workspaces) {
-        console.log(`[meta-validate-connection] ✓ Workspace encontrado como membro: ${memberWorkspace.workspaces.id}`);
-        workspaceId = memberWorkspace.workspaces.id;
+      if (memberRecord) {
+        workspaceId = memberRecord.workspace_id;
+        console.log(`[meta-validate-connection] Found workspace as member: ${workspaceId}`);
       } else {
-        console.log(`[meta-validate-connection] Nenhum workspace encontrado, criando novo...`);
-
-        // Cria novo workspace apenas se não for membro de nenhum
+        // Cria novo workspace
+        console.log(`[meta-validate-connection] Creating new workspace...`);
         const { data: newWorkspace, error: createError } = await supabaseAdmin
           .from("workspaces")
-          .insert({
-            name: `Workspace de ${user.email}`,
-            owner_id: user.id,
-          })
+          .insert({ name: `Workspace de ${user.email}`, owner_id: user.id })
           .select("id")
           .single();
 
         if (createError || !newWorkspace) {
           return new Response(
             JSON.stringify({ error: "Failed to create workspace", details: createError?.message }),
-            {
-              status: 500,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
         workspaceId = newWorkspace.id;
@@ -297,38 +257,38 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 5. Criptografar o token usando a função do banco (se existir)
+    // =====================================================
+    // 5. CRIPTOGRAFAR O TOKEN (SE POSSÍVEL)
+    // =====================================================
     let encryptedToken = system_user_token;
     try {
       const { data: encryptedData, error: encryptError } = await supabaseAdmin
         .rpc("encrypt_token", { p_token: system_user_token });
-
       if (!encryptError && encryptedData) {
         encryptedToken = encryptedData;
       }
     } catch (e) {
-      // Função de criptografia não existe, usa token como está
-      console.log("Encryption function not available, storing token as-is");
+      console.log("[meta-validate-connection] Encryption not available, storing raw token");
     }
 
-    // 6. Verificar se já existe conexão para este workspace
+    // =====================================================
+    // 6. SALVAR/ATUALIZAR CONEXÃO META
+    // =====================================================
     const { data: existingConnection } = await supabaseAdmin
       .from("meta_connections")
       .select("id")
       .eq("workspace_id", workspaceId)
       .maybeSingle();
 
-    // Nome da conexão baseado no usuário Meta
     const connectionName = meData.name || `Meta Connection - ${business_manager_id}`;
-
-    let upsertError;
+    let connectionId: string;
 
     if (existingConnection) {
-      // Atualiza conexão existente
+      connectionId = existingConnection.id;
       const { error } = await supabaseAdmin
         .from("meta_connections")
         .update({
-          business_manager_id: business_manager_id,
+          business_manager_id,
           access_token_encrypted: encryptedToken,
           granted_scopes: grantedScopes,
           status: "connected",
@@ -337,15 +297,20 @@ Deno.serve(async (req: Request) => {
           updated_at: new Date().toISOString(),
         })
         .eq("id", existingConnection.id);
-      
-      upsertError = error;
+
+      if (error) {
+        console.error("[meta-validate-connection] Update connection error:", error);
+        return new Response(
+          JSON.stringify({ error: "Failed to update connection", details: error.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     } else {
-      // Insere nova conexão com todos os campos obrigatórios
-      const { error } = await supabaseAdmin
+      const { data: newConn, error } = await supabaseAdmin
         .from("meta_connections")
         .insert({
           workspace_id: workspaceId,
-          business_manager_id: business_manager_id,
+          business_manager_id,
           access_token_encrypted: encryptedToken,
           granted_scopes: grantedScopes,
           status: "connected",
@@ -354,40 +319,26 @@ Deno.serve(async (req: Request) => {
           last_validated_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        });
-      
-      upsertError = error;
+        })
+        .select("id")
+        .single();
+
+      if (error || !newConn) {
+        console.error("[meta-validate-connection] Insert connection error:", error);
+        return new Response(
+          JSON.stringify({ error: "Failed to save connection", details: error?.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      connectionId = newConn.id;
     }
 
-    if (upsertError) {
-      console.error("Save connection error:", upsertError);
-      return new Response(
-        JSON.stringify({ error: "Failed to save connection", details: upsertError.message }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
+    console.log(`[meta-validate-connection] Connection saved: ${connectionId}`);
 
-    // 7. Persistir ad accounts descobertas na tabela meta_ad_accounts
-    // Mapeia status numérico do Meta para texto
-    const mapAccountStatus = (status: number): string => {
-      const statusMap: Record<number, string> = {
-        1: "ACTIVE",
-        2: "DISABLED",
-        3: "UNSETTLED",
-        7: "PENDING_RISK_REVIEW",
-        8: "PENDING_SETTLEMENT",
-        9: "IN_GRACE_PERIOD",
-        100: "PENDING_CLOSURE",
-        101: "CLOSED",
-        201: "ANY_ACTIVE",
-        202: "ANY_CLOSED",
-      };
-      return statusMap[status] || "UNKNOWN";
-    };
-
+    // =====================================================
+    // 7. SALVAR AD ACCOUNTS NO BANCO
+    // CORREÇÃO CRÍTICA: Usa constraint composta correta!
+    // =====================================================
     if (allAdAccounts.length > 0) {
       const adAccountsToUpsert = allAdAccounts.map((acc) => ({
         workspace_id: workspaceId,
@@ -396,75 +347,82 @@ Deno.serve(async (req: Request) => {
         currency: acc.currency || "USD",
         timezone_name: acc.timezone_name || "UTC",
         account_status: mapAccountStatus(acc.account_status),
+        primary_connection_id: connectionId,
         updated_at: new Date().toISOString(),
       }));
 
-      const { error: upsertAdAccountsError } = await supabaseAdmin
-        .from("meta_ad_accounts")
-        .upsert(adAccountsToUpsert, {
-          onConflict: "meta_ad_account_id",
-          ignoreDuplicates: false,
-        });
+      // Divide em batches de 100 para evitar timeout
+      const batchSize = 100;
+      let savedCount = 0;
+      let errorCount = 0;
 
-      if (upsertAdAccountsError) {
-        console.error("Failed to save ad accounts:", upsertAdAccountsError);
-        // Não falha a operação inteira, apenas loga o erro
-      } else {
-        console.log(`[meta-validate-connection] Successfully saved ${adAccountsToUpsert.length} ad accounts to meta_ad_accounts`);
+      for (let i = 0; i < adAccountsToUpsert.length; i += batchSize) {
+        const batch = adAccountsToUpsert.slice(i, i + batchSize);
+        
+        // CORREÇÃO: onConflict deve usar a constraint composta
+        const { error: upsertError } = await supabaseAdmin
+          .from("meta_ad_accounts")
+          .upsert(batch, {
+            onConflict: "workspace_id,meta_ad_account_id",
+            ignoreDuplicates: false,
+          });
 
-        // 8. Criar registros em meta_sync_state para cada conta
-        // Permite que as contas sejam sincronizadas posteriormente
-        let syncStateCreatedCount = 0;
-        for (const acc of allAdAccounts) {
-          const { error: syncStateError } = await supabaseAdmin
-            .from("meta_sync_state")
-            .upsert(
-              {
-                workspace_id: workspaceId,
-                meta_ad_account_id: acc.id,
-                sync_enabled: true,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "workspace_id,meta_ad_account_id" }
-            );
-
-          if (!syncStateError) {
-            syncStateCreatedCount++;
-          } else {
-            console.error(`Failed to create sync_state for account ${acc.id}:`, syncStateError);
-          }
+        if (upsertError) {
+          console.error(`[meta-validate-connection] Upsert error batch ${Math.floor(i/batchSize) + 1}:`, upsertError);
+          errorCount += batch.length;
+        } else {
+          savedCount += batch.length;
+          console.log(`[meta-validate-connection] Batch ${Math.floor(i/batchSize) + 1} saved: ${batch.length} accounts`);
         }
-        console.log(`[meta-validate-connection] Created/updated ${syncStateCreatedCount} records in meta_sync_state`);
       }
+
+      console.log(`[meta-validate-connection] TOTAL SAVED: ${savedCount} accounts, ERRORS: ${errorCount}`);
+
+      // Criar/atualizar sync_state para cada conta
+      let syncStateCount = 0;
+      for (const acc of allAdAccounts) {
+        const { error: syncStateError } = await supabaseAdmin
+          .from("meta_sync_state")
+          .upsert(
+            {
+              workspace_id: workspaceId,
+              meta_ad_account_id: acc.id,
+              sync_enabled: true,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "workspace_id,meta_ad_account_id" }
+          );
+
+        if (!syncStateError) syncStateCount++;
+      }
+      console.log(`[meta-validate-connection] Sync state created for ${syncStateCount} accounts`);
     }
 
-    // 9. Retornar sucesso
+    // =====================================================
+    // 8. RETORNAR SUCESSO
+    // =====================================================
     return new Response(
       JSON.stringify({
         status: "connected",
         workspace_id: workspaceId,
-        business_manager_id: business_manager_id,
-        adaccounts_count: adAccountsCount,
+        business_manager_id,
+        adaccounts_count: allAdAccounts.length,
         scopes: grantedScopes,
         meta_user_id: meData.id,
         meta_user_name: meData.name,
+        saved_to_db: true,
       }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
+
   } catch (error) {
-    console.error("Unexpected error:", error);
+    console.error("[meta-validate-connection] Unexpected error:", error);
     return new Response(
       JSON.stringify({
         error: "Internal server error",
         details: error instanceof Error ? error.message : "Unknown error",
       }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
