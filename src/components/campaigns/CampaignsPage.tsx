@@ -37,6 +37,7 @@ import {
   MetaCampaignData,
 } from '../../lib/services/MetaInsightsDataService';
 import { useClient } from '../../contexts/ClientContext';
+import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { useDebounce } from '../../hooks/useDebounce';
 import { logger } from '../../lib/utils/logger';
 
@@ -59,7 +60,8 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
   onNavigateToAnalysis,
   onNavigateToExtractedData,
 }) => {
-  // Contexto do cliente selecionado
+  // Contextos do workspace e cliente selecionados
+  const { currentWorkspace } = useWorkspace();
   const { selectedClient } = useClient();
 
   // Estado dos dados
@@ -122,8 +124,9 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
 
       const { dateFrom, dateTo } = getDateRange();
 
-      // Busca campanhas do Meta Insights
+      // Busca campanhas do Meta Insights passando workspace_id explicitamente
       const metaCampaigns = await metaInsightsService.fetchCampaignsWithMetrics({
+        workspaceId: currentWorkspace?.id,
         clientId: selectedClient?.id,
         dateFrom,
         dateTo,
@@ -175,14 +178,14 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [selectedClient, getDateRange]);
+  }, [currentWorkspace, selectedClient, getDateRange]);
 
   /**
    * Carrega campanhas ao montar e quando filtros mudam
    */
   useEffect(() => {
     loadCampaigns();
-  }, [selectedPeriod, selectedClient]);
+  }, [selectedPeriod, selectedClient, currentWorkspace]);
 
   /**
    * Aplica filtros quando campanhas ou filtros mudam

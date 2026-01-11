@@ -26,17 +26,17 @@ export class MetaSyncService {
   private baseUrl = 'https://graph.facebook.com/v19.0';
   private accessToken: string;
   private progressCallback?: ProgressCallback;
+  private workspaceId: string | null = null;
+  private clientId: string | null = null;
 
-  // Configurações de rate limiting
-  private readonly REQUEST_DELAY_MS = 1000; // Delay de 1 segundo entre requisições
-  private readonly BATCH_SIZE = 3; // Processa 3 campanhas por vez
-  private readonly BATCH_DELAY_MS = 3000; // Pausa de 3 segundos entre lotes
-  private readonly MAX_RETRIES = 3; // Máximo de tentativas em caso de erro
-  private readonly RETRY_DELAY_MS = 5000; // Delay de 5 segundos antes de tentar novamente
+  private readonly REQUEST_DELAY_MS = 1000;
+  private readonly BATCH_SIZE = 3;
+  private readonly BATCH_DELAY_MS = 3000;
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_DELAY_MS = 5000;
 
   constructor(accessToken?: string, progressCallback?: ProgressCallback) {
-    // Usa token passado ou busca do ambiente
-    this.accessToken = accessToken || import.meta.env.VITE_META_ACCESS_TOKEN || '';
+    this.accessToken = accessToken || '';
     this.progressCallback = progressCallback;
   }
 
@@ -185,6 +185,41 @@ export class MetaSyncService {
         .single();
 
       if (!connection) throw new Error('Conexão não encontrada');
+
+      // Armazena workspace_id e client_id da conexão para uso nos métodos de salvamento
+      this.workspaceId = connection.workspace_id || null;
+      this.clientId = connection.client_id || null;
+
+      logger.info('Workspace e cliente identificados para sincronização', {
+        connectionId,
+        workspaceId: this.workspaceId,
+        clientId: this.clientId
+      });
+
+      // Se não tiver workspace_id, tenta buscar do usuário
+      if (!this.workspaceId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: workspace } = await supabase
+            .from('workspaces')
+            .select('id')
+            .eq('owner_id', user.id)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (workspace) {
+            this.workspaceId = workspace.id;
+            logger.info('Workspace obtido do usuário', { workspaceId: this.workspaceId });
+
+            // Atualiza a conexão com o workspace_id
+            await supabase
+              .from('data_connections')
+              .update({ workspace_id: this.workspaceId })
+              .eq('id', connectionId);
+          }
+        }
+      }
 
       // Busca token OAuth se não foi passado no construtor
       if (!this.accessToken) {
@@ -852,20 +887,24 @@ export class MetaSyncService {
     };
 
     if (existing) {
-      // Atualiza campanha existente
       const { error } = await supabase
         .from('campaigns')
-        .update(campaignData)
+        .update({
+          ...campaignData,
+          workspace_id: this.workspaceId,
+          client_id: this.clientId,
+        })
         .eq('id', campaign.id);
       if (error) throw error;
     } else {
-      // Insere nova campanha
       const { error } = await supabase
         .from('campaigns')
         .insert({
           id: campaign.id,
           connection_id: connectionId,
           user_id: user.id,
+          workspace_id: this.workspaceId,
+          client_id: this.clientId,
           platform: 'Meta',
           created_date: campaign.created_time,
           ...campaignData,
@@ -898,14 +937,16 @@ export class MetaSyncService {
     };
 
     if (existing) {
-      // Atualiza ad set existente
       const { error } = await supabase
         .from('ad_sets')
-        .update(adSetData)
+        .update({
+          ...adSetData,
+          workspace_id: this.workspaceId,
+          client_id: this.clientId,
+        })
         .eq('id', adSet.id);
       if (error) throw error;
     } else {
-      // Insere novo ad set
       const { error } = await supabase
         .from('ad_sets')
         .insert({
@@ -913,6 +954,8 @@ export class MetaSyncService {
           campaign_id: campaignId,
           connection_id: connectionId,
           user_id: user.id,
+          workspace_id: this.workspaceId,
+          client_id: this.clientId,
           ...adSetData,
         });
       if (error) throw error;
@@ -943,14 +986,16 @@ export class MetaSyncService {
     };
 
     if (existing) {
-      // Atualiza anúncio existente
       const { error } = await supabase
         .from('ads')
-        .update(adData)
+        .update({
+          ...adData,
+          workspace_id: this.workspaceId,
+          client_id: this.clientId,
+        })
         .eq('id', ad.id);
       if (error) throw error;
     } else {
-      // Insere novo anúncio
       const { error } = await supabase
         .from('ads')
         .insert({
@@ -959,6 +1004,8 @@ export class MetaSyncService {
           campaign_id: campaignId,
           connection_id: connectionId,
           user_id: user.id,
+          workspace_id: this.workspaceId,
+          client_id: this.clientId,
           ...adData,
         });
       if (error) throw error;
@@ -1147,6 +1194,8 @@ export class MetaSyncService {
       const insertData: Record<string, any> = {
         connection_id: connectionId,
         user_id: user.id,
+        workspace_id: this.workspaceId,
+        client_id: this.clientId,
         campaign_id: campaignId,
         date: insight.date_start,
         ...metricsData,

@@ -14,6 +14,8 @@ export interface CampaignWithMetrics {
   objective: string;
   connection_id: string;
   user_id: string;
+  workspace_id?: string;
+  client_id?: string;
   created_date: string;
   start_date?: string;
   end_date?: string;
@@ -49,6 +51,20 @@ export interface CampaignWithMetrics {
 
   // Fonte dos dados
   data_source?: 'meta_insights' | 'ad_metrics' | 'legacy';
+}
+
+/**
+ * Interface para filtros de busca de campanhas
+ * Centraliza todos os parâmetros de filtragem
+ */
+export interface CampaignFilters {
+  workspaceId: string;
+  clientId?: string;
+  platform?: string;
+  status?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  searchTerm?: string;
 }
 
 /**
@@ -147,47 +163,52 @@ export class CampaignDataService {
   }
 
   /**
-   * Busca todas as campanhas do usuário com métricas agregadas
+   * Busca todas as campanhas do workspace com métricas agregadas
+   * ATUALIZADO: Agora usa workspace_id como filtro principal para isolamento multi-tenant
    *
-   * @param userId - ID do usuário
-   * @param filters - Filtros opcionais (plataforma, status, período)
+   * @param filters - Filtros obrigatórios e opcionais (workspace_id obrigatório)
    * @returns Lista de campanhas com métricas
    */
-  async fetchUserCampaigns(
-    userId: string,
-    filters?: {
-      platform?: string;
-      status?: string;
-      dateFrom?: string;
-      dateTo?: string;
-      searchTerm?: string;
-    }
+  async fetchWorkspaceCampaigns(
+    filters: CampaignFilters
   ): Promise<CampaignWithMetrics[]> {
     try {
-      logger.info('Buscando campanhas do usuário', { userId, filters });
+      const { workspaceId, clientId, platform, status, dateFrom, dateTo, searchTerm } = filters;
 
-      // Busca campanhas básicas
+      if (!workspaceId) {
+        logger.error('workspace_id é obrigatório para buscar campanhas');
+        throw new Error('workspace_id é obrigatório');
+      }
+
+      logger.info('Buscando campanhas do workspace', { workspaceId, clientId, filters });
+
+      // Busca campanhas básicas filtrando por workspace_id
       let query = supabase
         .from('campaigns')
         .select('*')
-        .eq('user_id', userId);
+        .eq('workspace_id', workspaceId);
 
-      // Aplica filtros
-      if (filters?.platform) {
-        query = query.eq('platform', filters.platform);
+      // Filtra por cliente se especificado
+      if (clientId) {
+        query = query.eq('client_id', clientId);
       }
-      if (filters?.status) {
-        query = query.eq('status', filters.status);
+
+      // Aplica filtros adicionais
+      if (platform) {
+        query = query.eq('platform', platform);
       }
-      if (filters?.searchTerm) {
-        query = query.ilike('name', `%${filters.searchTerm}%`);
+      if (status) {
+        query = query.eq('status', status);
+      }
+      if (searchTerm) {
+        query = query.ilike('name', `%${searchTerm}%`);
       }
 
       const { data: campaigns, error: campaignsError } = await query.order('created_date', { ascending: false });
 
       if (campaignsError) throw campaignsError;
       if (!campaigns || campaigns.length === 0) {
-        logger.info('Nenhuma campanha encontrada');
+        logger.info('Nenhuma campanha encontrada no workspace');
         return [];
       }
 
@@ -196,32 +217,35 @@ export class CampaignDataService {
       // Para cada campanha, busca e agrega métricas
       const campaignsWithMetrics: CampaignWithMetrics[] = await Promise.all(
         campaigns.map(async (campaign) => {
-          // Busca métricas da campanha
+          // Busca métricas da campanha filtrando por workspace_id para garantir isolamento
           let metricsQuery = supabase
             .from('ad_metrics')
             .select('*')
-            .eq('campaign_id', campaign.id);
+            .eq('campaign_id', campaign.id)
+            .eq('workspace_id', workspaceId);
 
           // Aplica filtro de período se especificado
-          if (filters?.dateFrom) {
-            metricsQuery = metricsQuery.gte('date', filters.dateFrom);
+          if (dateFrom) {
+            metricsQuery = metricsQuery.gte('date', dateFrom);
           }
-          if (filters?.dateTo) {
-            metricsQuery = metricsQuery.lte('date', filters.dateTo);
+          if (dateTo) {
+            metricsQuery = metricsQuery.lte('date', dateTo);
           }
 
           const { data: metrics } = await metricsQuery;
 
-          // Conta ad sets e ads
+          // Conta ad sets e ads filtrando por workspace_id
           const { count: adSetsCount } = await supabase
             .from('ad_sets')
             .select('*', { count: 'exact', head: true })
-            .eq('campaign_id', campaign.id);
+            .eq('campaign_id', campaign.id)
+            .eq('workspace_id', workspaceId);
 
           const { count: adsCount } = await supabase
             .from('ads')
             .select('*', { count: 'exact', head: true })
-            .eq('campaign_id', campaign.id);
+            .eq('campaign_id', campaign.id)
+            .eq('workspace_id', workspaceId);
 
           // Agrega métricas
           const aggregatedMetrics = this.aggregateMetrics(metrics || []);
@@ -231,11 +255,12 @@ export class CampaignDataService {
           const endDate = campaign.end_date ? new Date(campaign.end_date) : new Date();
           const daysActive = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
-          // Busca última sincronização
+          // Busca última sincronização filtrando por workspace_id
           const { data: connection } = await supabase
             .from('data_connections')
             .select('last_sync')
             .eq('id', campaign.connection_id)
+            .eq('workspace_id', workspaceId)
             .maybeSingle();
 
           return {
@@ -253,29 +278,79 @@ export class CampaignDataService {
 
       return campaignsWithMetrics;
     } catch (error: any) {
-      logger.error('Erro ao buscar campanhas', error);
+      logger.error('Erro ao buscar campanhas do workspace', error);
       throw error;
     }
   }
 
   /**
+   * Método legado para compatibilidade - DEPRECATED
+   * Use fetchWorkspaceCampaigns em vez disso
+   *
+   * @deprecated Use fetchWorkspaceCampaigns com CampaignFilters
+   */
+  async fetchUserCampaigns(
+    userId: string,
+    legacyFilters?: {
+      platform?: string;
+      status?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      searchTerm?: string;
+    }
+  ): Promise<CampaignWithMetrics[]> {
+    logger.warn('fetchUserCampaigns está DEPRECATED - use fetchWorkspaceCampaigns');
+
+    // Tenta buscar workspace do usuário para manter compatibilidade
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('id')
+      .eq('owner_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (!workspace) {
+      logger.error('Nenhum workspace encontrado para o usuário', { userId });
+      return [];
+    }
+
+    return this.fetchWorkspaceCampaigns({
+      workspaceId: workspace.id,
+      platform: legacyFilters?.platform,
+      status: legacyFilters?.status,
+      dateFrom: legacyFilters?.dateFrom,
+      dateTo: legacyFilters?.dateTo,
+      searchTerm: legacyFilters?.searchTerm,
+    });
+  }
+
+  /**
    * Busca métricas diárias de uma campanha para gráficos de tendência
+   * ATUALIZADO: Agora usa workspace_id para isolamento
    *
    * @param campaignId - ID da campanha
+   * @param workspaceId - ID do workspace (obrigatório para isolamento)
    * @param dateFrom - Data inicial
    * @param dateTo - Data final
    * @returns Array de métricas diárias ordenadas por data
    */
   async getCampaignDailyMetrics(
     campaignId: string,
+    workspaceId: string,
     dateFrom?: string,
     dateTo?: string
   ): Promise<CampaignDailyMetrics[]> {
     try {
-      logger.info('Buscando métricas diárias da campanha', { campaignId, dateFrom, dateTo });
+      if (!workspaceId) {
+        logger.error('workspace_id é obrigatório para buscar métricas diárias');
+        throw new Error('workspace_id é obrigatório');
+      }
+
+      logger.info('Buscando métricas diárias da campanha', { campaignId, workspaceId, dateFrom, dateTo });
 
       // Verifica cache
-      const cacheKey = `daily_${campaignId}_${dateFrom}_${dateTo}`;
+      const cacheKey = `daily_${workspaceId}_${campaignId}_${dateFrom}_${dateTo}`;
       if (this.isCacheValid(cacheKey)) {
         logger.info('Retornando métricas diárias do cache');
         return this.cache.get(cacheKey)!.data;
@@ -285,6 +360,7 @@ export class CampaignDataService {
         .from('ad_metrics')
         .select('*')
         .eq('campaign_id', campaignId)
+        .eq('workspace_id', workspaceId)
         .is('ad_set_id', null)
         .is('ad_id', null);
 
@@ -339,19 +415,27 @@ export class CampaignDataService {
 
   /**
    * Busca performance de todos os ad sets de uma campanha
+   * ATUALIZADO: Agora usa workspace_id para isolamento
    *
    * @param campaignId - ID da campanha
+   * @param workspaceId - ID do workspace (obrigatório para isolamento)
    * @returns Lista de ad sets com métricas agregadas
    */
-  async getCampaignAdSets(campaignId: string): Promise<AdSetPerformance[]> {
+  async getCampaignAdSets(campaignId: string, workspaceId: string): Promise<AdSetPerformance[]> {
     try {
-      logger.info('Buscando ad sets da campanha', { campaignId });
+      if (!workspaceId) {
+        logger.error('workspace_id é obrigatório para buscar ad sets');
+        throw new Error('workspace_id é obrigatório');
+      }
 
-      // Busca ad sets
+      logger.info('Buscando ad sets da campanha', { campaignId, workspaceId });
+
+      // Busca ad sets filtrando por workspace_id
       const { data: adSets, error: adSetsError } = await supabase
         .from('ad_sets')
         .select('*')
-        .eq('campaign_id', campaignId);
+        .eq('campaign_id', campaignId)
+        .eq('workspace_id', workspaceId);
 
       if (adSetsError) throw adSetsError;
       if (!adSets || adSets.length === 0) return [];
@@ -363,7 +447,8 @@ export class CampaignDataService {
             .from('ad_metrics')
             .select('*')
             .eq('campaign_id', campaignId)
-            .eq('ad_set_id', adSet.id);
+            .eq('ad_set_id', adSet.id)
+            .eq('workspace_id', workspaceId);
 
           const aggregated = this.aggregateMetrics(metrics || []);
 
@@ -396,19 +481,27 @@ export class CampaignDataService {
 
   /**
    * Busca performance de todos os anúncios de uma campanha
+   * ATUALIZADO: Agora usa workspace_id para isolamento
    *
    * @param campaignId - ID da campanha
+   * @param workspaceId - ID do workspace (obrigatório para isolamento)
    * @returns Lista de anúncios com métricas agregadas
    */
-  async getCampaignAds(campaignId: string): Promise<AdPerformance[]> {
+  async getCampaignAds(campaignId: string, workspaceId: string): Promise<AdPerformance[]> {
     try {
-      logger.info('Buscando anúncios da campanha', { campaignId });
+      if (!workspaceId) {
+        logger.error('workspace_id é obrigatório para buscar anúncios');
+        throw new Error('workspace_id é obrigatório');
+      }
 
-      // Busca anúncios
+      logger.info('Buscando anúncios da campanha', { campaignId, workspaceId });
+
+      // Busca anúncios filtrando por workspace_id
       const { data: ads, error: adsError } = await supabase
         .from('ads')
         .select('*')
-        .eq('campaign_id', campaignId);
+        .eq('campaign_id', campaignId)
+        .eq('workspace_id', workspaceId);
 
       if (adsError) throw adsError;
       if (!ads || ads.length === 0) return [];
@@ -420,7 +513,8 @@ export class CampaignDataService {
             .from('ad_metrics')
             .select('*')
             .eq('campaign_id', campaignId)
-            .eq('ad_id', ad.id);
+            .eq('ad_id', ad.id)
+            .eq('workspace_id', workspaceId);
 
           const aggregated = this.aggregateMetrics(metrics || []);
 
@@ -454,39 +548,50 @@ export class CampaignDataService {
 
   /**
    * Busca uma campanha específica com todos os detalhes e métricas
+   * ATUALIZADO: Agora usa workspace_id para isolamento
    *
    * @param campaignId - ID da campanha
+   * @param workspaceId - ID do workspace (obrigatório para isolamento)
    * @returns Campanha completa com métricas
    */
-  async getCampaignById(campaignId: string): Promise<CampaignWithMetrics | null> {
+  async getCampaignById(campaignId: string, workspaceId: string): Promise<CampaignWithMetrics | null> {
     try {
-      logger.info('Buscando campanha por ID', { campaignId });
+      if (!workspaceId) {
+        logger.error('workspace_id é obrigatório para buscar campanha');
+        throw new Error('workspace_id é obrigatório');
+      }
+
+      logger.info('Buscando campanha por ID', { campaignId, workspaceId });
 
       const { data: campaign, error } = await supabase
         .from('campaigns')
         .select('*')
         .eq('id', campaignId)
+        .eq('workspace_id', workspaceId)
         .maybeSingle();
 
       if (error) throw error;
       if (!campaign) return null;
 
-      // Busca métricas
+      // Busca métricas filtrando por workspace_id
       const { data: metrics } = await supabase
         .from('ad_metrics')
         .select('*')
-        .eq('campaign_id', campaignId);
+        .eq('campaign_id', campaignId)
+        .eq('workspace_id', workspaceId);
 
-      // Conta ad sets e ads
+      // Conta ad sets e ads filtrando por workspace_id
       const { count: adSetsCount } = await supabase
         .from('ad_sets')
         .select('*', { count: 'exact', head: true })
-        .eq('campaign_id', campaignId);
+        .eq('campaign_id', campaignId)
+        .eq('workspace_id', workspaceId);
 
       const { count: adsCount } = await supabase
         .from('ads')
         .select('*', { count: 'exact', head: true })
-        .eq('campaign_id', campaignId);
+        .eq('campaign_id', campaignId)
+        .eq('workspace_id', workspaceId);
 
       // Agrega métricas
       const aggregatedMetrics = this.aggregateMetrics(metrics || []);
@@ -496,11 +601,12 @@ export class CampaignDataService {
       const endDate = campaign.end_date ? new Date(campaign.end_date) : new Date();
       const daysActive = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
-      // Busca última sincronização
+      // Busca última sincronização filtrando por workspace_id
       const { data: connection } = await supabase
         .from('data_connections')
         .select('last_sync')
         .eq('id', campaign.connection_id)
+        .eq('workspace_id', workspaceId)
         .maybeSingle();
 
       return {
