@@ -992,12 +992,20 @@ export const MetaAdsSyncPage: React.FC = () => {
       });
     }
 
-    // Aplica filtro de atividade (gasto > 0 E anuncios ativos > 0)
+    // Aplica filtro de atividade (dados sincronizados OU anuncios ativos)
+    // Considera "com dados" se:
+    // - Tem dados sincronizados (total_rows > 0) OU
+    // - Tem anuncios ativos (entityCounts.ad.active > 0) OU
+    // - Foi sincronizado pelo menos uma vez (lastSyncAt existe)
     if (activityFilter !== 'all') {
       filtered = filtered.filter((account) => {
-        const hasSpend = (account.metrics?.spend || 0) > 0;
+        const hasSyncedData = (account.metrics?.total_rows || 0) > 0;
         const hasActiveAds = (account.entityCounts?.ad?.active || 0) > 0;
-        const hasData = hasSpend && hasActiveAds;
+        const hasActiveCampaigns = (account.entityCounts?.campaign?.active || 0) > 0;
+        const wasSynced = !!account.lastSyncAt;
+
+        // Considera "com dados" se tem dados sincronizados, anuncios ativos ou campanhas ativas
+        const hasData = hasSyncedData || hasActiveAds || hasActiveCampaigns || wasSynced;
 
         if (activityFilter === 'with-data') {
           return hasData;
@@ -1016,7 +1024,9 @@ export const MetaAdsSyncPage: React.FC = () => {
         case 'name-desc':
           return b.name.localeCompare(a.name);
         case 'spend-desc':
-          return (b.metrics?.spend || 0) - (a.metrics?.spend || 0);
+          // Ordena por quantidade de dados sincronizados (mais dados primeiro)
+          // Usa total_rows como proxy para atividade da conta
+          return (b.metrics?.total_rows || 0) - (a.metrics?.total_rows || 0);
         case 'date-desc':
           // Ordena por data de última sincronização (mais recente primeiro)
           if (!a.lastSyncAt && !b.lastSyncAt) return 0;

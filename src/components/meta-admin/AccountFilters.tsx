@@ -138,8 +138,8 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
           >
             <option value="name-asc">Nome (A-Z)</option>
             <option value="name-desc">Nome (Z-A)</option>
-            <option value="spend-desc">Maior gasto</option>
-            <option value="date-desc">Última sincronização</option>
+            <option value="spend-desc">Mais dados</option>
+            <option value="date-desc">Ultima sincronizacao</option>
           </select>
         </div>
 
