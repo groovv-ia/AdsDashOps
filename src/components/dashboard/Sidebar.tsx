@@ -1,5 +1,5 @@
-import React from 'react';
-import { Settings, Headphones, Building2, Link, RefreshCw, Target } from 'lucide-react';
+import React, { useState } from 'react';
+import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 
 interface SidebarProps {
@@ -9,18 +9,58 @@ interface SidebarProps {
   onPageChange?: (page: string) => void;
 }
 
-// Tipo para os itens do menu
+// Componente para renderizar o icone da Meta
+const MetaIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <img src="/meta-icon.svg" alt="Meta" className={className} />
+);
+
+// Componente para renderizar o icone do Google Ads
+const GoogleIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <img src="/google-ads-icon.svg" alt="Google Ads" className={className} />
+);
+
+// Tipo para os itens do menu - suporta icones Lucide ou imagens customizadas
 interface MenuItem {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   page: string;
 }
 
-// Lista de itens do menu em ordem plana (conforme imagem de referencia)
-const menuItems: MenuItem[] = [
-  { icon: Link, label: 'Conexao Meta', page: 'meta-admin' },
-  { icon: Target, label: 'Campanhas', page: 'campaigns' },
-  { icon: RefreshCw, label: 'Meta Ads Sync', page: 'meta-sync' },
+// Tipo para secao do menu com titulo e itens
+interface MenuSection {
+  id: string;
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accentColor: string;
+  items: MenuItem[];
+}
+
+// Itens do menu organizados por secao
+const menuSections: MenuSection[] = [
+  {
+    id: 'meta',
+    title: 'Meta Ads',
+    icon: MetaIcon,
+    accentColor: 'blue',
+    items: [
+      { icon: Link, label: 'Conexao Meta', page: 'meta-admin' },
+      { icon: RefreshCw, label: 'Meta Ads Sync', page: 'meta-sync' },
+    ],
+  },
+  {
+    id: 'google',
+    title: 'Google Ads',
+    icon: GoogleIcon,
+    accentColor: 'emerald',
+    items: [
+      { icon: Link, label: 'Conexao Google', page: 'google-admin' },
+      { icon: RefreshCw, label: 'Google Ads Sync', page: 'google-sync' },
+    ],
+  },
+];
+
+// Itens gerais do menu (sem secao)
+const generalMenuItems: MenuItem[] = [
   { icon: Building2, label: 'Workspaces', page: 'workspaces' },
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configuracoes', page: 'settings' },
@@ -32,6 +72,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentPage = 'meta-admin',
   onPageChange
 }) => {
+  // Estado para controlar quais secoes estao expandidas
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    meta: true,
+    google: true,
+  });
+
+  // Alterna o estado de expansao de uma secao
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionId]: !prev[sectionId],
+    }));
+  };
+
   // Handler para click em item do menu
   const handlePageClick = (page: string) => {
     if (onPageChange) {
@@ -40,6 +94,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (window.innerWidth < 1024) {
       onClose();
     }
+  };
+
+  // Verifica se algum item da secao esta ativo
+  const isSectionActive = (section: MenuSection) => {
+    return section.items.some(item => item.page === currentPage);
   };
 
   return (
@@ -81,76 +140,130 @@ export const Sidebar: React.FC<SidebarProps> = ({
             />
           </div>
 
-          {/* Navegacao - Menu plano */}
+          {/* Navegacao */}
           <nav className="flex-1 overflow-y-auto py-4">
+            {/* Secoes colapsaveis (Meta Ads, Google Ads) */}
+            <div className="px-3 space-y-2">
+              {menuSections.map((section) => {
+                const isExpanded = expandedSections[section.id];
+                const isActive = isSectionActive(section);
+
+                return (
+                  <div key={section.id} className="rounded-xl overflow-hidden">
+                    {/* Header da secao - clicavel para expandir/colapsar */}
+                    <button
+                      onClick={() => toggleSection(section.id)}
+                      className={`
+                        w-full flex items-center justify-between px-3 py-2.5 rounded-lg
+                        transition-all duration-200 group
+                        ${isActive
+                          ? 'bg-white shadow-sm border border-slate-200'
+                          : 'hover:bg-white/60'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center gap-3">
+                        <section.icon className="w-5 h-5" />
+                        <span className={`
+                          font-semibold text-sm
+                          ${isActive ? 'text-slate-900' : 'text-slate-700'}
+                        `}>
+                          {section.title}
+                        </span>
+                      </div>
+                      <ChevronDown
+                        className={`
+                          w-4 h-4 text-slate-400 transition-transform duration-200
+                          ${isExpanded ? 'rotate-180' : ''}
+                        `}
+                      />
+                    </button>
+
+                    {/* Itens da secao - com animacao */}
+                    <div className={`
+                      overflow-hidden transition-all duration-200 ease-in-out
+                      ${isExpanded ? 'max-h-40 opacity-100 mt-1' : 'max-h-0 opacity-0'}
+                    `}>
+                      <div className="pl-4 space-y-0.5">
+                        {section.items.map((item, itemIndex) => {
+                          const isItemActive = currentPage === item.page;
+                          return (
+                            <button
+                              key={itemIndex}
+                              onClick={() => handlePageClick(item.page)}
+                              className={`
+                                w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left
+                                transition-all duration-150
+                                ${isItemActive
+                                  ? section.id === 'meta'
+                                    ? 'bg-blue-50 text-blue-700 font-medium'
+                                    : 'bg-emerald-50 text-emerald-700 font-medium'
+                                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                                }
+                              `}
+                            >
+                              <item.icon className={`
+                                w-4 h-4 flex-shrink-0
+                                ${isItemActive
+                                  ? section.id === 'meta' ? 'text-blue-500' : 'text-emerald-500'
+                                  : 'text-slate-400'
+                                }
+                              `} />
+                              <span className="text-sm">{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Separador */}
+            <div className="my-4 mx-3 border-t border-slate-200" />
+
+            {/* Itens gerais */}
             <div className="px-3 space-y-1">
-              {menuItems.map((item, index) => {
+              {generalMenuItems.map((item, index) => {
                 const isItemActive = currentPage === item.page;
                 return (
                   <button
                     key={index}
                     onClick={() => handlePageClick(item.page)}
                     className={`
-                      w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left
-                      transition-all duration-150 relative
+                      w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
+                      transition-all duration-150
                       ${isItemActive
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        ? 'bg-white shadow-sm border border-slate-200 text-slate-900 font-medium'
+                        : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
                       }
                     `}
                   >
-                    {/* Borda lateral esquerda para item ativo */}
-                    {isItemActive && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-600 rounded-r-full" />
-                    )}
                     <item.icon className={`
                       w-5 h-5 flex-shrink-0
-                      ${isItemActive ? 'text-blue-600' : 'text-slate-400'}
+                      ${isItemActive ? 'text-slate-700' : 'text-slate-400'}
                     `} />
-                    <span className={`
-                      text-[15px] tracking-tight
-                      ${isItemActive ? 'font-semibold' : 'font-medium'}
-                    `}>
-                      {item.label}
-                    </span>
+                    <span className="text-sm">{item.label}</span>
                   </button>
                 );
               })}
             </div>
           </nav>
 
-          {/* Card de Upgrade - Estilo da imagem de referencia */}
+          {/* Card de Upgrade */}
           <div className="p-3 flex-shrink-0">
-            <div className="p-4 bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 rounded-2xl relative overflow-hidden">
-              {/* Elementos decorativos de fundo */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-400/20 rounded-full blur-2xl" />
-              <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-blue-300/20 rounded-full blur-xl" />
-              <div className="absolute top-4 right-4 w-16 h-16 bg-blue-500/30 rounded-full blur-lg" />
+            <div className="p-4 bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl relative overflow-hidden">
+              {/* Decoracao de fundo */}
+              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/20 to-transparent rounded-full blur-2xl" />
+              <div className="absolute bottom-0 left-0 w-16 h-16 bg-gradient-to-tr from-emerald-500/20 to-transparent rounded-full blur-xl" />
 
-              {/* Ilustracao decorativa */}
-              <div className="relative z-10 flex justify-center mb-3">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-300 to-blue-500 flex items-center justify-center shadow-lg border-2 border-white/30">
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="w-8 h-8 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                </div>
-              </div>
-
-              <div className="relative z-10 text-center">
-                <h3 className="font-bold text-white text-[15px] mb-1">Upgrade para Pro</h3>
-                <p className="text-[12px] text-blue-100/80 mb-4 leading-relaxed">
-                  Obtenha analises avancadas e campanhas ilimitadas
+              <div className="relative z-10">
+                <h3 className="font-semibold text-white text-sm mb-1">Upgrade para Pro</h3>
+                <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                  Analises avancadas e campanhas ilimitadas
                 </p>
-                <button className="w-full bg-white text-blue-700 text-[13px] font-semibold py-2.5 rounded-xl hover:bg-blue-50 transition-colors shadow-sm">
+                <button className="w-full bg-white text-slate-900 text-xs font-medium py-2 rounded-lg hover:bg-slate-100 transition-colors">
                   Fazer Upgrade
                 </button>
               </div>
