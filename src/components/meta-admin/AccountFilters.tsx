@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { Search, Filter, SortAsc, X, Activity, Zap } from 'lucide-react';
+import { Search, Filter, SortAsc, X } from 'lucide-react';
 import { Button } from '../ui/Button';
 
 // Opcoes de status para filtro
@@ -15,11 +15,8 @@ export type StatusFilter = 'all' | 'active' | 'paused';
 // Opcoes de sincronizacao para filtro
 export type SyncFilter = 'all' | 'synced' | 'not-synced' | 'error';
 
-// Opcoes de atividade recente para filtro (últimas 48h)
-export type ActivityFilter = 'all' | 'active-now' | 'inactive' | 'no-recent-activity';
-
 // Opcoes de ordenacao
-export type SortOption = 'name-asc' | 'name-desc' | 'spend-desc' | 'date-desc' | 'activity-desc' | 'recent-spend-desc';
+export type SortOption = 'name-asc' | 'name-desc' | 'spend-desc' | 'date-desc';
 
 // Interface das props do componente
 interface AccountFiltersProps {
@@ -29,13 +26,10 @@ interface AccountFiltersProps {
   onStatusFilterChange: (status: StatusFilter) => void;
   syncFilter: SyncFilter;
   onSyncFilterChange: (sync: SyncFilter) => void;
-  activityFilter: ActivityFilter;
-  onActivityFilterChange: (activity: ActivityFilter) => void;
   sortBy: SortOption;
   onSortChange: (sort: SortOption) => void;
   totalCount: number;
   filteredCount: number;
-  activeAccountsCount?: number; // Número de contas ativas agora (com atividade nas últimas 48h)
 }
 
 export const AccountFilters: React.FC<AccountFiltersProps> = ({
@@ -45,23 +39,19 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
   onStatusFilterChange,
   syncFilter,
   onSyncFilterChange,
-  activityFilter,
-  onActivityFilterChange,
   sortBy,
   onSortChange,
   totalCount,
   filteredCount,
-  activeAccountsCount = 0,
 }) => {
   // Verifica se ha filtros ativos (alem da busca)
-  const hasActiveFilters = statusFilter !== 'all' || syncFilter !== 'all' || activityFilter !== 'all';
+  const hasActiveFilters = statusFilter !== 'all' || syncFilter !== 'all';
 
   // Limpa todos os filtros
   const clearAllFilters = () => {
     onSearchChange('');
     onStatusFilterChange('all');
     onSyncFilterChange('all');
-    onActivityFilterChange('all');
   };
 
   return (
@@ -117,21 +107,6 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
           </select>
         </div>
 
-        {/* Filtro por atividade recente (últimas 48h) */}
-        <div className="flex items-center gap-2">
-          <Activity className="w-4 h-4 text-gray-500" />
-          <select
-            value={activityFilter}
-            onChange={(e) => onActivityFilterChange(e.target.value as ActivityFilter)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">Toda atividade</option>
-            <option value="active-now">Ativas agora (48h)</option>
-            <option value="inactive">Sem atividade recente</option>
-            <option value="no-recent-activity">Anúncios ativos sem métricas</option>
-          </select>
-        </div>
-
         {/* Ordenacao */}
         <div className="flex items-center gap-2">
           <SortAsc className="w-4 h-4 text-gray-500" />
@@ -142,9 +117,7 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
           >
             <option value="name-asc">Nome (A-Z)</option>
             <option value="name-desc">Nome (Z-A)</option>
-            <option value="spend-desc">Maior gasto (total)</option>
-            <option value="recent-spend-desc">Maior gasto (48h)</option>
-            <option value="activity-desc">Mais ativas (48h)</option>
+            <option value="spend-desc">Maior gasto</option>
             <option value="date-desc">Última sincronização</option>
           </select>
         </div>
@@ -162,31 +135,6 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
           </Button>
         )}
       </div>
-
-      {/* Card de estatísticas de atividade */}
-      {activeAccountsCount > 0 && (
-        <div className="flex items-center justify-between bg-gradient-to-r from-emerald-50 to-emerald-100/50 rounded-lg p-3 border border-emerald-200">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-emerald-500 rounded-lg">
-              <Zap className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-emerald-900">
-                {activeAccountsCount} {activeAccountsCount === 1 ? 'conta ativa' : 'contas ativas'} agora
-              </p>
-              <p className="text-xs text-emerald-700">
-                Com atividade nas últimas 48 horas
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => onActivityFilterChange('active-now')}
-            className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 transition-colors"
-          >
-            Filtrar ativas
-          </button>
-        </div>
-      )}
 
       {/* Contador de resultados */}
       <div className="flex items-center justify-between text-sm text-gray-600">
@@ -212,11 +160,6 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
               {syncFilter !== 'all' && (
                 <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">
                   Sincronização
-                </span>
-              )}
-              {activityFilter !== 'all' && (
-                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs">
-                  Atividade
                 </span>
               )}
             </div>

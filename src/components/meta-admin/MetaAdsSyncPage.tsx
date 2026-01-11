@@ -31,7 +31,7 @@ import { AdAccountCard, AdAccountData } from './AdAccountCard';
 import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems } from './BreadcrumbNav';
 import { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
 import { SyncStatusBadge, SyncStatus } from './SyncStatusBadge';
-import { AccountFilters, StatusFilter, SyncFilter, ActivityFilter, SortOption } from './AccountFilters';
+import { AccountFilters, StatusFilter, SyncFilter, SortOption } from './AccountFilters';
 import {
   runMetaSync,
   getMetaSyncStatus,
@@ -156,7 +156,6 @@ export const MetaAdsSyncPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [syncFilter, setSyncFilter] = useState<SyncFilter>('all');
-  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all');
   const [sortBy, setSortBy] = useState<SortOption>('name-asc');
 
   // Mensagens
@@ -605,9 +604,6 @@ export const MetaAdsSyncPage: React.FC = () => {
       // Data mais recente dos dados sincronizados
       const latestDataDate = acc.latest_data_date || undefined;
 
-      // Informações de atividade recente (últimas 48h)
-      const recentActivity = acc.recent_activity || undefined;
-
       return {
         id: acc.id,
         metaId: acc.meta_id,
@@ -623,8 +619,6 @@ export const MetaAdsSyncPage: React.FC = () => {
         entityCounts,
         latestDataDate,
         metrics: acc.metrics || undefined,
-        // Informações de atividade recente (últimas 48h)
-        recentActivity,
       };
     });
   }, [syncStatus, syncingAccountId, syncProgress]);
@@ -667,26 +661,6 @@ export const MetaAdsSyncPage: React.FC = () => {
       });
     }
 
-    // Aplica filtro de atividade recente (últimas 48h)
-    if (activityFilter !== 'all') {
-      filtered = filtered.filter((account) => {
-        if (activityFilter === 'active-now') {
-          // Contas com atividade real nas últimas 48h (spend ou impressões)
-          return account.recentActivity?.is_really_active === true;
-        } else if (activityFilter === 'inactive') {
-          // Contas sem atividade recente
-          return account.recentActivity?.activity_status === 'inactive';
-        } else if (activityFilter === 'no-recent-activity') {
-          // Anúncios ativos mas sem métricas recentes (possível problema)
-          return (
-            account.recentActivity?.activity_status === 'paused' &&
-            account.recentActivity?.active_ads_count > 0
-          );
-        }
-        return true;
-      });
-    }
-
     // Aplica ordenação
     filtered.sort((a, b) => {
       switch (sortBy) {
@@ -696,15 +670,6 @@ export const MetaAdsSyncPage: React.FC = () => {
           return b.name.localeCompare(a.name);
         case 'spend-desc':
           return (b.metrics?.spend || 0) - (a.metrics?.spend || 0);
-        case 'recent-spend-desc':
-          // Ordena por gasto recente (últimas 48h)
-          return (b.recentActivity?.recent_metrics.spend || 0) - (a.recentActivity?.recent_metrics.spend || 0);
-        case 'activity-desc':
-          // Ordena por atividade recente (ativas primeiro, depois por impressões)
-          const aActive = a.recentActivity?.is_really_active ? 1 : 0;
-          const bActive = b.recentActivity?.is_really_active ? 1 : 0;
-          if (aActive !== bActive) return bActive - aActive;
-          return (b.recentActivity?.recent_metrics.impressions || 0) - (a.recentActivity?.recent_metrics.impressions || 0);
         case 'date-desc':
           // Ordena por data de última sincronização (mais recente primeiro)
           if (!a.lastSyncAt && !b.lastSyncAt) return 0;
@@ -717,12 +682,7 @@ export const MetaAdsSyncPage: React.FC = () => {
     });
 
     return filtered;
-  }, [accountCards, searchQuery, statusFilter, syncFilter, activityFilter, sortBy]);
-
-  // Conta quantas contas estão ativas agora (com atividade nas últimas 48h)
-  const activeAccountsCount = useMemo(() => {
-    return accountCards.filter((account) => account.recentActivity?.is_really_active === true).length;
-  }, [accountCards]);
+  }, [accountCards, searchQuery, statusFilter, syncFilter, sortBy]);
 
   // Breadcrumb items
   const breadcrumbItems = useMemo(() => createBreadcrumbItems(navigationState), [navigationState]);
@@ -982,13 +942,10 @@ export const MetaAdsSyncPage: React.FC = () => {
             onStatusFilterChange={setStatusFilter}
             syncFilter={syncFilter}
             onSyncFilterChange={setSyncFilter}
-            activityFilter={activityFilter}
-            onActivityFilterChange={setActivityFilter}
             sortBy={sortBy}
             onSortChange={setSortBy}
             totalCount={accountCards.length}
             filteredCount={filteredAndSortedAccounts.length}
-            activeAccountsCount={activeAccountsCount}
           />
         )}
 

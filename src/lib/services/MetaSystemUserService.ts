@@ -125,26 +125,6 @@ export interface EntityCounts {
   ad: EntityCount;
 }
 
-// Interface para métricas recentes (últimas 48h)
-export interface RecentMetrics {
-  spend: number;
-  impressions: number;
-  clicks: number;
-  reach: number;
-}
-
-// Interface para atividade recente de uma conta
-export interface RecentActivity {
-  has_recent_spend: boolean;
-  has_recent_impressions: boolean;
-  last_activity_date: string | null;
-  active_ads_count: number;
-  recent_metrics: RecentMetrics;
-  activity_status: 'active' | 'paused' | 'inactive';
-  days_since_last_activity: number | null;
-  is_really_active: boolean;
-}
-
 export interface SyncStatusResponse {
   workspace: {
     id: string;
@@ -178,8 +158,6 @@ export interface SyncStatusResponse {
       adsets: number;
       ads: number;
     } | null;
-    // Informações de atividade recente (últimas 48h)
-    recent_activity: RecentActivity;
   }>;
   sync_states: SyncState[];
   recent_jobs: SyncJob[];
