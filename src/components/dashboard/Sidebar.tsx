@@ -207,7 +207,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <div className="flex items-center gap-3">
                         <section.icon className="w-5 h-5" />
                         <span className={`
-                          font-semibold text-[15px] tracking-tight
+                          font-medium text-base leading-6
                           ${isActive ? 'text-slate-900' : 'text-slate-700'}
                         `}>
                           {section.title}
@@ -251,7 +251,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   : 'text-slate-400'
                                 }
                               `} />
-                              <span className="text-[14px] font-medium">{item.label}</span>
+                              <span className="text-sm font-medium leading-6">{item.label}</span>
                             </button>
                           );
                         })}
@@ -286,7 +286,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       w-5 h-5 flex-shrink-0
                       ${isItemActive ? 'text-slate-700' : 'text-slate-400'}
                     `} />
-                    <span className="text-[15px] font-medium tracking-tight">{item.label}</span>
+                    <span className="text-base font-medium leading-6">{item.label}</span>
                   </button>
                 );
               })}
