@@ -363,6 +363,47 @@ export const MetaAdsSyncPage: React.FC = () => {
   // FUNCOES DE SINCRONIZACAO
   // ============================================================
 
+  // Calcula daysBack baseado no preset selecionado
+  // Handles flags especiais para periodos de calendario
+  const calculateDaysBack = (periodId: string): number => {
+    const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === periodId);
+    if (!preset) return 7;
+
+    const days = preset.days;
+
+    // Periodos de calendario com flags especiais
+    if (days === -1 || days === -2) {
+      // Este mes ou mes passado - usa 30 dias
+      return 30;
+    } else if (days === -3) {
+      // Este trimestre - calcula dias desde inicio do trimestre
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const currentQuarter = Math.floor(currentMonth / 3);
+      const firstMonthOfQuarter = currentQuarter * 3;
+      const quarterStart = new Date(today.getFullYear(), firstMonthOfQuarter, 1);
+      const daysSinceQuarterStart = Math.ceil((today.getTime() - quarterStart.getTime()) / (1000 * 60 * 60 * 24));
+      return Math.max(daysSinceQuarterStart + 1, 1);
+    } else if (days === -4) {
+      // Este semestre - calcula dias desde inicio do semestre
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const firstMonthOfSemester = currentMonth < 6 ? 0 : 6;
+      const semesterStart = new Date(today.getFullYear(), firstMonthOfSemester, 1);
+      const daysSinceSemesterStart = Math.ceil((today.getTime() - semesterStart.getTime()) / (1000 * 60 * 60 * 24));
+      return Math.max(daysSinceSemesterStart + 1, 1);
+    } else if (days === -5) {
+      // Este ano - calcula dias desde 1 de janeiro
+      const today = new Date();
+      const yearStart = new Date(today.getFullYear(), 0, 1);
+      const daysSinceYearStart = Math.ceil((today.getTime() - yearStart.getTime()) / (1000 * 60 * 60 * 24));
+      return Math.max(daysSinceYearStart + 1, 1);
+    }
+
+    // Periodos normais (hoje, ontem, ultimos N dias)
+    return Math.max(days || 7, 1);
+  };
+
   // Sincroniza uma conta especifica
   const handleSyncAccount = async (accountId: string, syncCreatives: boolean) => {
     const account = getAccountById(accountId);
@@ -375,8 +416,7 @@ export const MetaAdsSyncPage: React.FC = () => {
     let syncSuccessful = false;
 
     try {
-      const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === selectedPeriod);
-      const daysBack = preset?.days === -1 || preset?.days === -2 ? 30 : Math.max(preset?.days || 7, 1);
+      const daysBack = calculateDaysBack(selectedPeriod);
 
       const result = await runMetaSync({
         mode: selectedPeriod === 'today' ? 'intraday' : 'backfill',
@@ -462,8 +502,7 @@ export const MetaAdsSyncPage: React.FC = () => {
     const startTime = Date.now();
 
     try {
-      const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === selectedPeriod);
-      const daysBack = preset?.days === -1 || preset?.days === -2 ? 30 : Math.max(preset?.days || 7, 1);
+      const daysBack = calculateDaysBack(selectedPeriod);
 
       const result = await runMetaSync({
         mode: selectedPeriod === 'today' ? 'intraday' : 'backfill',

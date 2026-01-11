@@ -87,6 +87,51 @@ export const DEFAULT_PERIOD_PRESETS: PeriodPreset[] = [
     },
   },
   {
+    id: 'last_90',
+    label: 'Ultimos 90 dias',
+    shortLabel: '90 dias',
+    days: 90,
+    getDateRange: () => {
+      const today = new Date();
+      const from = new Date();
+      from.setDate(today.getDate() - 89);
+      return {
+        dateFrom: from.toISOString().split('T')[0],
+        dateTo: today.toISOString().split('T')[0],
+      };
+    },
+  },
+  {
+    id: 'last_180',
+    label: 'Ultimos 180 dias',
+    shortLabel: '180 dias',
+    days: 180,
+    getDateRange: () => {
+      const today = new Date();
+      const from = new Date();
+      from.setDate(today.getDate() - 179);
+      return {
+        dateFrom: from.toISOString().split('T')[0],
+        dateTo: today.toISOString().split('T')[0],
+      };
+    },
+  },
+  {
+    id: 'last_365',
+    label: 'Ultimos 365 dias',
+    shortLabel: '365 dias',
+    days: 365,
+    getDateRange: () => {
+      const today = new Date();
+      const from = new Date();
+      from.setDate(today.getDate() - 364);
+      return {
+        dateFrom: from.toISOString().split('T')[0],
+        dateTo: today.toISOString().split('T')[0],
+      };
+    },
+  },
+  {
     id: 'this_month',
     label: 'Este mes',
     shortLabel: 'Este mes',
@@ -112,6 +157,53 @@ export const DEFAULT_PERIOD_PRESETS: PeriodPreset[] = [
       return {
         dateFrom: from.toISOString().split('T')[0],
         dateTo: to.toISOString().split('T')[0],
+      };
+    },
+  },
+  {
+    id: 'this_quarter',
+    label: 'Este trimestre',
+    shortLabel: 'Trimestre',
+    days: -3,
+    getDateRange: () => {
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const currentQuarter = Math.floor(currentMonth / 3);
+      const firstMonthOfQuarter = currentQuarter * 3;
+      const from = new Date(today.getFullYear(), firstMonthOfQuarter, 1);
+      return {
+        dateFrom: from.toISOString().split('T')[0],
+        dateTo: today.toISOString().split('T')[0],
+      };
+    },
+  },
+  {
+    id: 'this_semester',
+    label: 'Este semestre',
+    shortLabel: 'Semestre',
+    days: -4,
+    getDateRange: () => {
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const firstMonthOfSemester = currentMonth < 6 ? 0 : 6;
+      const from = new Date(today.getFullYear(), firstMonthOfSemester, 1);
+      return {
+        dateFrom: from.toISOString().split('T')[0],
+        dateTo: today.toISOString().split('T')[0],
+      };
+    },
+  },
+  {
+    id: 'this_year',
+    label: 'Este ano',
+    shortLabel: 'Este ano',
+    days: -5,
+    getDateRange: () => {
+      const today = new Date();
+      const from = new Date(today.getFullYear(), 0, 1);
+      return {
+        dateFrom: from.toISOString().split('T')[0],
+        dateTo: today.toISOString().split('T')[0],
       };
     },
   },
@@ -214,41 +306,51 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
             ${sizeConfig.dropdown}
           `}
         >
-          {/* Lista de presets */}
+          {/* Lista de presets agrupada */}
           <div className="py-1">
-            {presets.map((preset) => {
+            {presets.map((preset, index) => {
               const isSelected = preset.id === selectedPeriod;
               const dateRange = preset.getDateRange();
 
-              return (
-                <button
-                  key={preset.id}
-                  onClick={() => handleSelect(preset)}
-                  className={`
-                    w-full flex items-center justify-between px-3 py-2
-                    hover:bg-gray-50 transition-colors
-                    ${isSelected ? 'bg-blue-50' : ''}
-                  `}
-                >
-                  <div className="flex flex-col items-start">
-                    <span
-                      className={`font-medium ${
-                        isSelected ? 'text-blue-700' : 'text-gray-900'
-                      }`}
-                    >
-                      {preset.label}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {dateRange.dateFrom === dateRange.dateTo
-                        ? formatDate(dateRange.dateFrom)
-                        : `${formatDate(dateRange.dateFrom)} - ${formatDate(dateRange.dateTo)}`}
-                    </span>
-                  </div>
+              // Adiciona separador visual entre grupos de periodos
+              // Grupo 1: Hoje, Ontem (indices 0-1)
+              // Grupo 2: Ultimos dias (indices 2-7)
+              // Grupo 3: Calendario (indices 8+)
+              const showSeparatorBefore = index === 2 || index === 8;
 
-                  {isSelected && (
-                    <Check className="w-4 h-4 text-blue-600" />
+              return (
+                <React.Fragment key={preset.id}>
+                  {showSeparatorBefore && (
+                    <div className="my-1 border-t border-gray-200" />
                   )}
-                </button>
+                  <button
+                    onClick={() => handleSelect(preset)}
+                    className={`
+                      w-full flex items-center justify-between px-3 py-2
+                      hover:bg-gray-50 transition-colors
+                      ${isSelected ? 'bg-blue-50' : ''}
+                    `}
+                  >
+                    <div className="flex flex-col items-start">
+                      <span
+                        className={`font-medium ${
+                          isSelected ? 'text-blue-700' : 'text-gray-900'
+                        }`}
+                      >
+                        {preset.label}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {dateRange.dateFrom === dateRange.dateTo
+                          ? formatDate(dateRange.dateFrom)
+                          : `${formatDate(dateRange.dateFrom)} - ${formatDate(dateRange.dateTo)}`}
+                      </span>
+                    </div>
+
+                    {isSelected && (
+                      <Check className="w-4 h-4 text-blue-600" />
+                    )}
+                  </button>
+                </React.Fragment>
               );
             })}
           </div>
