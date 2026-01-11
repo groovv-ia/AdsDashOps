@@ -151,7 +151,7 @@ export const BatchSyncProgressModal: React.FC<BatchSyncProgressModalProps> = ({
     if (isCancelled) {
       return 'from-gray-500 via-gray-600 to-gray-700';
     }
-    return 'from-purple-600 via-purple-500 to-blue-600';
+    return 'from-blue-600 via-cyan-500 to-blue-500';
   };
 
   return (
