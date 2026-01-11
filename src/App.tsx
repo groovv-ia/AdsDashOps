@@ -22,6 +22,7 @@ import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPag
 import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
 import { WorkspacesPage } from './components/workspaces/WorkspacesPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
+import { GoogleAdminPage, GoogleAdsSyncPage } from './components/google-admin';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -358,6 +359,10 @@ function AppContent() {
         return <MetaAdminPage />;
       case 'meta-sync':
         return <MetaAdsSyncPage />;
+      case 'google-admin':
+        return <GoogleAdminPage />;
+      case 'google-sync':
+        return <GoogleAdsSyncPage />;
       case 'ai-insights':
         return (
           <AIInsightsPanel

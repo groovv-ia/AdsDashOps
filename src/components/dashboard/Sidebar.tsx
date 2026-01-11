@@ -14,6 +14,11 @@ const MetaIcon: React.FC<{ className?: string }> = ({ className }) => (
   <img src="/meta-icon.svg" alt="Meta" className={className} />
 );
 
+// Componente para renderizar o icone do Google Ads
+const GoogleIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <img src="/google-ads-icon.svg" alt="Google Ads" className={className} />
+);
+
 // Tipo para os itens do menu - suporta icones Lucide ou imagens customizadas
 interface MenuItem {
   icon: React.ComponentType<{ className?: string }>;
@@ -22,11 +27,15 @@ interface MenuItem {
 }
 
 // Itens do menu de navegacao principal
-// NOTA: Item "Campanhas" ocultado temporariamente
+// Organizados por plataforma: Meta Ads, Google Ads, e configuracoes gerais
 const menuItems: MenuItem[] = [
+  // Meta Ads
   { icon: MetaIcon, label: 'Conexao Meta', page: 'meta-admin' },
-  // { icon: Target, label: 'Campanhas', page: 'campaigns' }, // Ocultado temporariamente
   { icon: MetaIcon, label: 'Meta Ads Sync', page: 'meta-sync' },
+  // Google Ads
+  { icon: GoogleIcon, label: 'Conexao Google', page: 'google-admin' },
+  { icon: GoogleIcon, label: 'Google Ads Sync', page: 'google-sync' },
+  // Configuracoes gerais
   { icon: Building2, label: 'Workspaces', page: 'workspaces' },
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configuracoes', page: 'settings' },
