@@ -585,32 +585,56 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
 
   const renderChat = () => (
     <div className="flex flex-col h-full">
-      <div className="p-6 border-b border-gray-200 bg-gray-50">
-        <h3 className="text-lg font-semibold text-gray-900">Suporte ao Cliente</h3>
-        <p className="text-sm text-gray-600">Nossa equipe responde em até 2 horas</p>
+      <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-blue-700">
+        <div className="flex items-center space-x-3">
+          <img
+            src="/logotipo-adsops.webp"
+            alt="AdsOPS Logo"
+            className="w-10 h-10 rounded-lg bg-white p-1.5"
+          />
+          <div>
+            <h3 className="text-lg font-semibold text-white">Suporte AdsOPS</h3>
+            <p className="text-sm text-blue-100">Respondemos em até 2 horas</p>
+          </div>
+        </div>
       </div>
 
       <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-gray-50">
         {chatHistory.length === 0 ? (
           <div className="text-center py-8">
-            <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h4 className="font-medium text-gray-900 mb-2">Inicie uma conversa</h4>
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <img
+                src="/logotipo-adsops.webp"
+                alt="AdsOPS Logo"
+                className="w-14 h-14"
+              />
+            </div>
+            <h4 className="font-medium text-gray-900 mb-2">Como podemos ajudar?</h4>
             <p className="text-sm text-gray-600">Descreva seu problema ou dúvida e nossa equipe ajudará você.</p>
           </div>
         ) : (
           chatHistory.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'} items-end space-x-2`}
             >
+              {message.sender === 'bot' && (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <img
+                    src="/logotipo-adsops.webp"
+                    alt="AdsOPS"
+                    className="w-6 h-6"
+                  />
+                </div>
+              )}
               <div
-                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-lg ${
                   message.sender === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-900 border border-gray-200'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-white text-gray-900 border border-gray-200 shadow-sm'
                 }`}
               >
-                <p className="text-sm">{message.message}</p>
+                <p className="text-sm leading-relaxed">{message.message}</p>
                 <p className={`text-xs mt-1 ${
                   message.sender === 'user' ? 'text-blue-100' : 'text-gray-500'
                 }`}>
