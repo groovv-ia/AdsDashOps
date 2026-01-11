@@ -100,7 +100,7 @@ export const BatchSyncConfirmDialog: React.FC<BatchSyncConfirmDialogProps> = ({
       {/* Modal */}
       <div className="relative bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-gray-200/50">
         {/* Header com gradiente */}
-        <div className="relative px-6 py-5 bg-gradient-to-r from-blue-600 via-cyan-600 to-teal-600">
+        <div className="relative px-6 py-5 bg-gradient-to-r from-purple-600 via-purple-500 to-blue-600">
           {/* Pattern de fundo decorativo */}
           <div className="absolute inset-0 opacity-10">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full -translate-y-1/2 translate-x-1/2" />
