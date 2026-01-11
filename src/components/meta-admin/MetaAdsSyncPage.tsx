@@ -1012,25 +1012,27 @@ export const MetaAdsSyncPage: React.FC = () => {
       });
     }
 
-    // Aplica filtro de atividade (dados sincronizados OU anuncios ativos)
+    // Aplica filtro de atividade (dados sincronizados OU entidades existentes)
     // Considera "com dados" se:
     // - Tem dados sincronizados (total_rows > 0) OU
-    // - Tem anuncios ativos (entityCounts.ad.active > 0) OU
-    // - Tem campanhas ativas (entityCounts.campaign.active > 0) OU
-    // - Tem gasto registrado (metrics.total_spend > 0)
+    // - Tem entidades totais (campanhas, conjuntos, anuncios) > 0 OU
+    // - Tem entidades ativas > 0
     if (activityFilter !== 'all') {
       filtered = filtered.filter((account) => {
-        // Verifica se ha dados sincronizados no banco
-        const hasSyncedData = (account.metrics?.total_rows || 0) > 0;
-        // Verifica se ha gasto registrado
-        const hasSpend = (account.metrics?.total_spend || 0) > 0;
+        // Verifica se ha dados sincronizados no banco (usa cast para any pois o tipo nao inclui total_rows)
+        const metrics = account.metrics as any;
+        const hasSyncedData = (metrics?.total_rows || 0) > 0;
+        // Verifica se ha entidades TOTAIS no Meta (nao apenas ativas)
+        const hasTotalAds = (account.entityCounts?.ad?.total || 0) > 0;
+        const hasTotalAdsets = (account.entityCounts?.adset?.total || 0) > 0;
+        const hasTotalCampaigns = (account.entityCounts?.campaign?.total || 0) > 0;
         // Verifica se ha entidades ativas no Meta
         const hasActiveAds = (account.entityCounts?.ad?.active || 0) > 0;
         const hasActiveAdsets = (account.entityCounts?.adset?.active || 0) > 0;
         const hasActiveCampaigns = (account.entityCounts?.campaign?.active || 0) > 0;
 
-        // Considera "com dados" apenas se tem dados reais (nao apenas se foi sincronizado)
-        const hasData = hasSyncedData || hasSpend || hasActiveAds || hasActiveAdsets || hasActiveCampaigns;
+        // Considera "com dados" se tem qualquer tipo de entidade ou dados sincronizados
+        const hasData = hasSyncedData || hasTotalAds || hasTotalAdsets || hasTotalCampaigns || hasActiveAds || hasActiveAdsets || hasActiveCampaigns;
 
         if (activityFilter === 'with-data') {
           return hasData;
@@ -1070,13 +1072,20 @@ export const MetaAdsSyncPage: React.FC = () => {
   // Usa a mesma logica do filtro de atividade para determinar se a conta tem dados
   const { accountsWithData, accountsWithoutData } = useMemo(() => {
     // Funcao auxiliar para verificar se uma conta tem dados
+    // Considera "com dados" se tem entidades totais (nao apenas ativas) ou dados sincronizados
     const hasAccountData = (account: AdAccountData): boolean => {
-      const hasSyncedData = (account.metrics?.total_rows || 0) > 0;
-      const hasSpend = (account.metrics?.total_spend || 0) > 0;
+      // Usa cast para any pois o tipo nao inclui total_rows
+      const metrics = account.metrics as any;
+      const hasSyncedData = (metrics?.total_rows || 0) > 0;
+      // Verifica entidades TOTAIS (nao apenas ativas)
+      const hasTotalAds = (account.entityCounts?.ad?.total || 0) > 0;
+      const hasTotalAdsets = (account.entityCounts?.adset?.total || 0) > 0;
+      const hasTotalCampaigns = (account.entityCounts?.campaign?.total || 0) > 0;
+      // Verifica entidades ativas
       const hasActiveAds = (account.entityCounts?.ad?.active || 0) > 0;
       const hasActiveAdsets = (account.entityCounts?.adset?.active || 0) > 0;
       const hasActiveCampaigns = (account.entityCounts?.campaign?.active || 0) > 0;
-      return hasSyncedData || hasSpend || hasActiveAds || hasActiveAdsets || hasActiveCampaigns;
+      return hasSyncedData || hasTotalAds || hasTotalAdsets || hasTotalCampaigns || hasActiveAds || hasActiveAdsets || hasActiveCampaigns;
     };
 
     const withData: AdAccountData[] = [];
