@@ -287,34 +287,6 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   };
 
   // Tabs disponiveis
-  // Funcao helper para obter a melhor URL de imagem disponivel (prioriza HD)
-  const getBestImageUrl = (creative: MetaAdCreative | null): string | null => {
-    if (!creative) return null;
-
-    // Prioridade: image_url_hd > image_url > thumbnail_url
-    return creative.image_url_hd || creative.image_url || creative.thumbnail_url || null;
-  };
-
-  // Funcao para determinar qualidade da imagem
-  const getImageQuality = (creative: MetaAdCreative | null): 'hd' | 'sd' | 'low' | 'unknown' => {
-    if (!creative) return 'unknown';
-
-    // Usa o campo thumbnail_quality se disponivel
-    if (creative.thumbnail_quality) {
-      return creative.thumbnail_quality as 'hd' | 'sd' | 'low' | 'unknown';
-    }
-
-    // Fallback: determina pela largura/altura
-    const width = creative.image_width || 0;
-    const height = creative.image_height || 0;
-
-    if ((width >= 1280 && height >= 720) || (width >= 720 && height >= 1280)) return 'hd';
-    if ((width >= 640 && height >= 480) || (width >= 480 && height >= 640)) return 'sd';
-    if (width > 0 && height > 0) return 'low';
-
-    return 'unknown';
-  };
-
   const tabs = [
     { id: AdDetailTab.OVERVIEW, label: 'Visão Geral', icon: Eye },
     { id: AdDetailTab.CREATIVE, label: 'Criativo', icon: Image },
@@ -322,9 +294,8 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     { id: AdDetailTab.AI_ANALYSIS, label: 'Análise IA', icon: Sparkles },
   ];
 
-  // URL da imagem para visualizacao (prioriza HD)
-  const displayImageUrl = getBestImageUrl(creative);
-  const imageQuality = getImageQuality(creative);
+  // URL da imagem para visualizacao
+  const displayImageUrl = creative?.thumbnail_url || creative?.image_url;
 
   return (
     <>
@@ -452,8 +423,6 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
           isOpen={imageZoomOpen}
           onClose={() => setImageZoomOpen(false)}
           imageUrl={displayImageUrl}
-          imageUrlHd={creative?.image_url_hd}
-          quality={imageQuality}
           title={adData.entity_name}
         />
       )}
@@ -491,8 +460,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   onAnalyzeClick,
   isAnalyzing,
 }) => {
-  // Usa a melhor URL disponivel (prioriza HD)
-  const imageUrl = creative?.image_url_hd || creative?.image_url || creative?.thumbnail_url;
+  const imageUrl = creative?.thumbnail_url || creative?.image_url;
 
   // Funcoes de formatacao
   const formatCurrency = (n: number) =>
@@ -535,7 +503,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
         <div className="bg-gray-50 rounded-lg p-4">
           <h3 className="font-medium text-gray-900 mb-3">Preview</h3>
           {creativeLoading ? (
-            <div className="h-64 flex items-center justify-center">
+            <div className="h-32 flex items-center justify-center">
               <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : imageUrl ? (
@@ -546,7 +514,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
               <img
                 src={imageUrl}
                 alt="Preview do anúncio"
-                className="w-full h-64 object-contain rounded-lg bg-gray-100"
+                className="w-full h-32 object-cover rounded-lg"
               />
               {creative?.creative_type === 'video' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
@@ -558,7 +526,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
               </div>
             </div>
           ) : (
-            <div className="h-64 flex flex-col items-center justify-center bg-gray-100 rounded-lg text-gray-400">
+            <div className="h-32 flex flex-col items-center justify-center bg-gray-100 rounded-lg text-gray-400">
               <Image className="w-8 h-8 mb-2" />
               <p className="text-xs text-gray-500">Sem preview disponível</p>
             </div>
@@ -699,7 +667,6 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Handlers do video
   const togglePlay = () => {
@@ -720,18 +687,7 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
     }
   };
 
-  // Handler de refresh que preserva o criativo durante a atualizacao
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await onRefresh();
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  // Mostra loading apenas se nao tiver criativo
-  if (loading && !creative) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="text-center">
@@ -742,7 +698,7 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
     );
   }
 
-  if (error && !creative) {
+  if (error) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="text-center">
@@ -750,12 +706,11 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
           <p className="text-gray-900 font-medium mb-2">Erro ao carregar criativo</p>
           <p className="text-sm text-gray-500 mb-4">{error}</p>
           <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 mx-auto disabled:opacity-50"
+            onClick={onRefresh}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 mx-auto"
           >
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Atualizando...' : 'Tentar novamente'}
+            <RefreshCw className="w-4 h-4" />
+            Tentar novamente
           </button>
         </div>
       </div>
@@ -773,31 +728,20 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
             mais antigos ou que foram criados recentemente.
           </p>
           <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+            onClick={onRefresh}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Buscando...' : 'Buscar criativo agora'}
+            <RefreshCw className="w-4 h-4" />
+            Buscar criativo agora
           </button>
         </div>
       </div>
     );
   }
 
-  // Usa a melhor URL disponivel (prioriza HD)
-  const imageUrl = creative.image_url_hd || creative.image_url || creative.thumbnail_url;
+  const imageUrl = creative.thumbnail_url || creative.image_url;
   const videoUrl = creative.video_url;
   const isVideo = creative.creative_type === 'video' && videoUrl;
-
-  // Determina qualidade da imagem
-  const imageQuality = creative.thumbnail_quality || 'unknown';
-  const qualityConfig = {
-    hd: { label: 'HD', color: 'bg-green-100 text-green-700' },
-    sd: { label: 'SD', color: 'bg-blue-100 text-blue-700' },
-    low: { label: 'Baixa', color: 'bg-orange-100 text-orange-700' },
-    unknown: { label: '', color: '' },
-  };
 
   return (
     <div className="space-y-6">
@@ -809,34 +753,15 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
             <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">
               {getCreativeTypeLabel(creative.creative_type)}
             </span>
-            {imageQuality !== 'unknown' && qualityConfig[imageQuality as keyof typeof qualityConfig].label && (
-              <span className={`text-xs font-medium px-2 py-1 rounded ${qualityConfig[imageQuality as keyof typeof qualityConfig].color}`}>
-                {qualityConfig[imageQuality as keyof typeof qualityConfig].label}
-              </span>
-            )}
-            {creative.image_width && creative.image_height && (
-              <span className="text-xs text-gray-400 px-2 py-1 bg-gray-50 rounded font-mono">
-                {creative.image_width}×{creative.image_height}
-              </span>
-            )}
             <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50 transition-colors"
+              onClick={onRefresh}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
               title="Atualizar criativo"
             >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw className="w-4 h-4" />
             </button>
           </div>
         </div>
-
-        {/* Overlay de loading durante refresh */}
-        {isRefreshing && (
-          <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-blue-700">Atualizando criativo...</span>
-          </div>
-        )}
 
         {/* Player de video se for video */}
         {isVideo ? (
@@ -845,7 +770,7 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
               ref={videoRef}
               src={videoUrl}
               poster={imageUrl || undefined}
-              className="w-full max-h-[600px] object-contain"
+              className="w-full max-h-96 object-contain"
               muted={isMuted}
               playsInline
               onEnded={() => setIsPlaying(false)}
@@ -886,22 +811,15 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
           </div>
         ) : imageUrl ? (
           <div
-            className="relative cursor-pointer group rounded-lg overflow-hidden border border-gray-200 bg-gray-50"
+            className="relative cursor-pointer group rounded-lg overflow-hidden border border-gray-200"
             onClick={onImageClick}
           >
             <img
               src={imageUrl}
               alt="Criativo do anúncio"
-              className="w-full max-h-[600px] object-contain"
+              className="w-full max-h-96 object-contain bg-gray-50"
             />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-              <div className="px-4 py-2 bg-black/70 rounded-lg">
-                <span className="text-white text-sm font-medium flex items-center gap-2">
-                  <Maximize2 className="w-4 h-4" />
-                  Clique para expandir
-                </span>
-              </div>
-            </div>
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
           </div>
         ) : (
           <div className="h-48 flex items-center justify-center bg-gray-100 rounded-lg">
