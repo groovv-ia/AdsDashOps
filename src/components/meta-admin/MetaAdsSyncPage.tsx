@@ -1935,7 +1935,7 @@ export const MetaAdsSyncPage: React.FC = () => {
           avgCtr: kpis.avgCtr,
           avgCpc: kpis.avgCpc,
           avgCpm: kpis.avgCpm,
-          avgFrequency: kpis.avgCtr > 0 ? kpis.totalImpressions / kpis.totalClicks : 0,
+          avgFrequency: kpis.totalReach > 0 ? kpis.totalImpressions / kpis.totalReach : 0,
         }}
         entityId={navigationState.selectedCampaignId || navigationState.selectedAccountId || undefined}
         entityName={navigationState.selectedCampaignName || navigationState.selectedAccountName || undefined}
@@ -1949,15 +1949,15 @@ export const MetaAdsSyncPage: React.FC = () => {
           avgCtr: kpis.avgCtr,
           avgCpc: kpis.avgCpc,
           avgCpm: kpis.avgCpm,
-          avgFrequency: kpis.avgCtr > 0 ? kpis.totalImpressions / kpis.totalClicks : 0,
-          dailyMetrics: aggregatedData.map(d => ({
+          avgFrequency: kpis.totalReach > 0 ? kpis.totalImpressions / kpis.totalReach : 0,
+          dailyMetrics: chartData.map(d => ({
             date: d.date,
-            impressions: d.impressions,
-            clicks: d.clicks,
-            spend: d.spend,
-            ctr: d.ctr,
-            cpc: d.cpc,
-            cpm: d.cpm,
+            impressions: d.impressions || 0,
+            clicks: d.clicks || 0,
+            spend: d.spend || 0,
+            ctr: d.impressions > 0 ? (d.clicks / d.impressions) * 100 : 0,
+            cpc: d.clicks > 0 ? d.spend / d.clicks : 0,
+            cpm: d.impressions > 0 ? (d.spend / d.impressions) * 1000 : 0,
           })),
         }}
       />
