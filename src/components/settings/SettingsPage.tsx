@@ -33,6 +33,8 @@ import { Tooltip } from '../ui/Tooltip';
 import { useSettings } from '../../hooks/useSettings';
 import { useSystemSettings } from '../../hooks/useSystemSettings';
 import { useTheme } from '../settings/ThemeProvider';
+import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../lib/supabase';
 import { SecurityManager } from './SecurityManager';
 import { DataExporter } from './DataExporter';
 
@@ -821,6 +823,10 @@ export const SettingsPage: React.FC = () => {
         </div>
       )}
 
+      {activeTab === 'notifications' && (
+        <NotificationsTab />
+      )}
+
       {activeTab === 'security' && (
         <SecurityManager />
       )}
@@ -828,6 +834,539 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'data' && (
         <DataExporter />
       )}
+    </div>
+  );
+};
+
+/**
+ * Componente da aba de notificações
+ * Permite ao usuário configurar todas as preferências de notificações
+ */
+const NotificationsTab: React.FC = () => {
+  const { user } = useAuth();
+  const [notificationSettings, setNotificationSettings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    loadNotificationSettings();
+  }, [user]);
+
+  /**
+   * Carrega as configurações de notificação do usuário do banco de dados
+   */
+  const loadNotificationSettings = async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+
+      // Buscar configurações existentes
+      const { data, error } = await supabase
+        .from('notification_settings')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Erro ao carregar configurações de notificação:', error);
+      }
+
+      if (data) {
+        setNotificationSettings(data);
+      } else {
+        // Se não existir, criar com valores padrão
+        const defaultSettings = {
+          user_id: user.id,
+          email_notifications: true,
+          push_notifications: true,
+          desktop_notifications: true,
+          notification_frequency: 'immediate',
+          categories: {
+            system: true,
+            campaign: true,
+            budget: true,
+            performance: true,
+            sync: true,
+            security: true
+          },
+          thresholds: {
+            budget_alert_percentage: 80,
+            performance_drop_percentage: 20,
+            spend_increase_percentage: 50,
+            ctr_drop_percentage: 25,
+            roas_drop_percentage: 30
+          },
+          quiet_hours: {
+            enabled: false,
+            start_time: '22:00',
+            end_time: '08:00'
+          }
+        };
+
+        const { data: created, error: createError } = await supabase
+          .from('notification_settings')
+          .insert(defaultSettings)
+          .select()
+          .single();
+
+        if (createError) {
+          console.error('Erro ao criar configurações padrão:', createError);
+          setNotificationSettings(defaultSettings);
+        } else {
+          setNotificationSettings(created);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao carregar configurações de notificação:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Salva as configurações de notificação no banco de dados
+   */
+  const handleSaveNotificationSettings = async () => {
+    if (!user || !notificationSettings) return;
+
+    setSaving(true);
+    setSaveMessage(null);
+
+    try {
+      const { error } = await supabase
+        .from('notification_settings')
+        .upsert({
+          ...notificationSettings,
+          user_id: user.id,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        });
+
+      if (error) throw error;
+
+      setSaveMessage({ type: 'success', text: 'Configurações de notificação salvas com sucesso!' });
+    } catch (error) {
+      console.error('Erro ao salvar configurações:', error);
+      setSaveMessage({ type: 'error', text: 'Erro ao salvar configurações. Tente novamente.' });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveMessage(null), 3000);
+    }
+  };
+
+  /**
+   * Atualiza uma configuração específica
+   */
+  const updateSetting = (key: string, value: any) => {
+    setNotificationSettings((prev: any) => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  /**
+   * Atualiza uma categoria de notificação
+   */
+  const updateCategory = (category: string, enabled: boolean) => {
+    setNotificationSettings((prev: any) => ({
+      ...prev,
+      categories: {
+        ...prev.categories,
+        [category]: enabled
+      }
+    }));
+  };
+
+  /**
+   * Atualiza um threshold de alerta
+   */
+  const updateThreshold = (threshold: string, value: number) => {
+    setNotificationSettings((prev: any) => ({
+      ...prev,
+      thresholds: {
+        ...prev.thresholds,
+        [threshold]: value
+      }
+    }));
+  };
+
+  /**
+   * Atualiza configurações de horário silencioso
+   */
+  const updateQuietHours = (updates: any) => {
+    setNotificationSettings((prev: any) => ({
+      ...prev,
+      quiet_hours: {
+        ...prev.quiet_hours,
+        ...updates
+      }
+    }));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  if (!notificationSettings) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+        <p className="text-gray-600">Erro ao carregar configurações de notificação.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Save Message */}
+      {saveMessage && (
+        <div className={`p-4 rounded-lg border ${
+          saveMessage.type === 'success'
+            ? 'bg-green-50 border-green-200 text-green-800'
+            : 'bg-red-50 border-red-200 text-red-800'
+        }`}>
+          <div className="flex items-center space-x-2">
+            {saveMessage.type === 'success' ? (
+              <CheckCircle className="w-5 h-5" />
+            ) : (
+              <AlertCircle className="w-5 h-5" />
+            )}
+            <span>{saveMessage.text}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Delivery Methods - Métodos de Entrega */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Métodos de Entrega</h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Mail className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <h4 className="font-medium text-gray-900">Email</h4>
+                <p className="text-sm text-gray-500">Receber notificações por email</p>
+              </div>
+            </div>
+            <Tooltip content={notificationSettings.email_notifications ? "Desativar emails" : "Ativar emails"}>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.email_notifications}
+                  onChange={(e) => updateSetting('email_notifications', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </Tooltip>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Monitor className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <h4 className="font-medium text-gray-900">Desktop</h4>
+                <p className="text-sm text-gray-500">Notificações do navegador</p>
+              </div>
+            </div>
+            <Tooltip content={notificationSettings.desktop_notifications ? "Desativar notificações desktop" : "Ativar notificações desktop"}>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.desktop_notifications}
+                  onChange={(e) => updateSetting('desktop_notifications', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </Tooltip>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <Bell className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <h4 className="font-medium text-gray-900">Push</h4>
+                <p className="text-sm text-gray-500">Notificações push no dispositivo</p>
+              </div>
+            </div>
+            <Tooltip content={notificationSettings.push_notifications ? "Desativar push" : "Ativar push"}>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.push_notifications}
+                  onChange={(e) => updateSetting('push_notifications', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </Tooltip>
+          </div>
+        </div>
+      </Card>
+
+      {/* Frequency - Frequência */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Frequência de Notificações</h3>
+        <div className="space-y-3">
+          {[
+            { value: 'immediate', label: 'Imediato', description: 'Receber notificações instantaneamente' },
+            { value: 'hourly', label: 'A cada hora', description: 'Resumo das notificações a cada hora' },
+            { value: 'daily', label: 'Diário', description: 'Resumo diário das notificações às 9h' },
+            { value: 'weekly', label: 'Semanal', description: 'Resumo semanal toda segunda-feira' }
+          ].map((option) => (
+            <label
+              key={option.value}
+              className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                notificationSettings.notification_frequency === option.value
+                  ? 'bg-blue-50 border-2 border-blue-500'
+                  : 'border-2 border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="frequency"
+                value={option.value}
+                checked={notificationSettings.notification_frequency === option.value}
+                onChange={(e) => updateSetting('notification_frequency', e.target.value)}
+                className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+              />
+              <div className="flex-1">
+                <p className="font-medium text-gray-900">{option.label}</p>
+                <p className="text-sm text-gray-500">{option.description}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+      </Card>
+
+      {/* Categories - Categorias */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Categorias de Notificação</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Escolha quais tipos de notificações você deseja receber
+        </p>
+        <div className="space-y-4">
+          {[
+            { key: 'system', label: 'Sistema', description: 'Atualizações e manutenções do sistema', color: 'bg-gray-100 text-gray-600' },
+            { key: 'campaign', label: 'Campanhas', description: 'Status e alterações em campanhas', color: 'bg-blue-100 text-blue-600' },
+            { key: 'budget', label: 'Orçamento', description: 'Alertas de orçamento e gastos', color: 'bg-yellow-100 text-yellow-600' },
+            { key: 'performance', label: 'Performance', description: 'Mudanças significativas na performance', color: 'bg-green-100 text-green-600' },
+            { key: 'sync', label: 'Sincronização', description: 'Status de sincronização de dados', color: 'bg-purple-100 text-purple-600' },
+            { key: 'security', label: 'Segurança', description: 'Alertas de segurança e acesso', color: 'bg-red-100 text-red-600' }
+          ].map((category) => (
+            <div key={category.key} className="flex items-center justify-between p-3 rounded-lg border border-gray-200">
+              <div className="flex items-center space-x-3">
+                <div className={`p-2 rounded-lg ${category.color}`}>
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-900">{category.label}</h4>
+                  <p className="text-sm text-gray-500">{category.description}</p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notificationSettings.categories[category.key]}
+                  onChange={(e) => updateCategory(category.key, e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Thresholds - Limites de Alerta */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Limites de Alerta</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Configure quando você deseja ser notificado sobre mudanças importantes
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Alerta de Orçamento (% gasto)
+            </label>
+            <div className="flex items-center space-x-3">
+              <input
+                type="range"
+                min="50"
+                max="100"
+                step="5"
+                value={notificationSettings.thresholds.budget_alert_percentage}
+                onChange={(e) => updateThreshold('budget_alert_percentage', parseInt(e.target.value))}
+                className="flex-1"
+              />
+              <span className="text-sm font-medium text-gray-900 w-12 text-right">
+                {notificationSettings.thresholds.budget_alert_percentage}%
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Notificar quando {notificationSettings.thresholds.budget_alert_percentage}% do orçamento for gasto
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Queda de Performance (% de redução)
+            </label>
+            <div className="flex items-center space-x-3">
+              <input
+                type="range"
+                min="5"
+                max="50"
+                step="5"
+                value={notificationSettings.thresholds.performance_drop_percentage}
+                onChange={(e) => updateThreshold('performance_drop_percentage', parseInt(e.target.value))}
+                className="flex-1"
+              />
+              <span className="text-sm font-medium text-gray-900 w-12 text-right">
+                {notificationSettings.thresholds.performance_drop_percentage}%
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Notificar se performance cair {notificationSettings.thresholds.performance_drop_percentage}%
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Queda de CTR (% de redução)
+            </label>
+            <div className="flex items-center space-x-3">
+              <input
+                type="range"
+                min="10"
+                max="50"
+                step="5"
+                value={notificationSettings.thresholds.ctr_drop_percentage}
+                onChange={(e) => updateThreshold('ctr_drop_percentage', parseInt(e.target.value))}
+                className="flex-1"
+              />
+              <span className="text-sm font-medium text-gray-900 w-12 text-right">
+                {notificationSettings.thresholds.ctr_drop_percentage}%
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Notificar se CTR cair {notificationSettings.thresholds.ctr_drop_percentage}%
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Queda de ROAS (% de redução)
+            </label>
+            <div className="flex items-center space-x-3">
+              <input
+                type="range"
+                min="10"
+                max="50"
+                step="5"
+                value={notificationSettings.thresholds.roas_drop_percentage}
+                onChange={(e) => updateThreshold('roas_drop_percentage', parseInt(e.target.value))}
+                className="flex-1"
+              />
+              <span className="text-sm font-medium text-gray-900 w-12 text-right">
+                {notificationSettings.thresholds.roas_drop_percentage}%
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Notificar se ROAS cair {notificationSettings.thresholds.roas_drop_percentage}%
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Quiet Hours - Horário Silencioso */}
+      <Card>
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Horário Silencioso</h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-indigo-100 rounded-lg">
+                <Moon className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div>
+                <h4 className="font-medium text-gray-900">Ativar Modo Silencioso</h4>
+                <p className="text-sm text-gray-500">Pausar notificações durante horários específicos</p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notificationSettings.quiet_hours.enabled}
+                onChange={(e) => updateQuietHours({ enabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {notificationSettings.quiet_hours.enabled && (
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Início
+                </label>
+                <input
+                  type="time"
+                  value={notificationSettings.quiet_hours.start_time}
+                  onChange={(e) => updateQuietHours({ start_time: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fim
+                </label>
+                <input
+                  type="time"
+                  value={notificationSettings.quiet_hours.end_time}
+                  onChange={(e) => updateQuietHours({ end_time: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          )}
+
+          {notificationSettings.quiet_hours.enabled && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+              <p className="text-sm text-indigo-700">
+                <Clock className="w-4 h-4 inline mr-2" />
+                Você não receberá notificações entre {notificationSettings.quiet_hours.start_time} e {notificationSettings.quiet_hours.end_time}
+              </p>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Save Button */}
+      <div className="flex justify-end">
+        <Button
+          onClick={handleSaveNotificationSettings}
+          loading={saving}
+          icon={Save}
+          size="lg"
+        >
+          Salvar Configurações
+        </Button>
+      </div>
     </div>
   );
 };
