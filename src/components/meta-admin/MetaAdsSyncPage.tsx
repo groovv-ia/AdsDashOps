@@ -23,7 +23,6 @@ import {
   Sparkles,
   ExternalLink,
   ChevronRight,
-  ChevronDown,
   Layers,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
@@ -32,7 +31,7 @@ import { AdAccountCard, AdAccountData } from './AdAccountCard';
 import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems } from './BreadcrumbNav';
 import { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
 import { SyncStatusBadge, SyncStatus } from './SyncStatusBadge';
-import { AccountFilters, StatusFilter, SyncFilter, SortOption, ActivityFilter } from './AccountFilters';
+import { AccountFilters, StatusFilter, SyncFilter, SortOption } from './AccountFilters';
 import { BatchSyncConfirmDialog, BatchSyncConfig } from './BatchSyncConfirmDialog';
 import { BatchSyncProgressModal, BatchSyncResult, BatchSyncStats, BatchSyncStatus } from './BatchSyncProgressModal';
 import {
@@ -179,34 +178,8 @@ export const MetaAdsSyncPage: React.FC = () => {
   const [syncFilter, setSyncFilter] = useState<SyncFilter>('all');
   const [sortBy, setSortBy] = useState<SortOption>('name-asc');
 
-  // Filtro de atividade - carrega preferencia do localStorage
-  const [activityFilter, setActivityFilterState] = useState<ActivityFilter>(() => {
-    try {
-      const saved = localStorage.getItem('meta_ads_activity_filter');
-      if (saved && ['all', 'with-data', 'without-data'].includes(saved)) {
-        return saved as ActivityFilter;
-      }
-    } catch {
-      // Ignora erro de localStorage
-    }
-    return 'all';
-  });
-
-  // Handler para atualizar filtro de atividade e salvar no localStorage
-  const setActivityFilter = (filter: ActivityFilter) => {
-    setActivityFilterState(filter);
-    try {
-      localStorage.setItem('meta_ads_activity_filter', filter);
-    } catch {
-      // Ignora erro de localStorage
-    }
-  };
-
   // Mensagens
   const [error, setError] = useState<string | null>(null);
-
-  // Estado para controlar expansao da secao de contas sem dados (colapsado por padrao)
-  const [isEmptyAccountsExpanded, setIsEmptyAccountsExpanded] = useState(false);
 
   // Estado do modal de detalhes do anuncio
   const [adDetailModal, setAdDetailModal] = useState<AdDetailModalState>({
@@ -1012,43 +985,6 @@ export const MetaAdsSyncPage: React.FC = () => {
       });
     }
 
-    // Aplica filtro de atividade - usa mesma logica da separacao de contas
-    // Considera "com dados" se qualquer um dos criterios for verdadeiro:
-    // - latestDataDate definido (tem dados de insights)
-    // - entityCounts com qualquer entidade total > 0
-    // - metrics com qualquer campo numerico > 0
-    if (activityFilter !== 'all') {
-      filtered = filtered.filter((account) => {
-        // Verifica se tem data de dados mais recentes
-        const hasLatestDate = Boolean(account.latestDataDate);
-
-        // Verifica contagem de entidades (total, nao apenas ativas)
-        const totalCampaigns = account.entityCounts?.campaign?.total || 0;
-        const totalAdsets = account.entityCounts?.adset?.total || 0;
-        const totalAds = account.entityCounts?.ad?.total || 0;
-        const hasEntities = totalCampaigns > 0 || totalAdsets > 0 || totalAds > 0;
-
-        // Verifica metricas (pode ter diferentes formatos)
-        const metricsObj = account.metrics as Record<string, number> | undefined;
-        let hasMetricsData = false;
-        if (metricsObj) {
-          hasMetricsData = Object.values(metricsObj).some(
-            (val) => typeof val === 'number' && val > 0
-          );
-        }
-
-        // Considera "com dados" se qualquer criterio for verdadeiro
-        const hasData = hasLatestDate || hasEntities || hasMetricsData;
-
-        if (activityFilter === 'with-data') {
-          return hasData;
-        } else if (activityFilter === 'without-data') {
-          return !hasData;
-        }
-        return true;
-      });
-    }
-
     // Aplica ordenacao
     filtered.sort((a, b) => {
       switch (sortBy) {
@@ -1079,81 +1015,7 @@ export const MetaAdsSyncPage: React.FC = () => {
     });
 
     return filtered;
-  }, [accountCards, searchQuery, statusFilter, syncFilter, activityFilter, sortBy]);
-
-  // Separa contas com dados das contas sem dados
-  // Criterio SIMPLES: conta tem dados se foi sincronizada com sucesso (tem lastSyncAt)
-  // E tem pelo menos uma das seguintes condicoes:
-  // - latestDataDate definido (tem dados de insights)
-  // - entityCounts com qualquer entidade total > 0
-  // - metrics com qualquer campo > 0
-  const { accountsWithData, accountsWithoutData } = useMemo(() => {
-    // Funcao auxiliar para verificar se uma conta tem dados REAIS
-    const hasAccountData = (account: AdAccountData): boolean => {
-      // 1. Verifica se tem data de dados mais recentes (indica insights no banco)
-      const hasLatestDate = Boolean(account.latestDataDate);
-
-      // 2. Verifica contagem de entidades (total, nao apenas ativas)
-      const totalCampaigns = account.entityCounts?.campaign?.total || 0;
-      const totalAdsets = account.entityCounts?.adset?.total || 0;
-      const totalAds = account.entityCounts?.ad?.total || 0;
-      const hasEntities = totalCampaigns > 0 || totalAdsets > 0 || totalAds > 0;
-
-      // 3. Verifica metricas (pode ter diferentes formatos)
-      // O objeto metrics pode ser { total_rows, campaigns, adsets, ads } (do sync status)
-      // ou { spend, impressions, clicks, ctr } (do card)
-      const metricsObj = account.metrics as Record<string, number> | undefined;
-      let hasMetricsData = false;
-      if (metricsObj) {
-        // Verifica qualquer campo numerico com valor > 0
-        hasMetricsData = Object.values(metricsObj).some(
-          (val) => typeof val === 'number' && val > 0
-        );
-      }
-
-      // Debug: loga contas com nome especifico para investigacao
-      if (account.name.toLowerCase().includes('cersar') || account.name.toLowerCase().includes('vollet')) {
-        console.log(`[hasAccountData] ${account.name}:`, {
-          hasLatestDate,
-          latestDataDate: account.latestDataDate,
-          hasEntities,
-          entityCounts: account.entityCounts,
-          hasMetricsData,
-          metrics: account.metrics,
-          lastSyncAt: account.lastSyncAt,
-        });
-      }
-
-      // Considera "com dados" se qualquer criterio for verdadeiro
-      return hasLatestDate || hasEntities || hasMetricsData;
-    };
-
-    const withData: AdAccountData[] = [];
-    const withoutData: AdAccountData[] = [];
-
-    filteredAndSortedAccounts.forEach((account) => {
-      if (hasAccountData(account)) {
-        withData.push(account);
-      } else {
-        withoutData.push(account);
-      }
-    });
-
-    // Log para debug
-    console.log('[MetaAdsSyncPage] Separacao de contas:', {
-      totalFiltradas: filteredAndSortedAccounts.length,
-      comDados: withData.length,
-      semDados: withoutData.length,
-      semDadosNomes: withoutData.map((a) => a.name),
-    });
-
-    return { accountsWithData: withData, accountsWithoutData: withoutData };
-  }, [filteredAndSortedAccounts]);
-
-  // Funcao para alternar expansao da secao de contas sem dados
-  const toggleEmptyAccounts = () => {
-    setIsEmptyAccountsExpanded((prev) => !prev);
-  };
+  }, [accountCards, searchQuery, statusFilter, syncFilter, sortBy]);
 
   // Breadcrumb items
   const breadcrumbItems = useMemo(() => createBreadcrumbItems(navigationState), [navigationState]);
@@ -1398,12 +1260,13 @@ export const MetaAdsSyncPage: React.FC = () => {
             onStatusFilterChange={setStatusFilter}
             syncFilter={syncFilter}
             onSyncFilterChange={setSyncFilter}
-            activityFilter={activityFilter}
-            onActivityFilterChange={setActivityFilter}
+            activityFilter="all"
+            onActivityFilterChange={() => {}}
             sortBy={sortBy}
             onSortChange={setSortBy}
             totalCount={accountCards.length}
             filteredCount={filteredAndSortedAccounts.length}
+            hideActivityFilter={true}
           />
         )}
 
@@ -1412,20 +1275,20 @@ export const MetaAdsSyncPage: React.FC = () => {
           <Card className="text-center py-12">
             <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Nenhuma conta de anúncio encontrada
+              Nenhuma conta de anuncio encontrada
             </h3>
             <p className="text-gray-600 mb-4">
               {syncStatus.connection?.status === 'connected'
-                ? 'Sua conexão com o Meta está ativa, mas nenhuma conta de anúncio foi encontrada. Verifique se o token tem acesso às contas.'
-                : 'Configure a conexão com o Meta Ads para começar a sincronizar dados.'}
+                ? 'Sua conexao com o Meta esta ativa, mas nenhuma conta de anuncio foi encontrada. Verifique se o token tem acesso as contas.'
+                : 'Configure a conexao com o Meta Ads para comecar a sincronizar dados.'}
             </p>
             <div className="space-y-3">
               <Button onClick={() => (window.location.href = '#meta-admin')} className="mx-auto">
                 <Layers className="w-4 h-4 mr-2" />
-                {syncStatus.connection?.status === 'connected' ? 'Revalidar Conexão' : 'Configurar Conexão'}
+                {syncStatus.connection?.status === 'connected' ? 'Revalidar Conexao' : 'Configurar Conexao'}
               </Button>
               <p className="text-sm text-gray-500">
-                Vá para "Meta Admin" e {syncStatus.connection?.status === 'connected' ? 'revalide sua conexão' : 'configure sua conexão com o Business Manager'}
+                Va para "Meta Admin" e {syncStatus.connection?.status === 'connected' ? 'revalide sua conexao' : 'configure sua conexao com o Business Manager'}
               </p>
             </div>
           </Card>
@@ -1436,7 +1299,7 @@ export const MetaAdsSyncPage: React.FC = () => {
               Nenhuma conta corresponde aos filtros
             </h3>
             <p className="text-gray-600 mb-4">
-              Tente ajustar os filtros de busca ou limpar todos os filtros para ver todas as contas disponíveis.
+              Tente ajustar os filtros de busca ou limpar todos os filtros para ver todas as contas disponiveis.
             </p>
             <Button
               variant="secondary"
@@ -1444,7 +1307,6 @@ export const MetaAdsSyncPage: React.FC = () => {
                 setSearchQuery('');
                 setStatusFilter('all');
                 setSyncFilter('all');
-                setActivityFilter('all');
               }}
               className="mx-auto"
             >
@@ -1452,71 +1314,17 @@ export const MetaAdsSyncPage: React.FC = () => {
             </Button>
           </Card>
         ) : (
-          <div className="space-y-6">
-            {/* Secao de Contas com Dados - visivel quando nao ha filtro ou filtro 'with-data' */}
-            {activityFilter !== 'without-data' && accountsWithData.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Contas com Dados ({accountsWithData.length})
-                  </h3>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {accountsWithData.map((account) => (
-                    <AdAccountCard
-                      key={account.id}
-                      account={account}
-                      isSelected={false}
-                      isSyncing={syncingAccountId === account.id}
-                      onSelect={handleSelectAccount}
-                      onSync={handleSyncAccount}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Secao de Contas sem Dados - colapsavel */}
-            {activityFilter !== 'with-data' && accountsWithoutData.length > 0 && (
-              <div className="space-y-4">
-                {/* Header clicavel da secao */}
-                <button
-                  onClick={toggleEmptyAccounts}
-                  className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    {/* Icone de expansao/colapso */}
-                    {isEmptyAccountsExpanded || activityFilter === 'without-data' ? (
-                      <ChevronDown className="w-5 h-5 text-gray-500" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-500" />
-                    )}
-                    <h3 className="text-lg font-semibold text-gray-700">
-                      Contas sem Dados ({accountsWithoutData.length})
-                    </h3>
-                  </div>
-                  <span className="text-sm text-gray-500">
-                    {isEmptyAccountsExpanded || activityFilter === 'without-data' ? 'Clique para colapsar' : 'Clique para expandir'}
-                  </span>
-                </button>
-
-                {/* Grid de contas sem dados - visivel quando expandido ou filtro 'without-data' ativo */}
-                {(isEmptyAccountsExpanded || activityFilter === 'without-data') && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {accountsWithoutData.map((account) => (
-                      <AdAccountCard
-                        key={account.id}
-                        account={account}
-                        isSelected={false}
-                        isSyncing={syncingAccountId === account.id}
-                        onSelect={handleSelectAccount}
-                        onSync={handleSyncAccount}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredAndSortedAccounts.map((account) => (
+              <AdAccountCard
+                key={account.id}
+                account={account}
+                isSelected={false}
+                isSyncing={syncingAccountId === account.id}
+                onSelect={handleSelectAccount}
+                onSync={handleSyncAccount}
+              />
+            ))}
           </div>
         )}
 

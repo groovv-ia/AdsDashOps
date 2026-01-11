@@ -35,6 +35,7 @@ interface AccountFiltersProps {
   onSortChange: (sort: SortOption) => void;
   totalCount: number;
   filteredCount: number;
+  hideActivityFilter?: boolean;
 }
 
 export const AccountFilters: React.FC<AccountFiltersProps> = ({
@@ -50,9 +51,10 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
   onSortChange,
   totalCount,
   filteredCount,
+  hideActivityFilter = false,
 }) => {
   // Verifica se ha filtros ativos (alem da busca)
-  const hasActiveFilters = statusFilter !== 'all' || syncFilter !== 'all' || activityFilter !== 'all';
+  const hasActiveFilters = statusFilter !== 'all' || syncFilter !== 'all' || (!hideActivityFilter && activityFilter !== 'all');
 
   // Limpa todos os filtros
   const clearAllFilters = () => {
@@ -115,18 +117,20 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
           </select>
         </div>
 
-        {/* Filtro por atividade (gasto + anuncios ativos) */}
-        <div className="flex items-center gap-2">
-          <select
-            value={activityFilter}
-            onChange={(e) => onActivityFilterChange(e.target.value as ActivityFilter)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">Todas as contas</option>
-            <option value="with-data">Com dados ativos</option>
-            <option value="without-data">Sem dados</option>
-          </select>
-        </div>
+        {/* Filtro por atividade (gasto + anuncios ativos) - oculto quando hideActivityFilter */}
+        {!hideActivityFilter && (
+          <div className="flex items-center gap-2">
+            <select
+              value={activityFilter}
+              onChange={(e) => onActivityFilterChange(e.target.value as ActivityFilter)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">Todas as contas</option>
+              <option value="with-data">Com dados ativos</option>
+              <option value="without-data">Sem dados</option>
+            </select>
+          </div>
+        )}
 
         {/* Ordenacao */}
         <div className="flex items-center gap-2">
@@ -183,7 +187,7 @@ export const AccountFilters: React.FC<AccountFiltersProps> = ({
                   Sincronizacao
                 </span>
               )}
-              {activityFilter !== 'all' && (
+              {!hideActivityFilter && activityFilter !== 'all' && (
                 <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded text-xs">
                   Atividade
                 </span>
