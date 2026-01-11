@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Headphones, Link2, RefreshCw, Building2 } from 'lucide-react';
+import { Settings, Headphones, Building2 } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 
 interface SidebarProps {
@@ -9,12 +9,24 @@ interface SidebarProps {
   onPageChange?: (page: string) => void;
 }
 
+// Componente para renderizar o icone da Meta
+const MetaIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <img src="/meta-icon.svg" alt="Meta" className={className} />
+);
+
+// Tipo para os itens do menu - suporta icones Lucide ou imagens customizadas
+interface MenuItem {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  page: string;
+}
+
 // Itens do menu de navegacao principal
 // NOTA: Item "Campanhas" ocultado temporariamente
-const menuItems = [
-  { icon: Link2, label: 'Conexao Meta', page: 'meta-admin' },
+const menuItems: MenuItem[] = [
+  { icon: MetaIcon, label: 'Conexao Meta', page: 'meta-admin' },
   // { icon: Target, label: 'Campanhas', page: 'campaigns' }, // Ocultado temporariamente
-  { icon: RefreshCw, label: 'Meta Ads Sync', page: 'meta-sync' },
+  { icon: MetaIcon, label: 'Meta Ads Sync', page: 'meta-sync' },
   { icon: Building2, label: 'Workspaces', page: 'workspaces' },
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configuracoes', page: 'settings' },
