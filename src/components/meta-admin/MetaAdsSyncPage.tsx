@@ -1012,27 +1012,33 @@ export const MetaAdsSyncPage: React.FC = () => {
       });
     }
 
-    // Aplica filtro de atividade (dados sincronizados OU entidades existentes)
-    // Considera "com dados" se:
-    // - Tem dados sincronizados (total_rows > 0) OU
-    // - Tem entidades totais (campanhas, conjuntos, anuncios) > 0 OU
-    // - Tem entidades ativas > 0
+    // Aplica filtro de atividade - usa mesma logica da separacao de contas
+    // Considera "com dados" se qualquer um dos criterios for verdadeiro:
+    // - latestDataDate definido (tem dados de insights)
+    // - entityCounts com qualquer entidade total > 0
+    // - metrics com qualquer campo numerico > 0
     if (activityFilter !== 'all') {
       filtered = filtered.filter((account) => {
-        // Verifica se ha dados sincronizados no banco (usa cast para any pois o tipo nao inclui total_rows)
-        const metrics = account.metrics as any;
-        const hasSyncedData = (metrics?.total_rows || 0) > 0;
-        // Verifica se ha entidades TOTAIS no Meta (nao apenas ativas)
-        const hasTotalAds = (account.entityCounts?.ad?.total || 0) > 0;
-        const hasTotalAdsets = (account.entityCounts?.adset?.total || 0) > 0;
-        const hasTotalCampaigns = (account.entityCounts?.campaign?.total || 0) > 0;
-        // Verifica se ha entidades ativas no Meta
-        const hasActiveAds = (account.entityCounts?.ad?.active || 0) > 0;
-        const hasActiveAdsets = (account.entityCounts?.adset?.active || 0) > 0;
-        const hasActiveCampaigns = (account.entityCounts?.campaign?.active || 0) > 0;
+        // Verifica se tem data de dados mais recentes
+        const hasLatestDate = Boolean(account.latestDataDate);
 
-        // Considera "com dados" se tem qualquer tipo de entidade ou dados sincronizados
-        const hasData = hasSyncedData || hasTotalAds || hasTotalAdsets || hasTotalCampaigns || hasActiveAds || hasActiveAdsets || hasActiveCampaigns;
+        // Verifica contagem de entidades (total, nao apenas ativas)
+        const totalCampaigns = account.entityCounts?.campaign?.total || 0;
+        const totalAdsets = account.entityCounts?.adset?.total || 0;
+        const totalAds = account.entityCounts?.ad?.total || 0;
+        const hasEntities = totalCampaigns > 0 || totalAdsets > 0 || totalAds > 0;
+
+        // Verifica metricas (pode ter diferentes formatos)
+        const metricsObj = account.metrics as Record<string, number> | undefined;
+        let hasMetricsData = false;
+        if (metricsObj) {
+          hasMetricsData = Object.values(metricsObj).some(
+            (val) => typeof val === 'number' && val > 0
+          );
+        }
+
+        // Considera "com dados" se qualquer criterio for verdadeiro
+        const hasData = hasLatestDate || hasEntities || hasMetricsData;
 
         if (activityFilter === 'with-data') {
           return hasData;
@@ -1050,10 +1056,17 @@ export const MetaAdsSyncPage: React.FC = () => {
           return a.name.localeCompare(b.name);
         case 'name-desc':
           return b.name.localeCompare(a.name);
-        case 'spend-desc':
-          // Ordena por quantidade de dados sincronizados (mais dados primeiro)
-          // Usa total_rows como proxy para atividade da conta
-          return (b.metrics?.total_rows || 0) - (a.metrics?.total_rows || 0);
+        case 'spend-desc': {
+          // Ordena por quantidade de dados/entidades (mais dados primeiro)
+          // Soma total de entidades como proxy para atividade da conta
+          const aTotal = (a.entityCounts?.campaign?.total || 0) +
+                         (a.entityCounts?.adset?.total || 0) +
+                         (a.entityCounts?.ad?.total || 0);
+          const bTotal = (b.entityCounts?.campaign?.total || 0) +
+                         (b.entityCounts?.adset?.total || 0) +
+                         (b.entityCounts?.ad?.total || 0);
+          return bTotal - aTotal;
+        }
         case 'date-desc':
           // Ordena por data de última sincronização (mais recente primeiro)
           if (!a.lastSyncAt && !b.lastSyncAt) return 0;
@@ -1069,23 +1082,50 @@ export const MetaAdsSyncPage: React.FC = () => {
   }, [accountCards, searchQuery, statusFilter, syncFilter, activityFilter, sortBy]);
 
   // Separa contas com dados das contas sem dados
-  // Usa a mesma logica do filtro de atividade para determinar se a conta tem dados
+  // Criterio SIMPLES: conta tem dados se foi sincronizada com sucesso (tem lastSyncAt)
+  // E tem pelo menos uma das seguintes condicoes:
+  // - latestDataDate definido (tem dados de insights)
+  // - entityCounts com qualquer entidade total > 0
+  // - metrics com qualquer campo > 0
   const { accountsWithData, accountsWithoutData } = useMemo(() => {
-    // Funcao auxiliar para verificar se uma conta tem dados
-    // Considera "com dados" se tem entidades totais (nao apenas ativas) ou dados sincronizados
+    // Funcao auxiliar para verificar se uma conta tem dados REAIS
     const hasAccountData = (account: AdAccountData): boolean => {
-      // Usa cast para any pois o tipo nao inclui total_rows
-      const metrics = account.metrics as any;
-      const hasSyncedData = (metrics?.total_rows || 0) > 0;
-      // Verifica entidades TOTAIS (nao apenas ativas)
-      const hasTotalAds = (account.entityCounts?.ad?.total || 0) > 0;
-      const hasTotalAdsets = (account.entityCounts?.adset?.total || 0) > 0;
-      const hasTotalCampaigns = (account.entityCounts?.campaign?.total || 0) > 0;
-      // Verifica entidades ativas
-      const hasActiveAds = (account.entityCounts?.ad?.active || 0) > 0;
-      const hasActiveAdsets = (account.entityCounts?.adset?.active || 0) > 0;
-      const hasActiveCampaigns = (account.entityCounts?.campaign?.active || 0) > 0;
-      return hasSyncedData || hasTotalAds || hasTotalAdsets || hasTotalCampaigns || hasActiveAds || hasActiveAdsets || hasActiveCampaigns;
+      // 1. Verifica se tem data de dados mais recentes (indica insights no banco)
+      const hasLatestDate = Boolean(account.latestDataDate);
+
+      // 2. Verifica contagem de entidades (total, nao apenas ativas)
+      const totalCampaigns = account.entityCounts?.campaign?.total || 0;
+      const totalAdsets = account.entityCounts?.adset?.total || 0;
+      const totalAds = account.entityCounts?.ad?.total || 0;
+      const hasEntities = totalCampaigns > 0 || totalAdsets > 0 || totalAds > 0;
+
+      // 3. Verifica metricas (pode ter diferentes formatos)
+      // O objeto metrics pode ser { total_rows, campaigns, adsets, ads } (do sync status)
+      // ou { spend, impressions, clicks, ctr } (do card)
+      const metricsObj = account.metrics as Record<string, number> | undefined;
+      let hasMetricsData = false;
+      if (metricsObj) {
+        // Verifica qualquer campo numerico com valor > 0
+        hasMetricsData = Object.values(metricsObj).some(
+          (val) => typeof val === 'number' && val > 0
+        );
+      }
+
+      // Debug: loga contas com nome especifico para investigacao
+      if (account.name.toLowerCase().includes('cersar') || account.name.toLowerCase().includes('vollet')) {
+        console.log(`[hasAccountData] ${account.name}:`, {
+          hasLatestDate,
+          latestDataDate: account.latestDataDate,
+          hasEntities,
+          entityCounts: account.entityCounts,
+          hasMetricsData,
+          metrics: account.metrics,
+          lastSyncAt: account.lastSyncAt,
+        });
+      }
+
+      // Considera "com dados" se qualquer criterio for verdadeiro
+      return hasLatestDate || hasEntities || hasMetricsData;
     };
 
     const withData: AdAccountData[] = [];
@@ -1097,6 +1137,14 @@ export const MetaAdsSyncPage: React.FC = () => {
       } else {
         withoutData.push(account);
       }
+    });
+
+    // Log para debug
+    console.log('[MetaAdsSyncPage] Separacao de contas:', {
+      totalFiltradas: filteredAndSortedAccounts.length,
+      comDados: withData.length,
+      semDados: withoutData.length,
+      semDadosNomes: withoutData.map((a) => a.name),
     });
 
     return { accountsWithData: withData, accountsWithoutData: withoutData };
