@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 import { UpgradeBanner } from './UpgradeBanner';
@@ -79,6 +79,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
     google: true,
   });
 
+  // Estado para controlar indicadores de scroll
+  const [showTopFade, setShowTopFade] = useState(false);
+  const [showBottomFade, setShowBottomFade] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+
+  // Handler para detectar scroll e atualizar os fade indicators
+  const handleScroll = (e: React.UIEvent<HTMLElement>) => {
+    const target = e.currentTarget;
+    const scrollTop = target.scrollTop;
+    const scrollHeight = target.scrollHeight;
+    const clientHeight = target.clientHeight;
+
+    setShowTopFade(scrollTop > 10);
+    setShowBottomFade(scrollTop + clientHeight < scrollHeight - 10);
+  };
+
+  // Verifica scroll inicial para mostrar fade bottom se necessario
+  useEffect(() => {
+    if (navRef.current) {
+      const { scrollHeight, clientHeight } = navRef.current;
+      setShowBottomFade(scrollHeight > clientHeight);
+    }
+  }, [expandedSections]);
+
   // Alterna o estado de expansao de uma secao
   const toggleSection = (sectionId: string) => {
     setExpandedSections(prev => ({
@@ -135,15 +159,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Seletor de Workspace */}
-          <div className="px-3 py-3">
+          <div className="px-3 py-3 border-b border-slate-50">
             <WorkspaceSelector
               onNavigateToWorkspaces={() => handlePageClick('workspaces')}
               compact
             />
           </div>
 
-          {/* Navegacao */}
-          <nav className="flex-1 overflow-y-auto py-4 scrollbar-hide">
+          {/* Container de navegacao com fade indicators */}
+          <div className="flex-1 relative overflow-hidden">
+            {/* Fade indicator no topo */}
+            <div
+              className={`
+                absolute top-0 left-0 right-0 h-6 z-10 pointer-events-none
+                bg-gradient-to-b from-white to-transparent
+                transition-opacity duration-300
+                ${showTopFade ? 'opacity-100' : 'opacity-0'}
+              `}
+            />
+
+            {/* Navegacao */}
+            <nav
+              ref={navRef}
+              onScroll={handleScroll}
+              className="h-full overflow-y-auto py-4 scrollbar-hide"
+            >
             {/* Secoes colapsaveis (Meta Ads, Google Ads) */}
             <div className="px-3 space-y-2">
               {menuSections.map((section) => {
@@ -251,7 +291,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 );
               })}
             </div>
-          </nav>
+            </nav>
+
+            {/* Fade indicator na parte inferior */}
+            <div
+              className={`
+                absolute bottom-0 left-0 right-0 h-6 z-10 pointer-events-none
+                bg-gradient-to-t from-white to-transparent
+                transition-opacity duration-300
+                ${showBottomFade ? 'opacity-100' : 'opacity-0'}
+              `}
+            />
+          </div>
 
           {/* Banner de Upgrade Pro - Componente com exibicao condicional */}
           <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} />
