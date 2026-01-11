@@ -15,6 +15,10 @@ import {
   deleteWorkspace as deleteWorkspaceService,
   CreateWorkspaceInput,
   UpdateWorkspaceInput,
+  WorkspaceConnections,
+  getWorkspaceConnections,
+  getAllWorkspacesConnections,
+  findConnectionsInOtherWorkspaces,
 } from '../lib/services/WorkspaceService';
 import { supabase } from '../lib/supabase';
 
@@ -32,6 +36,10 @@ interface WorkspaceContextType {
   createWorkspace: (input: CreateWorkspaceInput) => Promise<{ success: boolean; error?: string }>;
   updateWorkspace: (id: string, input: UpdateWorkspaceInput) => Promise<{ success: boolean; error?: string }>;
   deleteWorkspace: (id: string) => Promise<{ success: boolean; error?: string }>;
+  // Novas funções para gerenciar conexões
+  getWorkspaceConnections: (workspaceId: string) => Promise<WorkspaceConnections | null>;
+  getAllWorkspacesConnections: () => Promise<WorkspaceConnections[]>;
+  findOtherWorkspacesWithConnections: () => Promise<WorkspaceConnections[]>;
 }
 
 // Criar contexto
@@ -224,6 +232,25 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     };
   }, [loadWorkspaces]);
 
+  // Função para buscar conexões de um workspace específico
+  const getWorkspaceConnectionsWrapper = useCallback(async (workspaceId: string): Promise<WorkspaceConnections | null> => {
+    const { data } = await getWorkspaceConnections(workspaceId);
+    return data;
+  }, []);
+
+  // Função para buscar conexões de todos os workspaces
+  const getAllWorkspacesConnectionsWrapper = useCallback(async (): Promise<WorkspaceConnections[]> => {
+    const { data } = await getAllWorkspacesConnections();
+    return data;
+  }, []);
+
+  // Função para encontrar workspaces com conexões (exceto o atual)
+  const findOtherWorkspacesWithConnectionsWrapper = useCallback(async (): Promise<WorkspaceConnections[]> => {
+    if (!currentWorkspace) return [];
+    const { data } = await findConnectionsInOtherWorkspaces(currentWorkspace.id);
+    return data;
+  }, [currentWorkspace]);
+
   const value: WorkspaceContextType = {
     currentWorkspace,
     workspaces,
@@ -234,6 +261,9 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     createWorkspace,
     updateWorkspace,
     deleteWorkspace,
+    getWorkspaceConnections: getWorkspaceConnectionsWrapper,
+    getAllWorkspacesConnections: getAllWorkspacesConnectionsWrapper,
+    findOtherWorkspacesWithConnections: findOtherWorkspacesWithConnectionsWrapper,
   };
 
   return (

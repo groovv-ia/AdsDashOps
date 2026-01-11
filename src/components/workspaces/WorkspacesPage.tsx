@@ -26,6 +26,7 @@ import {
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import {
   WorkspaceWithMembers,
+  WorkspaceConnections,
   getWorkspaceDetails,
   addWorkspaceMember,
   removeWorkspaceMember,
@@ -34,6 +35,11 @@ import {
   removeWorkspaceLogo,
   updateWorkspace as updateWorkspaceService,
 } from '../../lib/services/WorkspaceService';
+import {
+  CreateWorkspaceWarningModal,
+  SwitchWorkspaceConfirmModal,
+} from './WorkspaceWarningModals';
+import { WorkspaceConnectionBadge } from './WorkspaceIndicator';
 
 // Componente para icone de role
 function RoleIcon({ role }: { role: string }) {
@@ -412,6 +418,7 @@ export function WorkspacesPage() {
     deleteWorkspace,
     isLoading,
     refreshWorkspaces,
+    getWorkspaceConnections,
   } = useWorkspace();
 
   // Estados locais
@@ -421,6 +428,15 @@ export function WorkspacesPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [actionError, setActionError] = useState('');
+
+  // Novos estados para modais de aviso
+  const [showCreateWarningModal, setShowCreateWarningModal] = useState(false);
+  const [showSwitchConfirmModal, setShowSwitchConfirmModal] = useState(false);
+  const [targetSwitchWorkspace, setTargetSwitchWorkspace] = useState<any>(null);
+
+  // Estados para conexões
+  const [workspaceConnections, setWorkspaceConnections] = useState<Map<string, WorkspaceConnections>>(new Map());
+  const [currentWorkspaceConn, setCurrentWorkspaceConn] = useState<WorkspaceConnections | null>(null);
 
   // Carrega detalhes do workspace selecionado
   const loadWorkspaceDetails = async (workspaceId: string) => {
@@ -434,6 +450,32 @@ export function WorkspacesPage() {
     }
     setIsLoadingDetails(false);
   };
+
+  // Carrega conexões de todos os workspaces
+  useEffect(() => {
+    const loadAllConnections = async () => {
+      if (workspaces.length === 0) return;
+
+      const connections = new Map<string, WorkspaceConnections>();
+
+      for (const ws of workspaces) {
+        const conn = await getWorkspaceConnections(ws.id);
+        if (conn) {
+          connections.set(ws.id, conn);
+        }
+      }
+
+      setWorkspaceConnections(connections);
+
+      // Atualiza conexão do workspace atual
+      if (currentWorkspace) {
+        const currentConn = connections.get(currentWorkspace.id);
+        setCurrentWorkspaceConn(currentConn || null);
+      }
+    };
+
+    loadAllConnections();
+  }, [workspaces, currentWorkspace, getWorkspaceConnections]);
 
   // Seleciona primeiro workspace por padrao
   useEffect(() => {
@@ -517,10 +559,29 @@ export function WorkspacesPage() {
     await loadWorkspaceDetails(selectedWorkspace.id);
   };
 
-  // Trocar workspace ativo
-  const handleActivate = (workspace: any) => {
-    setCurrentWorkspace(workspace);
-    loadWorkspaceDetails(workspace.id);
+  // Trocar workspace ativo - agora com confirmação
+  const handleActivate = async (workspace: any) => {
+    // Busca conexões do workspace de destino se ainda não tiver
+    let targetConn = workspaceConnections.get(workspace.id);
+    if (!targetConn) {
+      targetConn = await getWorkspaceConnections(workspace.id);
+    }
+
+    setTargetSwitchWorkspace({
+      workspace,
+      connections: targetConn,
+    });
+    setShowSwitchConfirmModal(true);
+  };
+
+  // Confirma a troca de workspace
+  const confirmSwitchWorkspace = () => {
+    if (targetSwitchWorkspace) {
+      setCurrentWorkspace(targetSwitchWorkspace.workspace);
+      setShowSwitchConfirmModal(false);
+      // Recarrega a página para atualizar todos os dados
+      window.location.reload();
+    }
   };
 
   // Callback quando logo e atualizado
@@ -550,7 +611,7 @@ export function WorkspacesPage() {
           </p>
         </div>
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => setShowCreateWarningModal(true)}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-5 h-5" />
@@ -622,9 +683,18 @@ export function WorkspacesPage() {
                         <p className="font-medium text-gray-900 truncate">
                           {workspace.name}
                         </p>
-                        {currentWorkspace?.id === workspace.id && (
-                          <span className="text-xs text-blue-600">Ativo</span>
-                        )}
+                        <div className="flex items-center gap-2 mt-1">
+                          {currentWorkspace?.id === workspace.id && (
+                            <span className="text-xs text-blue-600 font-medium">Ativo</span>
+                          )}
+                          {workspaceConnections.get(workspace.id) && (
+                            <WorkspaceConnectionBadge
+                              hasMetaConnection={(workspaceConnections.get(workspace.id)?.meta_connections || 0) > 0}
+                              hasGoogleConnection={(workspaceConnections.get(workspace.id)?.google_connections || 0) > 0}
+                              size="sm"
+                            />
+                          )}
+                        </div>
                       </div>
                       {currentWorkspace?.id === workspace.id && (
                         <Check className="w-5 h-5 text-blue-600 flex-shrink-0" />
@@ -790,6 +860,34 @@ export function WorkspacesPage() {
         onClose={() => setShowAddMemberModal(false)}
         onAdd={handleAddMember}
       />
+
+      {/* Novos modais de aviso */}
+      <CreateWorkspaceWarningModal
+        isOpen={showCreateWarningModal}
+        onClose={() => setShowCreateWarningModal(false)}
+        onConfirm={() => {
+          setShowCreateWarningModal(false);
+          setShowCreateModal(true);
+        }}
+        currentWorkspaceName={currentWorkspace?.name || ''}
+        hasConnections={currentWorkspaceConn?.has_any_connection || false}
+      />
+
+      {targetSwitchWorkspace && currentWorkspace && (
+        <SwitchWorkspaceConfirmModal
+          isOpen={showSwitchConfirmModal}
+          onClose={() => setShowSwitchConfirmModal(false)}
+          onConfirm={confirmSwitchWorkspace}
+          currentWorkspace={{
+            name: currentWorkspace.name,
+            connections: currentWorkspaceConn,
+          }}
+          targetWorkspace={{
+            name: targetSwitchWorkspace.workspace.name,
+            connections: targetSwitchWorkspace.connections,
+          }}
+        />
+      )}
     </div>
   );
 }

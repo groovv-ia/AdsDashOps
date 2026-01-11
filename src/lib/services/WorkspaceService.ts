@@ -674,3 +674,130 @@ export async function removeWorkspaceLogo(workspaceId: string): Promise<{
 
   return { success: true };
 }
+
+/**
+ * Interface para informações de conexões de um workspace
+ */
+export interface WorkspaceConnections {
+  workspace_id: string;
+  workspace_name: string;
+  meta_connections: number;
+  google_connections: number;
+  meta_ad_accounts: number;
+  google_ad_accounts: number;
+  has_any_connection: boolean;
+}
+
+/**
+ * Busca informações de conexões para um workspace específico
+ */
+export async function getWorkspaceConnections(workspaceId: string): Promise<{
+  data: WorkspaceConnections | null;
+  error?: string;
+}> {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { data: null, error: 'Usuario nao autenticado' };
+  }
+
+  // Busca workspace
+  const { data: workspace, error: wsError } = await supabase
+    .from('workspaces')
+    .select('id, name')
+    .eq('id', workspaceId)
+    .maybeSingle();
+
+  if (wsError) {
+    return { data: null, error: wsError.message };
+  }
+
+  if (!workspace) {
+    return { data: null, error: 'Workspace nao encontrado' };
+  }
+
+  // Conta conexões Meta
+  const { count: metaConnections } = await supabase
+    .from('meta_connections')
+    .select('*', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId)
+    .eq('status', 'connected');
+
+  // Conta conexões Google
+  const { count: googleConnections } = await supabase
+    .from('google_connections')
+    .select('*', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId)
+    .eq('status', 'active');
+
+  // Conta contas Meta Ad Accounts
+  const { count: metaAccounts } = await supabase
+    .from('meta_ad_accounts')
+    .select('*', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId);
+
+  // Conta contas Google Ad Accounts
+  const { count: googleAccounts } = await supabase
+    .from('google_ad_accounts')
+    .select('*', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId);
+
+  const connections: WorkspaceConnections = {
+    workspace_id: workspace.id,
+    workspace_name: workspace.name,
+    meta_connections: metaConnections || 0,
+    google_connections: googleConnections || 0,
+    meta_ad_accounts: metaAccounts || 0,
+    google_ad_accounts: googleAccounts || 0,
+    has_any_connection: (metaConnections || 0) > 0 || (googleConnections || 0) > 0,
+  };
+
+  return { data: connections, error: undefined };
+}
+
+/**
+ * Busca informações de conexões para todos os workspaces do usuário
+ */
+export async function getAllWorkspacesConnections(): Promise<{
+  data: WorkspaceConnections[];
+  error?: string;
+}> {
+  const { data: workspaces, error: wsError } = await listUserWorkspaces();
+
+  if (wsError) {
+    return { data: [], error: wsError };
+  }
+
+  const connectionsPromises = workspaces.map(ws =>
+    getWorkspaceConnections(ws.id)
+  );
+
+  const results = await Promise.all(connectionsPromises);
+
+  const allConnections = results
+    .filter(r => r.data !== null)
+    .map(r => r.data!);
+
+  return { data: allConnections, error: undefined };
+}
+
+/**
+ * Verifica se há conexões em outros workspaces (útil para recuperação)
+ */
+export async function findConnectionsInOtherWorkspaces(currentWorkspaceId: string): Promise<{
+  data: WorkspaceConnections[];
+  error?: string;
+}> {
+  const { data: allConnections, error } = await getAllWorkspacesConnections();
+
+  if (error) {
+    return { data: [], error };
+  }
+
+  // Filtra apenas workspaces diferentes do atual que tenham conexões
+  const otherWorkspaces = allConnections.filter(
+    conn => conn.workspace_id !== currentWorkspaceId && conn.has_any_connection
+  );
+
+  return { data: otherWorkspaces, error: undefined };
+}

@@ -37,6 +37,7 @@ import type {
   GoogleAdAccount,
   GoogleSyncStatusResponse,
 } from '../../lib/connectors/google/types';
+import { WorkspaceIndicator } from '../workspaces';
 
 // Componente para renderizar o icone do Google Ads
 const GoogleIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -304,6 +305,12 @@ export const GoogleAdminPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Workspace Indicator */}
+      <WorkspaceIndicator
+        connectionCount={selectedAccounts.length}
+        showNoConnectionAlert={!isConnected && !loadingStatus}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">

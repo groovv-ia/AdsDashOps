@@ -23,6 +23,7 @@ import { autoDashboardService, type DashboardInstance } from '../../lib/services
 import { ConfigurableExtractService } from '../../lib/services/ConfigurableExtractService';
 import { supabase } from '../../lib/supabase';
 import { exportToCSV } from '../../utils/export';
+import { WorkspaceIndicator } from '../workspaces';
 
 // ============================================
 // Tipos
@@ -195,6 +196,9 @@ export function DashboardViewPage({
 
   return (
     <div className="space-y-6">
+      {/* Workspace Indicator */}
+      <WorkspaceIndicator />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center space-x-4">
