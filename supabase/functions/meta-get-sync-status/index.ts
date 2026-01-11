@@ -169,6 +169,46 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[meta-get-sync-status] Found ${insightsTotals?.length || 0} insight rows`);
 
+    // 7. Busca contagem de entidades por conta (campanhas, adsets, ads)
+    // Agrupa por meta_ad_account_id e entity_type, contando total e ativos
+    const { data: entityCounts } = await supabaseAdmin
+      .from("meta_entities_cache")
+      .select("meta_ad_account_id, entity_type, effective_status")
+      .eq("workspace_id", workspace.id)
+      .in("meta_ad_account_id", accountMetaIds.length > 0 ? accountMetaIds : [""]);
+
+    console.log(`[meta-get-sync-status] Found ${entityCounts?.length || 0} entity cache rows`);
+
+    // Processa contagem de entidades por conta
+    // Estrutura: { [meta_ad_account_id]: { campaign: { total, active }, adset: {...}, ad: {...} } }
+    const entityCountsByAccount: Record<string, {
+      campaign: { total: number; active: number };
+      adset: { total: number; active: number };
+      ad: { total: number; active: number };
+    }> = {};
+
+    if (entityCounts) {
+      for (const entity of entityCounts) {
+        const accountId = entity.meta_ad_account_id;
+        if (!entityCountsByAccount[accountId]) {
+          entityCountsByAccount[accountId] = {
+            campaign: { total: 0, active: 0 },
+            adset: { total: 0, active: 0 },
+            ad: { total: 0, active: 0 },
+          };
+        }
+
+        const entityType = entity.entity_type as 'campaign' | 'adset' | 'ad';
+        if (entityCountsByAccount[accountId][entityType]) {
+          entityCountsByAccount[accountId][entityType].total++;
+          // Status ACTIVE indica entidade ativa
+          if (entity.effective_status === 'ACTIVE') {
+            entityCountsByAccount[accountId][entityType].active++;
+          }
+        }
+      }
+    }
+
     // Processa data freshness por conta - indexado por UUID
     const accountFreshness: Record<string, {
       total_rows: number;
@@ -253,6 +293,8 @@ Deno.serve(async (req: Request) => {
         const lastJobMetrics = lastCompletedJobsByAccount[acc.meta_ad_account_id];
         // CORRECAO: Usa acc.id (UUID) para buscar freshness
         const freshness = accountFreshness[acc.id] || null;
+        // Busca contagem de entidades usando meta_ad_account_id (formato act_XXX)
+        const entityCountsForAccount = entityCountsByAccount[acc.meta_ad_account_id] || null;
 
         return {
           id: acc.id,
@@ -265,6 +307,10 @@ Deno.serve(async (req: Request) => {
           last_sync_at: syncState?.last_success_at || lastJobMetrics?.ended_at || null,
           last_sync_duration: lastJobMetrics?.duration_seconds || null,
           last_sync_records_count: lastJobMetrics?.total_records_synced || null,
+          // Contagem de entidades (campanhas, adsets, ads) com total e ativos
+          entity_counts: entityCountsForAccount,
+          // Data mais recente dos dados sincronizados
+          latest_data_date: freshness?.latest_date || null,
           // Adiciona metricas agregadas se houver freshness
           metrics: freshness ? {
             total_rows: freshness.total_rows,

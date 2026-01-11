@@ -29,9 +29,26 @@ import {
   BarChart3,
   Globe,
   Image,
+  Layers,
+  Grid3X3,
+  ImageIcon,
+  Calendar,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
+
+// Interface para contagem de entidades (total e ativos)
+interface EntityCount {
+  total: number;
+  active: number;
+}
+
+// Interface para contagem de todas as entidades da conta
+interface EntityCounts {
+  campaign: EntityCount;
+  adset: EntityCount;
+  ad: EntityCount;
+}
 
 // Interface para os dados da conta de anuncios
 export interface AdAccountData {
@@ -45,6 +62,9 @@ export interface AdAccountData {
   lastSyncDuration?: number; // Duracao da ultima sincronizacao em segundos
   syncStatus?: 'synced' | 'syncing' | 'stale' | 'error' | 'never';
   syncProgress?: number; // Progresso atual da sincronizacao (0-100)
+  // Novos campos para indicadores de entidades
+  entityCounts?: EntityCounts; // Contagem de campanhas, adsets e ads (total/ativos)
+  latestDataDate?: string; // Data mais recente dos dados sincronizados (ISO)
   metrics?: {
     spend: number;
     impressions: number;
@@ -314,6 +334,33 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
       : 0
   );
 
+  // Formata tempo relativo para a data mais recente dos dados
+  // Retorna strings como "hoje", "ha 1 dia", "ha 3 dias", etc.
+  const formatRelativeTime = (dateString?: string): string => {
+    if (!dateString) return 'Sem dados';
+
+    const date = new Date(dateString);
+    const now = new Date();
+    // Zera horas para comparar apenas datas
+    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const nowOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffMs = nowOnly.getTime() - dateOnly.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'hoje';
+    if (diffDays === 1) return 'ha 1 dia';
+    if (diffDays < 7) return `ha ${diffDays} dias`;
+    if (diffDays < 14) return 'ha 1 semana';
+    if (diffDays < 30) return `ha ${Math.floor(diffDays / 7)} semanas`;
+    return `ha ${Math.floor(diffDays / 30)} mes${Math.floor(diffDays / 30) > 1 ? 'es' : ''}`;
+  };
+
+  // Verifica se a conta tem entidades sincronizadas
+  const hasEntityCounts = account.entityCounts &&
+    (account.entityCounts.campaign.total > 0 ||
+     account.entityCounts.adset.total > 0 ||
+     account.entityCounts.ad.total > 0);
+
   // Verifica se a conta tem metricas completas (spend e impressions definidos)
   const hasMetrics = account.metrics &&
     typeof account.metrics.spend === 'number' &&
@@ -431,6 +478,50 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
             <p className="text-sm font-semibold text-gray-900">
               {formatCurrency(cpm, account.currency)}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Secao de indicadores de entidades (campanhas, conjuntos, anuncios) */}
+      {hasEntityCounts && (
+        <div className="mb-4 pb-4 border-b border-gray-200">
+          {/* Badges de entidades em linha */}
+          <div className="flex items-center justify-between gap-2 mb-3">
+            {/* Campanhas */}
+            <div className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-blue-50 rounded-lg border border-blue-100">
+              <Layers className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-xs font-medium">
+                <span className="text-green-600">{account.entityCounts?.campaign.active || 0}</span>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-600">{account.entityCounts?.campaign.total || 0}</span>
+              </span>
+              <span className="text-xs text-gray-500">camp.</span>
+            </div>
+            {/* Conjuntos */}
+            <div className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-cyan-50 rounded-lg border border-cyan-100">
+              <Grid3X3 className="w-3.5 h-3.5 text-cyan-600" />
+              <span className="text-xs font-medium">
+                <span className="text-green-600">{account.entityCounts?.adset.active || 0}</span>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-600">{account.entityCounts?.adset.total || 0}</span>
+              </span>
+              <span className="text-xs text-gray-500">conj.</span>
+            </div>
+            {/* Anuncios */}
+            <div className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-teal-50 rounded-lg border border-teal-100">
+              <ImageIcon className="w-3.5 h-3.5 text-teal-600" />
+              <span className="text-xs font-medium">
+                <span className="text-green-600">{account.entityCounts?.ad.active || 0}</span>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-600">{account.entityCounts?.ad.total || 0}</span>
+              </span>
+              <span className="text-xs text-gray-500">ads</span>
+            </div>
+          </div>
+          {/* Indicador de freshness dos dados */}
+          <div className="flex items-center justify-center gap-1.5 text-xs text-gray-500">
+            <Calendar className="w-3 h-3" />
+            <span>Dados ate <span className="font-medium text-gray-700">{formatRelativeTime(account.latestDataDate)}</span></span>
           </div>
         </div>
       )}

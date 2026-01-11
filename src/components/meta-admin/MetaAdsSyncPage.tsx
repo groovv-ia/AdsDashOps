@@ -590,6 +590,13 @@ export const MetaAdsSyncPage: React.FC = () => {
       // Progresso da sincronizacao (0-100) - apenas quando esta sincronizando
       const accountSyncProgress = syncingAccountId === acc.id ? syncProgress : undefined;
 
+      // Mapeia contagem de entidades da resposta da Edge Function
+      // Formato esperado: { campaign: { total, active }, adset: {...}, ad: {...} }
+      const entityCounts = acc.entity_counts || undefined;
+
+      // Data mais recente dos dados sincronizados
+      const latestDataDate = acc.latest_data_date || undefined;
+
       return {
         id: acc.id,
         metaId: acc.meta_id,
@@ -601,6 +608,9 @@ export const MetaAdsSyncPage: React.FC = () => {
         lastSyncDuration,
         syncStatus: syncingAccountId === acc.id ? 'syncing' : syncStatusValue,
         syncProgress: accountSyncProgress,
+        // Novos campos para indicadores de entidades
+        entityCounts,
+        latestDataDate,
         metrics: acc.metrics || undefined,
       };
     });
