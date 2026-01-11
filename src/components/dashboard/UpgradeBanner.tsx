@@ -64,41 +64,54 @@ export const UpgradeBanner: React.FC<UpgradeBannerProps> = ({ onUpgradeClick }) 
 
   return (
     <div className="p-3 flex-shrink-0">
-      {/* Container principal com fundo claro e sombra suave */}
-      <div className="rounded-2xl bg-slate-100 p-5 text-center">
-        {/* Avatar circular centralizado */}
-        <div className="flex justify-center mb-4">
-          <div className="w-16 h-16 rounded-full overflow-hidden border-4 border-white shadow-md">
-            <img
-              src="/a-confident-smiling-woma33 copy copy copy.jpg"
-              alt="Upgrade para Pro"
-              className="w-full h-full object-cover object-top"
-            />
+      {/* Container principal com fundo claro e imagem de fundo com opacidade */}
+      <div className="rounded-2xl bg-slate-100 p-5 text-center relative overflow-hidden">
+        {/* Imagem de fundo com opacidade */}
+        <div
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            backgroundImage: `url('/a-confident-smiling-woman-in-her-30s-giving-a-thum.jpg')`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center top',
+          }}
+        />
+
+        {/* Conteudo sobre a imagem de fundo */}
+        <div className="relative z-10">
+          {/* Avatar circular centralizado */}
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 rounded-full overflow-hidden border-4 border-white shadow-md">
+              <img
+                src="/a-confident-smiling-woma33 copy copy copy.jpg"
+                alt="Upgrade para Pro"
+                className="w-full h-full object-cover object-top"
+              />
+            </div>
           </div>
+
+          {/* Titulo centralizado */}
+          <h3 className="font-semibold text-slate-800 text-[15px] mb-1.5">
+            Upgrade para Pro
+          </h3>
+
+          {/* Descricao centralizada */}
+          <p className="text-[12px] text-slate-500 leading-relaxed mb-4">
+            Obtenha analises avancadas e campanhas ilimitadas
+          </p>
+
+          {/* Botao CTA azul com bordas arredondadas */}
+          <button
+            onClick={handleUpgradeClick}
+            className="
+              w-full py-2.5 px-4 rounded-xl
+              bg-blue-500 hover:bg-blue-600
+              text-white text-[13px] font-medium
+              transition-colors duration-200
+            "
+          >
+            Fazer Upgrade
+          </button>
         </div>
-
-        {/* Titulo centralizado */}
-        <h3 className="font-semibold text-slate-800 text-[15px] mb-1.5">
-          Upgrade para Pro
-        </h3>
-
-        {/* Descricao centralizada */}
-        <p className="text-[12px] text-slate-500 leading-relaxed mb-4">
-          Obtenha analises avancadas e campanhas ilimitadas
-        </p>
-
-        {/* Botao CTA azul com bordas arredondadas */}
-        <button
-          onClick={handleUpgradeClick}
-          className="
-            w-full py-2.5 px-4 rounded-xl
-            bg-blue-500 hover:bg-blue-600
-            text-white text-[13px] font-medium
-            transition-colors duration-200
-          "
-        >
-          Fazer Upgrade
-        </button>
       </div>
     </div>
   );
