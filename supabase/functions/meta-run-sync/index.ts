@@ -242,14 +242,17 @@ Deno.serve(async (req: Request) => {
       console.log(`Buscando criativos para ${allAdIds.length} ads`);
       const imageHashCache = new Map<string, string>();
 
+      // Converte image_hash para URL de alta resolucao (url_256 para melhor qualidade)
       async function convertImageHashToUrl(imageHash: string, adAccountId: string): Promise<string | null> {
         if (imageHashCache.has(imageHash)) return imageHashCache.get(imageHash) || null;
         try {
           const accountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
-          const resp = await fetch(`https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128,permalink_url&access_token=${accessToken}`);
+          // Solicita url_256 para melhor qualidade de imagem (256px vs 128px padrao)
+          const resp = await fetch(`https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128,url_256,permalink_url,width,height&access_token=${accessToken}`);
           const data = await resp.json();
           if (data.data?.[0]) {
-            const imgUrl = data.data[0].url || data.data[0].url_128 || data.data[0].permalink_url;
+            // Prioriza URLs de maior resolucao: url_256 > url > url_128 > permalink_url
+            const imgUrl = data.data[0].url_256 || data.data[0].url || data.data[0].url_128 || data.data[0].permalink_url;
             if (imgUrl) { imageHashCache.set(imageHash, imgUrl); return imgUrl; }
           }
         } catch (err) { console.error(`Erro image_hash ${imageHash}:`, err); }

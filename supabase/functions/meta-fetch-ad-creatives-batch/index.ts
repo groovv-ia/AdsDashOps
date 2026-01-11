@@ -174,6 +174,7 @@ async function fetchPostData(
 
 /**
  * Converte image_hash para URL usando API de ad images
+ * Prioriza URLs de alta resolucao (url_256) para melhor qualidade de thumbnails
  */
 async function convertImageHashToUrl(
   imageHash: string,
@@ -188,15 +189,16 @@ async function convertImageHashToUrl(
   try {
     // Formata o ad account ID corretamente
     const accountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
-    const url = `https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128,permalink_url&access_token=${accessToken}`;
+    // Solicita url_256 para melhor qualidade de imagem (256px vs 128px padrao)
+    const url = `https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128,url_256,permalink_url,width,height&access_token=${accessToken}`;
 
     const response = await fetch(url);
     const data = await response.json();
 
     if (data.data && data.data.length > 0) {
       const imageData = data.data[0];
-      // Prioriza URL maior
-      const imageUrl = imageData.url || imageData.url_128 || imageData.permalink_url;
+      // Prioriza URLs de maior resolucao: url_256 > url > url_128 > permalink_url
+      const imageUrl = imageData.url_256 || imageData.url || imageData.url_128 || imageData.permalink_url;
       if (imageUrl) {
         imageHashCache.set(imageHash, imageUrl);
         return imageUrl;
