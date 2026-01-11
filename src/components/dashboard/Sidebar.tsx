@@ -163,15 +163,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       `}
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`
-                          w-8 h-8 rounded-lg flex items-center justify-center
-                          ${section.id === 'meta'
-                            ? 'bg-blue-100'
-                            : 'bg-emerald-100'
-                          }
-                        `}>
-                          <section.icon className="w-5 h-5" />
-                        </div>
+                        <section.icon className="w-5 h-5" />
                         <span className={`
                           font-semibold text-sm
                           ${isActive ? 'text-slate-900' : 'text-slate-700'}
