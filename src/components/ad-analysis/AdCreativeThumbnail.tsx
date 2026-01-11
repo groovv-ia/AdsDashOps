@@ -3,11 +3,10 @@
  *
  * Exibe miniatura do criativo de um anuncio.
  * Suporta imagens, videos e estados de loading/erro.
- * Implementa fallback de URLs para melhor resiliencia quando imagens expiram.
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
-import { Image, Play, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import React from 'react';
+import { Image, Play, AlertCircle, Loader2 } from 'lucide-react';
 import type { MetaAdCreative } from '../../types/adAnalysis';
 
 // Props do componente
@@ -19,7 +18,6 @@ interface AdCreativeThumbnailProps {
   onClick?: () => void;
   showTypeIndicator?: boolean;
   className?: string;
-  onImageError?: (adId: string) => void;
 }
 
 // Mapeamento de tamanhos
@@ -51,47 +49,7 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
   onClick,
   showTypeIndicator = true,
   className = '',
-  onImageError,
 }) => {
-  // Estado para controlar fallback de URLs
-  const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
-  const [imageLoadError, setImageLoadError] = useState(false);
-
-  // Monta lista de URLs para fallback, priorizando alta resolucao
-  const imageUrls = useMemo(() => {
-    if (!creative) return [];
-    const urls: string[] = [];
-    // Prioriza image_url (alta resolucao) sobre thumbnail_url
-    if (creative.image_url) urls.push(creative.image_url);
-    if (creative.thumbnail_url && creative.thumbnail_url !== creative.image_url) {
-      urls.push(creative.thumbnail_url);
-    }
-    // Tenta URLs do extra_data se disponiveis
-    const extraData = creative.extra_data as Record<string, unknown> | undefined;
-    if (extraData?.image_url_hd && typeof extraData.image_url_hd === 'string') {
-      urls.unshift(extraData.image_url_hd);
-    }
-    return urls.filter(Boolean);
-  }, [creative]);
-
-  // URL atual baseada no indice de fallback
-  const currentImageUrl = imageUrls[currentUrlIndex] || null;
-  const isVideo = creative?.creative_type === 'video';
-
-  // Handler de erro de imagem com fallback automatico
-  const handleImageError = useCallback(() => {
-    if (currentUrlIndex < imageUrls.length - 1) {
-      // Tenta proxima URL
-      setCurrentUrlIndex(prev => prev + 1);
-    } else {
-      // Todas as URLs falharam
-      setImageLoadError(true);
-      if (creative && onImageError) {
-        onImageError(creative.ad_id);
-      }
-    }
-  }, [currentUrlIndex, imageUrls.length, creative, onImageError]);
-
   // Classes base do container
   const containerClasses = `
     ${sizeClasses[size]}
@@ -125,6 +83,7 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
 
   // Sem criativo
   if (!creative) {
+    console.warn('[AdCreativeThumbnail] Criativo nao fornecido (null/undefined)');
     return (
       <div
         className={`${containerClasses} bg-gray-100`}
@@ -136,17 +95,25 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     );
   }
 
-  // Sem imagem disponivel ou todas as URLs falharam
-  if (!currentImageUrl || imageLoadError) {
+  // URL da imagem (thumbnail ou image_url)
+  const imageUrl = creative.thumbnail_url || creative.image_url;
+  const isVideo = creative.creative_type === 'video';
+
+  // Sem imagem disponivel
+  if (!imageUrl) {
+    // Log apenas quando não há URL de imagem disponível
+    console.debug('[AdCreativeThumbnail] Sem URL de imagem:', {
+      ad_id: creative.ad_id,
+      creative_type: creative.creative_type,
+      has_title: !!creative.title,
+    });
     return (
       <div
-        className={`${containerClasses} ${imageLoadError ? 'bg-amber-50' : 'bg-gray-100'}`}
-        title={imageLoadError ? 'Imagem expirada ou indisponivel' : creative.creative_type === 'unknown' ? 'Tipo desconhecido' : 'Sem preview'}
+        className={`${containerClasses} bg-gray-100`}
+        title={creative.creative_type === 'unknown' ? 'Tipo desconhecido' : 'Sem preview'}
         onClick={onClick}
       >
-        {imageLoadError ? (
-          <RefreshCw className={`${iconSizes[size]} text-amber-500`} />
-        ) : isVideo ? (
+        {isVideo ? (
           <Play className={`${iconSizes[size]} text-gray-400`} />
         ) : (
           <Image className={`${iconSizes[size]} text-gray-300`} />
@@ -155,21 +122,32 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     );
   }
 
-  // Renderiza thumbnail com imagem e qualidade otimizada
+  // Renderiza thumbnail com imagem
   return (
     <div className={containerClasses} onClick={onClick}>
       <img
-        src={currentImageUrl}
+        src={imageUrl}
         alt={creative.title || 'Preview do anuncio'}
         className="w-full h-full object-cover"
         loading="lazy"
-        decoding="async"
-        style={{
-          imageRendering: 'auto',
-          WebkitBackfaceVisibility: 'hidden',
-          backfaceVisibility: 'hidden',
+        onError={(e) => {
+          console.error('[AdCreativeThumbnail] Erro ao carregar imagem:', {
+            ad_id: creative.ad_id,
+            imageUrl,
+          });
+          // Fallback para placeholder em caso de erro de carregamento
+          const target = e.target as HTMLImageElement;
+          target.style.display = 'none';
+          const container = target.parentElement;
+          if (container) {
+            container.classList.add('bg-red-50');
+            // Adiciona ícone de erro
+            const errorIcon = document.createElement('div');
+            errorIcon.className = 'flex items-center justify-center w-full h-full';
+            errorIcon.innerHTML = `<svg class="${iconSizes[size]} text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>`;
+            container.appendChild(errorIcon);
+          }
         }}
-        onError={handleImageError}
       />
 
       {/* Indicador de video */}
