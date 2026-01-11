@@ -60,7 +60,14 @@ export interface AdAccountData {
   status: string;
   lastSyncAt?: string;
   lastSyncDuration?: number; // Duracao da ultima sincronizacao em segundos
-  syncStatus?: 'synced' | 'syncing' | 'stale' | 'error' | 'never';
+  // Tipos de status de sincronizacao:
+  // - just_synced: Sincronizado nos ultimos 5 minutos (verde intenso)
+  // - synced: Sincronizado nas ultimas 24 horas
+  // - syncing: Sincronizando agora
+  // - stale: Desatualizado (mais de 24h)
+  // - error: Erro na sincronizacao
+  // - never: Nunca sincronizado
+  syncStatus?: 'just_synced' | 'synced' | 'syncing' | 'stale' | 'error' | 'never';
   syncProgress?: number; // Progresso atual da sincronizacao (0-100)
   // Novos campos para indicadores de entidades
   entityCounts?: EntityCounts; // Contagem de campanhas, adsets e ads (total/ativos)
@@ -185,6 +192,11 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
 
   // Retorna cor da borda lateral baseado no status de sincronização
   const getPerformanceColor = (): string => {
+    // Se foi sincronizado agora, borda verde intensa
+    if (account.syncStatus === 'just_synced') {
+      return 'border-l-4 border-l-emerald-500';
+    }
+
     // Se está sincronizado, borda verde
     if (account.syncStatus === 'synced') {
       return 'border-l-4 border-l-green-500';
@@ -212,6 +224,13 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
   // Retorna a cor e icone baseado no status de sincronizacao
   const getSyncStatusInfo = () => {
     switch (account.syncStatus) {
+      case 'just_synced':
+        // Sincronizado nos ultimos 5 minutos - destaque especial
+        return {
+          color: 'text-emerald-700 bg-emerald-100 border-emerald-300',
+          icon: <CheckCircle2 className="w-3.5 h-3.5" />,
+          label: 'Atualizado agora',
+        };
       case 'synced':
         return {
           color: 'text-green-600 bg-green-50 border-green-200',
@@ -222,7 +241,7 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
         return {
           color: 'text-blue-600 bg-blue-50 border-blue-200',
           icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
-          label: 'Sincronizando',
+          label: 'Sincronizando...',
         };
       case 'stale':
         return {
@@ -240,7 +259,7 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
         return {
           color: 'text-gray-500 bg-gray-50 border-gray-200',
           icon: <Clock className="w-3.5 h-3.5" />,
-          label: 'Nunca sincronizado',
+          label: 'Aguardando sincronizacao',
         };
     }
   };

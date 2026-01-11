@@ -15,7 +15,14 @@ import {
 } from 'lucide-react';
 
 // Tipos de status possiveis
-export type SyncStatus = 'synced' | 'syncing' | 'stale' | 'error' | 'never' | 'disconnected';
+// - just_synced: Sincronizado nos ultimos 5 minutos (verde intenso)
+// - synced: Sincronizado e atualizado nas ultimas 24 horas (verde)
+// - syncing: Sincronizando agora (azul com animacao)
+// - stale: Desatualizado, mais de 24 horas (amarelo)
+// - error: Erro na sincronizacao (vermelho)
+// - never: Nunca sincronizado (cinza)
+// - disconnected: Conta desconectada (cinza escuro)
+export type SyncStatus = 'just_synced' | 'synced' | 'syncing' | 'stale' | 'error' | 'never' | 'disconnected';
 
 interface SyncStatusBadgeProps {
   status: SyncStatus;
@@ -32,6 +39,12 @@ const STATUS_CONFIG: Record<SyncStatus, {
   icon: React.ReactNode;
   label: string;
 }> = {
+  just_synced: {
+    color: 'text-emerald-700',
+    bgColor: 'bg-emerald-100 border-emerald-300',
+    icon: <CheckCircle2 className="w-full h-full" />,
+    label: 'Atualizado agora',
+  },
   synced: {
     color: 'text-green-600',
     bgColor: 'bg-green-50 border-green-200',
@@ -42,7 +55,7 @@ const STATUS_CONFIG: Record<SyncStatus, {
     color: 'text-blue-600',
     bgColor: 'bg-blue-50 border-blue-200',
     icon: <Loader2 className="w-full h-full animate-spin" />,
-    label: 'Sincronizando',
+    label: 'Sincronizando...',
   },
   stale: {
     color: 'text-amber-600',
@@ -60,7 +73,7 @@ const STATUS_CONFIG: Record<SyncStatus, {
     color: 'text-gray-500',
     bgColor: 'bg-gray-50 border-gray-200',
     icon: <Clock className="w-full h-full" />,
-    label: 'Nunca sincronizado',
+    label: 'Aguardando sincronizacao',
   },
   disconnected: {
     color: 'text-gray-400',
@@ -168,8 +181,11 @@ export const SyncStatusDot: React.FC<SyncStatusDotProps> = ({
   size = 'md',
   pulse = false,
 }) => {
+  // Retorna a cor do ponto baseado no status
   const getColor = () => {
     switch (status) {
+      case 'just_synced':
+        return 'bg-emerald-500';
       case 'synced':
         return 'bg-green-500';
       case 'syncing':

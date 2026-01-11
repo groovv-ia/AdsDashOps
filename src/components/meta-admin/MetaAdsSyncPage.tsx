@@ -914,12 +914,27 @@ export const MetaAdsSyncPage: React.FC = () => {
     }
 
     return syncStatus.ad_accounts.map((acc) => {
-      // Determina status de sincronizacao
+      // Determina status de sincronizacao com thresholds melhorados:
+      // - just_synced: sincronizado nos ultimos 5 minutos
+      // - synced: sincronizado nas ultimas 24 horas
+      // - stale: mais de 24 horas desde a ultima sincronizacao
+      // - never: nunca sincronizado
       let syncStatusValue: SyncStatus = 'never';
       if (acc.last_sync_at) {
         const lastSync = new Date(acc.last_sync_at);
-        const hoursSince = (Date.now() - lastSync.getTime()) / (1000 * 60 * 60);
-        syncStatusValue = hoursSince < 24 ? 'synced' : 'stale';
+        const minutesSince = (Date.now() - lastSync.getTime()) / (1000 * 60);
+        const hoursSince = minutesSince / 60;
+
+        if (minutesSince < 5) {
+          // Sincronizado nos ultimos 5 minutos - mostra "Atualizado agora"
+          syncStatusValue = 'just_synced';
+        } else if (hoursSince < 24) {
+          // Sincronizado nas ultimas 24 horas - mostra "Sincronizado"
+          syncStatusValue = 'synced';
+        } else {
+          // Mais de 24 horas - mostra "Desatualizado"
+          syncStatusValue = 'stale';
+        }
       }
 
       // Usa duracao real da ultima sincronizacao do banco de dados
@@ -979,10 +994,11 @@ export const MetaAdsSyncPage: React.FC = () => {
     }
 
     // Aplica filtro de status de sincronizacao
+    // 'just_synced' e 'synced' sao considerados como sincronizados para fins de filtro
     if (syncFilter !== 'all') {
       filtered = filtered.filter((account) => {
         if (syncFilter === 'synced') {
-          return account.syncStatus === 'synced';
+          return account.syncStatus === 'synced' || account.syncStatus === 'just_synced';
         } else if (syncFilter === 'not-synced') {
           return account.syncStatus === 'never' || account.syncStatus === 'stale';
         } else if (syncFilter === 'error') {
