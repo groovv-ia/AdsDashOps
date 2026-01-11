@@ -26,16 +26,32 @@ interface MenuItem {
   page: string;
 }
 
-// Itens do menu de navegacao principal
-// Organizados por plataforma: Meta Ads, Google Ads, e configuracoes gerais
-const menuItems: MenuItem[] = [
-  // Meta Ads
-  { icon: MetaIcon, label: 'Conexao Meta', page: 'meta-admin' },
-  { icon: MetaIcon, label: 'Meta Ads Sync', page: 'meta-sync' },
-  // Google Ads
-  { icon: GoogleIcon, label: 'Conexao Google', page: 'google-admin' },
-  { icon: GoogleIcon, label: 'Google Ads Sync', page: 'google-sync' },
-  // Configuracoes gerais
+// Tipo para secao do menu com titulo e itens
+interface MenuSection {
+  title: string;
+  items: MenuItem[];
+}
+
+// Itens do menu organizados por secao
+const menuSections: MenuSection[] = [
+  {
+    title: 'Meta Ads',
+    items: [
+      { icon: MetaIcon, label: 'Conexao Meta', page: 'meta-admin' },
+      { icon: MetaIcon, label: 'Meta Ads Sync', page: 'meta-sync' },
+    ],
+  },
+  {
+    title: 'Google Ads',
+    items: [
+      { icon: GoogleIcon, label: 'Conexao Google', page: 'google-admin' },
+      { icon: GoogleIcon, label: 'Google Ads Sync', page: 'google-sync' },
+    ],
+  },
+];
+
+// Itens gerais do menu (sem secao)
+const generalMenuItems: MenuItem[] = [
   { icon: Building2, label: 'Workspaces', page: 'workspaces' },
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configuracoes', page: 'settings' },
@@ -96,21 +112,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <nav className="p-4 flex-1 overflow-y-auto">
-            <ul className="space-y-2">
-              {menuItems.map((item, index) => (
+            {/* Secoes agrupadas (Meta Ads, Google Ads) */}
+            {menuSections.map((section, sectionIndex) => (
+              <div key={sectionIndex} className="mb-4">
+                <h3 className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                  {section.title}
+                </h3>
+                <ul className="space-y-1">
+                  {section.items.map((item, itemIndex) => (
+                    <li key={itemIndex}>
+                      <button
+                        onClick={() => handlePageClick(item.page)}
+                        className={`
+                          w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors
+                          ${currentPage === item.page
+                            ? 'bg-gradient-to-r from-blue-500/10 to-blue-500/5 text-blue-600 border-l-2 border-blue-500'
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                          }
+                        `}
+                      >
+                        <item.icon className="w-5 h-5 flex-shrink-0" />
+                        <span className="font-medium text-sm">{item.label}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+
+            {/* Separador */}
+            <div className="my-4 border-t border-gray-200/50" />
+
+            {/* Itens gerais */}
+            <ul className="space-y-1">
+              {generalMenuItems.map((item, index) => (
                 <li key={index}>
                   <button
                     onClick={() => handlePageClick(item.page)}
                     className={`
-                      w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-left transition-colors
+                      w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-left transition-colors
                       ${currentPage === item.page
-                        ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-r-2 border-blue-500' 
+                        ? 'bg-gradient-to-r from-blue-500/10 to-blue-500/5 text-blue-600 border-l-2 border-blue-500'
                         : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                       }
                     `}
                   >
                     <item.icon className="w-5 h-5 flex-shrink-0" />
-                    <span className="font-medium">{item.label}</span>
+                    <span className="font-medium text-sm">{item.label}</span>
                   </button>
                 </li>
               ))}
