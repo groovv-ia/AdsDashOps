@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw } from 'lucide-react';
+import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, Sparkles, Image, Video, MessageSquare, FlaskConical } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 import { UpgradeBanner } from './UpgradeBanner';
 
@@ -58,6 +58,19 @@ const menuSections: MenuSection[] = [
       { icon: RefreshCw, label: 'Google Ads Sync', page: 'google-sync' },
     ],
   },
+  {
+    id: 'ai-analysis',
+    title: 'Análise com IA',
+    icon: Sparkles,
+    accentColor: 'purple',
+    items: [
+      { icon: Sparkles, label: 'Hub de Análises', page: 'creative-analysis' },
+      { icon: Image, label: 'Análise de Carrossel', page: 'carousel-analysis' },
+      { icon: Video, label: 'Análise de Vídeo', page: 'video-analysis' },
+      { icon: MessageSquare, label: 'Análise AIDA (Copy)', page: 'aida-analysis' },
+      { icon: FlaskConical, label: 'Testes A/B', page: 'ab-tests' },
+    ],
+  },
 ];
 
 // Item de Workspaces na navegacao principal
@@ -76,10 +89,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onPageChange
 }) => {
   // Estado para controlar quais secoes estao expandidas
-  // Google Ads inicia recolhida para economizar espaco vertical
+  // Google Ads e AI Analysis iniciam recolhidas para economizar espaco vertical
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     meta: true,
     google: false,
+    'ai-analysis': false,
   });
 
   // Alterna o estado de expansao de uma secao
@@ -187,11 +201,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {/* Itens da secao - com animacao */}
                     <div className={`
                       overflow-hidden transition-all duration-200 ease-in-out
-                      ${isExpanded ? 'max-h-40 opacity-100 mt-1' : 'max-h-0 opacity-0'}
+                      ${isExpanded ? 'max-h-60 opacity-100 mt-1' : 'max-h-0 opacity-0'}
                     `}>
                       <div className="pl-4 space-y-0.5">
                         {section.items.map((item, itemIndex) => {
                           const isItemActive = currentPage === item.page;
+                          const activeColor =
+                            section.id === 'meta' ? 'blue' :
+                            section.id === 'google' ? 'emerald' :
+                            section.id === 'ai-analysis' ? 'purple' : 'blue';
+
                           return (
                             <button
                               key={itemIndex}
@@ -200,9 +219,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left
                                 transition-all duration-150
                                 ${isItemActive
-                                  ? section.id === 'meta'
-                                    ? 'bg-blue-50 text-blue-700 font-medium'
-                                    : 'bg-emerald-50 text-emerald-700 font-medium'
+                                  ? `bg-${activeColor}-50 text-${activeColor}-700 font-medium`
                                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                 }
                               `}
@@ -210,7 +227,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               <item.icon className={`
                                 w-[18px] h-[18px] flex-shrink-0
                                 ${isItemActive
-                                  ? section.id === 'meta' ? 'text-blue-500' : 'text-emerald-500'
+                                  ? `text-${activeColor}-500`
                                   : 'text-slate-400'
                                 }
                               `} />
