@@ -60,9 +60,11 @@ const menuSections: MenuSection[] = [
   },
 ];
 
-// Itens gerais do menu (sem secao)
-const generalMenuItems: MenuItem[] = [
-  { icon: Building2, label: 'Workspaces', page: 'workspaces' },
+// Item de Workspaces na navegacao principal
+const workspacesItem: MenuItem = { icon: Building2, label: 'Workspaces', page: 'workspaces' };
+
+// Itens do rodape - exibidos como icones horizontais
+const footerItems: MenuItem[] = [
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configuracoes', page: 'settings' },
 ];
@@ -226,36 +228,59 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {/* Separador */}
             <div className="my-3 mx-3 border-t border-slate-100" />
 
-            {/* Itens gerais */}
-            <div className="px-3 space-y-0.5">
-              {generalMenuItems.map((item, index) => {
-                const isItemActive = currentPage === item.page;
-                return (
-                  <button
-                    key={index}
-                    onClick={() => handlePageClick(item.page)}
-                    className={`
-                      w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
-                      transition-all duration-150
-                      ${isItemActive
-                        ? 'bg-slate-50 text-slate-900'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                      }
-                    `}
-                  >
-                    <item.icon className={`
-                      w-5 h-5 flex-shrink-0
-                      ${isItemActive ? 'text-slate-700' : 'text-slate-400'}
-                    `} />
-                    <span className="text-base font-medium leading-6">{item.label}</span>
-                  </button>
-                );
-              })}
+            {/* Item Workspaces */}
+            <div className="px-3">
+              <button
+                onClick={() => handlePageClick(workspacesItem.page)}
+                className={`
+                  w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
+                  transition-all duration-150
+                  ${currentPage === workspacesItem.page
+                    ? 'bg-slate-50 text-slate-900'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }
+                `}
+              >
+                <workspacesItem.icon className={`
+                  w-5 h-5 flex-shrink-0
+                  ${currentPage === workspacesItem.page ? 'text-slate-700' : 'text-slate-400'}
+                `} />
+                <span className="text-base font-medium leading-6">{workspacesItem.label}</span>
+              </button>
             </div>
           </nav>
 
-          {/* Banner de Upgrade Pro - Componente com exibicao condicional */}
-          <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} />
+          {/* Rodape fixo com icones de acao e banner de upgrade */}
+          <div className="flex-shrink-0 border-t border-slate-100">
+            {/* Barra de icones horizontais */}
+            <div className="flex items-center justify-between px-4 py-3">
+              {/* Icones de Ajuda e Configuracoes */}
+              <div className="flex items-center gap-1">
+                {footerItems.map((item, index) => {
+                  const isItemActive = currentPage === item.page;
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => handlePageClick(item.page)}
+                      title={item.label}
+                      className={`
+                        p-2.5 rounded-lg transition-all duration-150
+                        ${isItemActive
+                          ? 'bg-slate-100 text-slate-900'
+                          : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                        }
+                      `}
+                    >
+                      <item.icon className="w-5 h-5" />
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Banner de Upgrade Pro compacto */}
+              <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} compact />
+            </div>
+          </div>
         </div>
       </aside>
     </>

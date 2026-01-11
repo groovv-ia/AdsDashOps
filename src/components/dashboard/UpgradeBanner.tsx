@@ -3,12 +3,13 @@ import { supabase } from '../../lib/supabase';
 
 interface UpgradeBannerProps {
   onUpgradeClick?: () => void;
+  compact?: boolean;
 }
 
 // Componente de banner promocional para upgrade de plano
 // Exibido apenas para usuarios do plano Free
-// Layout vertical centralizado com avatar, titulo, descricao e botao
-export const UpgradeBanner: React.FC<UpgradeBannerProps> = ({ onUpgradeClick }) => {
+// Suporta modo compacto para exibicao no rodape como botao
+export const UpgradeBanner: React.FC<UpgradeBannerProps> = ({ onUpgradeClick, compact = false }) => {
   // Estado para controlar visibilidade baseada no plano do usuario
   const [isVisible, setIsVisible] = useState(true);
   const [userPlan, setUserPlan] = useState<'free' | 'pro' | 'loading'>('loading');
@@ -62,6 +63,28 @@ export const UpgradeBanner: React.FC<UpgradeBannerProps> = ({ onUpgradeClick }) 
     return null;
   }
 
+  // Modo compacto - exibido como botao pequeno no rodape
+  if (compact) {
+    return (
+      <button
+        onClick={handleUpgradeClick}
+        title="Upgrade para Pro"
+        className="
+          py-2 px-4 rounded-lg
+          bg-gradient-to-r from-blue-500 to-blue-600
+          hover:from-blue-600 hover:to-blue-700
+          text-white text-xs font-medium
+          transition-all duration-200
+          shadow-sm hover:shadow-md
+          whitespace-nowrap
+        "
+      >
+        Upgrade Pro
+      </button>
+    );
+  }
+
+  // Modo completo - banner vertical com avatar e descricao
   return (
     <div className="p-3 flex-shrink-0">
       {/* Container principal com fundo claro e imagem de fundo com opacidade */}
