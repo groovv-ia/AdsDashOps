@@ -18,14 +18,17 @@
     "date-fns-tz": "^3.2.0",
     "facebook-nodejs-business-sdk": "^24.0.0",
     "google-ads-api": "^21.0.1",
+    "html2canvas": "^1.4.1",
     "jspdf": "^2.5.1",
+    "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.344.0",
     "openai": "^4.24.1",
     "papaparse": "^5.4.1",
     "react": "^18.3.1",
     "react-datepicker": "^4.25.0",
     "react-dom": "^18.3.1",
-    "recharts": "^2.10.3"
+    "recharts": "^2.10.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",

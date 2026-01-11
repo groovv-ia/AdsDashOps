@@ -50,6 +50,9 @@ import { useClient } from '../../contexts/ClientContext';
 import { AdDetailModal, AdCreativeThumbnail } from '../ad-analysis';
 import type { AdDetailModalState } from '../../types/adAnalysis';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
+import { ExportReportModal } from './ExportReportModal';
+import type { AnalysisLevel } from '../../types/metricsAnalysis';
+import type { PreloadedMetricsData } from '../../lib/services/MetricsAIAnalysisService';
 import {
   LineChart,
   Line,
@@ -190,6 +193,9 @@ export const MetaAdsSyncPage: React.FC = () => {
     isOpen: false,
     adData: null,
   });
+
+  // Estado do modal de exportacao
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // ============================================================
   // EFEITOS
@@ -1740,7 +1746,7 @@ export const MetaAdsSyncPage: React.FC = () => {
             )}
 
             {tableData.length > 0 && (
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={() => setShowExportModal(true)}>
                 <Download className="w-4 h-4 mr-2" />
                 Exportar
               </Button>
@@ -1907,6 +1913,53 @@ export const MetaAdsSyncPage: React.FC = () => {
             ? insights.filter((row) => row.entity_id === adDetailModal.adData?.ad_id)
             : []
         }
+      />
+
+      {/* Modal de Exportacao de Relatorios */}
+      <ExportReportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        rawData={tableData}
+        metadata={{
+          accountName: navigationState.selectedAccountName || 'Meta Ads',
+          accountId: navigationState.selectedAccountId || '',
+          entityLevel: selectedLevel as AnalysisLevel,
+          periodStart: dateRange.dateFrom,
+          periodEnd: dateRange.dateTo,
+        }}
+        kpis={{
+          totalSpend: kpis.totalSpend,
+          totalImpressions: kpis.totalImpressions,
+          totalReach: kpis.totalReach,
+          totalClicks: kpis.totalClicks,
+          avgCtr: kpis.avgCtr,
+          avgCpc: kpis.avgCpc,
+          avgCpm: kpis.avgCpm,
+          avgFrequency: kpis.avgCtr > 0 ? kpis.totalImpressions / kpis.totalClicks : 0,
+        }}
+        entityId={navigationState.selectedCampaignId || navigationState.selectedAccountId || undefined}
+        entityName={navigationState.selectedCampaignName || navigationState.selectedAccountName || undefined}
+        metaAdAccountId={navigationState.selectedAccountId || undefined}
+        preloadedData={{
+          entityName: navigationState.selectedCampaignName || navigationState.selectedAccountName || 'Meta Ads',
+          totalSpend: kpis.totalSpend,
+          totalImpressions: kpis.totalImpressions,
+          totalReach: kpis.totalReach,
+          totalClicks: kpis.totalClicks,
+          avgCtr: kpis.avgCtr,
+          avgCpc: kpis.avgCpc,
+          avgCpm: kpis.avgCpm,
+          avgFrequency: kpis.avgCtr > 0 ? kpis.totalImpressions / kpis.totalClicks : 0,
+          dailyMetrics: aggregatedData.map(d => ({
+            date: d.date,
+            impressions: d.impressions,
+            clicks: d.clicks,
+            spend: d.spend,
+            ctr: d.ctr,
+            cpc: d.cpc,
+            cpm: d.cpm,
+          })),
+        }}
       />
     </div>
   );
