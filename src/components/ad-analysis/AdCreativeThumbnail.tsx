@@ -83,10 +83,11 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
 
   // Sem criativo
   if (!creative) {
+    console.warn('[AdCreativeThumbnail] Criativo nao fornecido (null/undefined)');
     return (
       <div
         className={`${containerClasses} bg-gray-100`}
-        title="Criativo nao carregado"
+        title="Criativo ainda nao carregado. Clique para tentar carregar."
         onClick={onClick}
       >
         <Image className={`${iconSizes[size]} text-gray-300`} />
@@ -100,6 +101,12 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
 
   // Sem imagem disponivel
   if (!imageUrl) {
+    // Log apenas quando não há URL de imagem disponível
+    console.debug('[AdCreativeThumbnail] Sem URL de imagem:', {
+      ad_id: creative.ad_id,
+      creative_type: creative.creative_type,
+      has_title: !!creative.title,
+    });
     return (
       <div
         className={`${containerClasses} bg-gray-100`}
@@ -124,10 +131,22 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
         className="w-full h-full object-cover"
         loading="lazy"
         onError={(e) => {
+          console.error('[AdCreativeThumbnail] Erro ao carregar imagem:', {
+            ad_id: creative.ad_id,
+            imageUrl,
+          });
           // Fallback para placeholder em caso de erro de carregamento
           const target = e.target as HTMLImageElement;
           target.style.display = 'none';
-          target.parentElement?.classList.add('bg-gray-200');
+          const container = target.parentElement;
+          if (container) {
+            container.classList.add('bg-red-50');
+            // Adiciona ícone de erro
+            const errorIcon = document.createElement('div');
+            errorIcon.className = 'flex items-center justify-center w-full h-full';
+            errorIcon.innerHTML = `<svg class="${iconSizes[size]} text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>`;
+            container.appendChild(errorIcon);
+          }
         }}
       />
 
