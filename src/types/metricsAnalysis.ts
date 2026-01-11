@@ -270,7 +270,8 @@ export function getImpactColor(impact: ImpactLevel): { text: string; bg: string 
     medium: { text: 'text-amber-800', bg: 'bg-amber-100' },
     low: { text: 'text-blue-800', bg: 'bg-blue-100' },
   };
-  return colors[impact];
+  // Retorna valor padrão caso impact seja inválido
+  return colors[impact] || { text: 'text-gray-800', bg: 'bg-gray-100' };
 }
 
 // Helper function para label de impacto
@@ -281,7 +282,8 @@ export function getImpactLabel(impact: ImpactLevel): string {
     medium: 'Médio',
     low: 'Baixo',
   };
-  return labels[impact];
+  // Retorna valor padrão caso impact seja inválido
+  return labels[impact] || 'Indefinido';
 }
 
 // Helper function para ícone de tendência
@@ -292,7 +294,8 @@ export function getTrendInfo(direction: TrendDirection): { label: string; color:
     stable: { label: 'Estável', color: 'text-gray-600', arrow: 'flat' },
     volatile: { label: 'Volátil', color: 'text-amber-600', arrow: 'flat' },
   };
-  return info[direction];
+  // Retorna valor padrão caso direction seja inválido
+  return info[direction] || { label: 'Indefinido', color: 'text-gray-600', arrow: 'flat' };
 }
 
 // Helper function para cor de benchmark status
@@ -304,7 +307,8 @@ export function getBenchmarkStatusColor(status: BenchmarkStatus): { text: string
     below_average: { text: 'text-amber-800', bg: 'bg-amber-100' },
     poor: { text: 'text-red-800', bg: 'bg-red-100' },
   };
-  return colors[status];
+  // Retorna valor padrão caso status seja inválido
+  return colors[status] || { text: 'text-gray-800', bg: 'bg-gray-100' };
 }
 
 // Helper function para label de benchmark status
@@ -316,5 +320,6 @@ export function getBenchmarkStatusLabel(status: BenchmarkStatus): string {
     below_average: 'Abaixo da Média',
     poor: 'Baixo',
   };
-  return labels[status];
+  // Retorna valor padrão caso status seja inválido
+  return labels[status] || 'Indefinido';
 }
