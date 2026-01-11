@@ -361,6 +361,14 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
      account.entityCounts.adset.total > 0 ||
      account.entityCounts.ad.total > 0);
 
+  // Log para debug - verifica se os dados estao chegando no componente
+  console.log(`[AdAccountCard] ${account.name}:`, {
+    hasEntityCounts,
+    entityCounts: account.entityCounts,
+    latestDataDate: account.latestDataDate,
+    metrics: account.metrics
+  });
+
   // Verifica se a conta tem metricas completas (spend e impressions definidos)
   const hasMetrics = account.metrics &&
     typeof account.metrics.spend === 'number' &&

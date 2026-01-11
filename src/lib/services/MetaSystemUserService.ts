@@ -112,6 +112,19 @@ export interface AccountFreshness {
   levels: Record<string, number>;
 }
 
+// Interface para contagem de entidades por tipo
+export interface EntityCount {
+  total: number;
+  active: number;
+}
+
+// Interface para contagem de todas as entidades de uma conta
+export interface EntityCounts {
+  campaign: EntityCount;
+  adset: EntityCount;
+  ad: EntityCount;
+}
+
 export interface SyncStatusResponse {
   workspace: {
     id: string;
@@ -135,6 +148,16 @@ export interface SyncStatusResponse {
     last_sync_at: string | null;
     last_sync_duration: number | null;
     last_sync_records_count: number | null;
+    // Novos campos para indicadores de entidades
+    entity_counts: EntityCounts | null;
+    latest_data_date: string | null;
+    // Metricas agregadas por nivel
+    metrics?: {
+      total_rows: number;
+      campaigns: number;
+      adsets: number;
+      ads: number;
+    } | null;
   }>;
   sync_states: SyncState[];
   recent_jobs: SyncJob[];

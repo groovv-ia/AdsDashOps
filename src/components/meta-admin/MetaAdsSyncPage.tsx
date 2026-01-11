@@ -597,6 +597,15 @@ export const MetaAdsSyncPage: React.FC = () => {
       // Data mais recente dos dados sincronizados
       const latestDataDate = acc.latest_data_date || undefined;
 
+      // Log para debug dos novos campos
+      if (acc.id) {
+        console.log(`[MetaAdsSyncPage] Conta ${acc.name}:`, {
+          entity_counts: acc.entity_counts,
+          latest_data_date: acc.latest_data_date,
+          metrics: acc.metrics
+        });
+      }
+
       return {
         id: acc.id,
         metaId: acc.meta_id,
