@@ -512,8 +512,9 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
 
   const handleQuickAction = (action: string) => {
     if (action.startsWith('navigate:')) {
-      const path = action.replace('navigate:', '');
-      window.location.href = path;
+      const page = action.replace('navigate:', '');
+      // Dispara evento customizado para mudar página no App.tsx
+      window.dispatchEvent(new CustomEvent('changePage', { detail: { page } }));
       onClose();
     } else if (action.startsWith('email:')) {
       const emailUrl = action.replace('email:', '');

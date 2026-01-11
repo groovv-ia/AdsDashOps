@@ -121,6 +121,18 @@ function AppContent() {
     return () => window.removeEventListener('syncCompleted', handleSyncCompleted as EventListener);
   }, []);
 
+  // Listen for page change events from chat bot
+  useEffect(() => {
+    const handleChangePage = (event: CustomEvent) => {
+      const { page } = event.detail;
+      console.log('Mudando página via chat bot:', page);
+      setCurrentPage(page);
+    };
+
+    window.addEventListener('changePage', handleChangePage as EventListener);
+    return () => window.removeEventListener('changePage', handleChangePage as EventListener);
+  }, []);
+
   // Filter data based on current filters
   const filteredCampaigns = mockCampaigns.filter(campaign => {
     if (filters.platforms.length > 0 && !filters.platforms.includes(campaign.platform.toLowerCase())) return false;

@@ -106,18 +106,18 @@ const INTENT_RESPONSES: Record<ChatIntent, {
   quickActions?: { label: string; action: string }[];
 }> = {
   conectar_meta: {
-    message: 'Para conectar sua conta Meta Ads, siga estes passos:\n\n1. Vá em **Configurações > Fontes de Dados**\n2. Clique em "Conectar Meta Ads"\n3. Faça login com sua conta do Facebook\n4. Autorize o acesso às suas contas de anúncios\n\nPosso te ajudar com algum problema específico na conexão?',
+    message: 'Para conectar sua conta Meta Ads, siga estes passos:\n\n1. Abra o menu lateral e vá em **"Meta Ads"**\n2. Clique em "Conectar Meta Ads"\n3. Faça login com sua conta do Facebook\n4. Autorize o acesso e selecione suas contas de anúncios\n\nPosso te ajudar com algum problema específico na conexão?',
     suggestions: [
       'Estou tendo erro ao conectar',
       'Não vejo minhas contas de anúncio',
       'Preciso reconectar minha conta'
     ],
     quickActions: [
-      { label: 'Ir para Configurações', action: 'navigate:/settings' }
+      { label: 'Ir para Meta Ads', action: 'navigate:meta-admin' }
     ]
   },
   conectar_google: {
-    message: 'Para conectar sua conta Google Ads:\n\n1. Acesse **Configurações > Fontes de Dados**\n2. Clique em "Conectar Google Ads"\n3. Faça login com sua conta Google\n4. Selecione as contas que deseja sincronizar\n\nEm breve teremos o Google Ads totalmente integrado! Precisa de mais informações?',
+    message: 'Para conectar sua conta Google Ads:\n\n1. Abra o menu lateral\n2. Procure por "Google Ads" (em breve)\n3. Faça login com sua conta Google\n4. Selecione as contas que deseja sincronizar\n\nEm breve teremos o Google Ads totalmente integrado! Precisa de mais informações?',
     suggestions: [
       'Quando estará disponível?',
       'Posso conectar várias contas?',
@@ -125,14 +125,15 @@ const INTENT_RESPONSES: Record<ChatIntent, {
     ]
   },
   ver_metricas: {
-    message: 'Você pode visualizar suas métricas de várias formas:\n\n📊 **Dashboard Principal** - Visão geral de todas campanhas\n📈 **Análise de Campanhas** - Métricas detalhadas por campanha\n📉 **Relatórios Customizados** - Crie dashboards personalizados\n\nO que você gostaria de visualizar especificamente?',
+    message: 'Você pode visualizar suas métricas de várias formas:\n\n📊 **Meta Ads** - Visão geral de contas e campanhas\n📈 **Campanhas** - Análise detalhada de cada campanha\n💡 **Insights com IA** - Análises inteligentes das métricas\n📉 **Meta Sync** - Status de sincronização dos dados\n\nO que você gostaria de visualizar especificamente?',
     suggestions: [
-      'Ver métricas de hoje',
-      'Comparar últimos 7 dias',
-      'Criar relatório customizado'
+      'Ver minhas campanhas',
+      'Ver insights com IA',
+      'Status de sincronização'
     ],
     quickActions: [
-      { label: 'Ir para Dashboard', action: 'navigate:/dashboard' }
+      { label: 'Ver Campanhas', action: 'navigate:campaigns' },
+      { label: 'Meta Ads', action: 'navigate:meta-admin' }
     ]
   },
   problema_sincronizacao: {
@@ -144,19 +145,20 @@ const INTENT_RESPONSES: Record<ChatIntent, {
       'Reconectar conta'
     ],
     quickActions: [
-      { label: 'Verificar Status', action: 'navigate:/settings/data-sources' }
+      { label: 'Verificar Sincronização', action: 'navigate:meta-sync' },
+      { label: 'Meta Ads', action: 'navigate:meta-admin' }
     ]
   },
   criar_dashboard: {
-    message: 'Criar um dashboard personalizado é fácil!\n\n1. Vá em **Dashboards > Criar Novo**\n2. Selecione as métricas que deseja acompanhar\n3. Escolha o período e filtros\n4. Personalize a visualização\n5. Salve seu dashboard\n\nQue tipo de dados você quer visualizar?',
+    message: 'Você pode criar visualizações personalizadas!\n\n**Opções disponíveis:**\n📊 **Campanhas** - Ver e analisar campanhas detalhadamente\n💡 **Insights com IA** - Análises automatizadas e sugestões\n📈 **Meta Sync** - Sincronizar e visualizar dados\n\nQue tipo de dados você quer visualizar?',
     suggestions: [
-      'Dashboard de campanhas ativas',
-      'Dashboard de ROI',
-      'Dashboard comparativo',
-      'Dashboard por período'
+      'Ver campanhas ativas',
+      'Análise com IA',
+      'Sincronizar dados'
     ],
     quickActions: [
-      { label: 'Criar Dashboard', action: 'navigate:/dashboards/new' }
+      { label: 'Ver Campanhas', action: 'navigate:campaigns' },
+      { label: 'Insights IA', action: 'navigate:ai-insights' }
     ]
   },
   exportar_dados: {
@@ -176,19 +178,20 @@ const INTENT_RESPONSES: Record<ChatIntent, {
       'Verificar criativos'
     ],
     quickActions: [
-      { label: 'Ver Campanhas', action: 'navigate:/campaigns' }
+      { label: 'Ver Campanhas', action: 'navigate:campaigns' },
+      { label: 'Insights IA', action: 'navigate:ai-insights' }
     ]
   },
   duvida_cobranca: {
-    message: 'Para questões sobre cobrança e assinatura:\n\n💳 Acesse **Configurações > Assinatura e Cobrança**\n\nLá você pode:\n- Ver seu plano atual\n- Atualizar forma de pagamento\n- Fazer upgrade/downgrade\n- Ver histórico de faturas\n- Cancelar assinatura\n\nPrecisa de ajuda específica com cobrança?',
+    message: 'Para questões sobre cobrança e assinatura:\n\n💳 Acesse **Configurações** no menu lateral\n\nLá você pode:\n- Ver suas configurações de conta\n- Gerenciar preferências\n- Configurar notificações\n- Ajustar tema e aparência\n\nPrecisa de ajuda específica com sua conta?',
     suggestions: [
-      'Ver meu plano',
-      'Atualizar plano',
-      'Problemas com pagamento',
-      'Cancelar assinatura'
+      'Ver configurações',
+      'Ajustar notificações',
+      'Mudar tema',
+      'Gerenciar conta'
     ],
     quickActions: [
-      { label: 'Ir para Cobrança', action: 'navigate:/settings/billing' }
+      { label: 'Abrir Configurações', action: 'navigate:settings' }
     ]
   },
   sugestao_recurso: {
