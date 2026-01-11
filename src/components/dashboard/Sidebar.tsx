@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 import { UpgradeBanner } from './UpgradeBanner';
@@ -74,34 +74,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onPageChange
 }) => {
   // Estado para controlar quais secoes estao expandidas
+  // Google Ads inicia recolhida para economizar espaco vertical
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     meta: true,
-    google: true,
+    google: false,
   });
-
-  // Estado para controlar indicadores de scroll
-  const [showTopFade, setShowTopFade] = useState(false);
-  const [showBottomFade, setShowBottomFade] = useState(false);
-  const navRef = useRef<HTMLElement>(null);
-
-  // Handler para detectar scroll e atualizar os fade indicators
-  const handleScroll = (e: React.UIEvent<HTMLElement>) => {
-    const target = e.currentTarget;
-    const scrollTop = target.scrollTop;
-    const scrollHeight = target.scrollHeight;
-    const clientHeight = target.clientHeight;
-
-    setShowTopFade(scrollTop > 10);
-    setShowBottomFade(scrollTop + clientHeight < scrollHeight - 10);
-  };
-
-  // Verifica scroll inicial para mostrar fade bottom se necessario
-  useEffect(() => {
-    if (navRef.current) {
-      const { scrollHeight, clientHeight } = navRef.current;
-      setShowBottomFade(scrollHeight > clientHeight);
-    }
-  }, [expandedSections]);
 
   // Alterna o estado de expansao de uma secao
   const toggleSection = (sectionId: string) => {
@@ -147,13 +124,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         `}
       >
         <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="p-5 flex-shrink-0">
+          {/* Logo - tamanho aumentado para maior destaque */}
+          <div className="p-6 pb-4 flex-shrink-0">
             <div className="flex items-center justify-center">
               <img
                 src="/logotipo-adsops.fw.png"
                 alt="AdsOPS"
-                className="h-10 w-auto object-contain"
+                className="h-12 w-auto object-contain"
               />
             </div>
           </div>
@@ -166,26 +143,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             />
           </div>
 
-          {/* Container de navegacao com fade indicators */}
-          <div className="flex-1 relative overflow-hidden">
-            {/* Fade indicator no topo */}
-            <div
-              className={`
-                absolute top-0 left-0 right-0 h-6 z-10 pointer-events-none
-                bg-gradient-to-b from-white to-transparent
-                transition-opacity duration-300
-                ${showTopFade ? 'opacity-100' : 'opacity-0'}
-              `}
-            />
-
-            {/* Navegacao */}
-            <nav
-              ref={navRef}
-              onScroll={handleScroll}
-              className="h-full overflow-y-auto py-4 scrollbar-hide"
-            >
+          {/* Container de navegacao simplificado sem scroll */}
+          <nav className="flex-1 py-3">
             {/* Secoes colapsaveis (Meta Ads, Google Ads) */}
-            <div className="px-3 space-y-2">
+            <div className="px-3 space-y-1">
               {menuSections.map((section) => {
                 const isExpanded = expandedSections[section.id];
                 const isActive = isSectionActive(section);
@@ -196,7 +157,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       onClick={() => toggleSection(section.id)}
                       className={`
-                        w-full flex items-center justify-between px-3 py-3 rounded-lg
+                        w-full flex items-center justify-between px-3 py-2.5 rounded-lg
                         transition-all duration-200 group
                         ${isActive
                           ? 'bg-slate-50'
@@ -234,7 +195,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               key={itemIndex}
                               onClick={() => handlePageClick(item.page)}
                               className={`
-                                w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
+                                w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left
                                 transition-all duration-150
                                 ${isItemActive
                                   ? section.id === 'meta'
@@ -263,10 +224,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* Separador */}
-            <div className="my-4 mx-3 border-t border-slate-100" />
+            <div className="my-3 mx-3 border-t border-slate-100" />
 
             {/* Itens gerais */}
-            <div className="px-3 space-y-1">
+            <div className="px-3 space-y-0.5">
               {generalMenuItems.map((item, index) => {
                 const isItemActive = currentPage === item.page;
                 return (
@@ -274,7 +235,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     key={index}
                     onClick={() => handlePageClick(item.page)}
                     className={`
-                      w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left
+                      w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
                       transition-all duration-150
                       ${isItemActive
                         ? 'bg-slate-50 text-slate-900'
@@ -291,18 +252,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 );
               })}
             </div>
-            </nav>
-
-            {/* Fade indicator na parte inferior */}
-            <div
-              className={`
-                absolute bottom-0 left-0 right-0 h-6 z-10 pointer-events-none
-                bg-gradient-to-t from-white to-transparent
-                transition-opacity duration-300
-                ${showBottomFade ? 'opacity-100' : 'opacity-0'}
-              `}
-            />
-          </div>
+          </nav>
 
           {/* Banner de Upgrade Pro - Componente com exibicao condicional */}
           <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} />
