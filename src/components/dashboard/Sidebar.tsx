@@ -115,7 +115,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar */}
       <aside
         className={`
-          fixed left-0 top-0 h-full w-64 bg-slate-50 border-r border-slate-200 z-50
+          fixed left-0 top-0 h-full w-64 bg-white z-50
+          shadow-[2px_0_8px_-2px_rgba(0,0,0,0.08)]
           transform transition-transform duration-300 ease-in-out
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
           lg:translate-x-0 lg:static lg:z-0
@@ -123,7 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-5 border-b border-slate-200 flex-shrink-0">
+          <div className="p-5 flex-shrink-0">
             <div className="flex items-center justify-center">
               <img
                 src="/logotipo-adsops.fw.png"
@@ -134,7 +135,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Seletor de Workspace */}
-          <div className="px-3 py-3 border-b border-slate-200">
+          <div className="px-3 py-3">
             <WorkspaceSelector
               onNavigateToWorkspaces={() => handlePageClick('workspaces')}
               compact
@@ -158,8 +159,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         w-full flex items-center justify-between px-3 py-3 rounded-lg
                         transition-all duration-200 group
                         ${isActive
-                          ? 'bg-white shadow-sm border border-slate-200'
-                          : 'hover:bg-white/60'
+                          ? 'bg-slate-50'
+                          : 'hover:bg-slate-50'
                         }
                       `}
                     >
@@ -199,7 +200,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   ? section.id === 'meta'
                                     ? 'bg-blue-50 text-blue-700 font-medium'
                                     : 'bg-emerald-50 text-emerald-700 font-medium'
-                                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                 }
                               `}
                             >
@@ -222,7 +223,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* Separador */}
-            <div className="my-4 mx-3 border-t border-slate-200" />
+            <div className="my-4 mx-3 border-t border-slate-100" />
 
             {/* Itens gerais */}
             <div className="px-3 space-y-1">
@@ -236,8 +237,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left
                       transition-all duration-150
                       ${isItemActive
-                        ? 'bg-white shadow-sm border border-slate-200 text-slate-900'
-                        : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
+                        ? 'bg-slate-50 text-slate-900'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                       }
                     `}
                   >
