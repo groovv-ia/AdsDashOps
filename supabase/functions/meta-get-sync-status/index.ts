@@ -179,6 +179,17 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[meta-get-sync-status] Found ${entityCounts?.length || 0} entity cache rows`);
 
+    // 8. Busca métricas recentes (últimas 48 horas) para detectar atividade real
+    // Usa UUIDs para consultar meta_insights_daily
+    const twoDaysAgoDate = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const { data: recentMetrics } = await supabaseAdmin
+      .from("meta_insights_daily")
+      .select("meta_ad_account_id, date, spend, impressions, clicks, reach")
+      .in("meta_ad_account_id", accountUuids.length > 0 ? accountUuids : [""])
+      .gte("date", twoDaysAgoDate);
+
+    console.log(`[meta-get-sync-status] Found ${recentMetrics?.length || 0} recent metric rows (last 48h)`);
+
     // Processa contagem de entidades por conta
     // Estrutura: { [meta_ad_account_id]: { campaign: { total, active }, adset: {...}, ad: {...} } }
     const entityCountsByAccount: Record<string, {
@@ -205,6 +216,74 @@ Deno.serve(async (req: Request) => {
           if (entity.effective_status === 'ACTIVE') {
             entityCountsByAccount[accountId][entityType].active++;
           }
+        }
+      }
+    }
+
+    // Processa métricas recentes para detectar atividade real
+    // Indexado por UUID da conta
+    const recentActivityByAccount: Record<string, {
+      has_recent_spend: boolean;
+      has_recent_impressions: boolean;
+      last_activity_date: string | null;
+      recent_spend: number;
+      recent_impressions: number;
+      recent_clicks: number;
+      recent_reach: number;
+      days_since_last_activity: number | null;
+    }> = {};
+
+    if (recentMetrics) {
+      for (const metric of recentMetrics) {
+        const accountUuid = metric.meta_ad_account_id;
+        if (!recentActivityByAccount[accountUuid]) {
+          recentActivityByAccount[accountUuid] = {
+            has_recent_spend: false,
+            has_recent_impressions: false,
+            last_activity_date: null,
+            recent_spend: 0,
+            recent_impressions: 0,
+            recent_clicks: 0,
+            recent_reach: 0,
+            days_since_last_activity: null,
+          };
+        }
+
+        // Acumula métricas
+        const spend = parseFloat(metric.spend || '0');
+        const impressions = parseInt(metric.impressions || '0', 10);
+        const clicks = parseInt(metric.clicks || '0', 10);
+        const reach = parseInt(metric.reach || '0', 10);
+
+        recentActivityByAccount[accountUuid].recent_spend += spend;
+        recentActivityByAccount[accountUuid].recent_impressions += impressions;
+        recentActivityByAccount[accountUuid].recent_clicks += clicks;
+        recentActivityByAccount[accountUuid].recent_reach += reach;
+
+        // Verifica se tem atividade real (spend ou impressões)
+        if (spend > 0) {
+          recentActivityByAccount[accountUuid].has_recent_spend = true;
+        }
+        if (impressions > 0) {
+          recentActivityByAccount[accountUuid].has_recent_impressions = true;
+        }
+
+        // Atualiza última data de atividade (se houver métricas significativas)
+        if (spend > 0 || impressions > 0) {
+          if (!recentActivityByAccount[accountUuid].last_activity_date ||
+              metric.date > recentActivityByAccount[accountUuid].last_activity_date) {
+            recentActivityByAccount[accountUuid].last_activity_date = metric.date;
+          }
+        }
+      }
+
+      // Calcula dias desde última atividade
+      for (const accountUuid in recentActivityByAccount) {
+        const activity = recentActivityByAccount[accountUuid];
+        if (activity.last_activity_date) {
+          const lastActivityDate = new Date(activity.last_activity_date);
+          const daysDiff = Math.floor((now.getTime() - lastActivityDate.getTime()) / (24 * 60 * 60 * 1000));
+          activity.days_since_last_activity = daysDiff;
         }
       }
     }
@@ -291,10 +370,23 @@ Deno.serve(async (req: Request) => {
       ad_accounts: adAccounts?.map((acc) => {
         const syncState = syncStates?.find((s) => s.meta_ad_account_id === acc.meta_ad_account_id);
         const lastJobMetrics = lastCompletedJobsByAccount[acc.meta_ad_account_id];
-        // CORRECAO: Usa acc.id (UUID) para buscar freshness
+        // CORRECAO: Usa acc.id (UUID) para buscar freshness e recentActivity
         const freshness = accountFreshness[acc.id] || null;
+        const recentActivity = recentActivityByAccount[acc.id] || null;
         // Busca contagem de entidades usando meta_ad_account_id (formato act_XXX)
         const entityCountsForAccount = entityCountsByAccount[acc.meta_ad_account_id] || null;
+
+        // Calcula status de atividade baseado em métricas reais e entidades
+        let activityStatus = 'inactive';
+        const hasActiveAds = entityCountsForAccount?.ad?.active > 0;
+        const hasRecentActivity = recentActivity?.has_recent_spend || recentActivity?.has_recent_impressions;
+
+        if (hasRecentActivity) {
+          activityStatus = 'active';
+        } else if (hasActiveAds) {
+          // Tem anúncios ativos mas sem métricas recentes - pode estar em ramp-up ou problema
+          activityStatus = 'paused';
+        }
 
         return {
           id: acc.id,
@@ -318,6 +410,36 @@ Deno.serve(async (req: Request) => {
             adsets: freshness.levels.adset || 0,
             ads: freshness.levels.ad || 0,
           } : null,
+          // Informações de atividade recente (últimas 48h)
+          recent_activity: recentActivity ? {
+            has_recent_spend: recentActivity.has_recent_spend,
+            has_recent_impressions: recentActivity.has_recent_impressions,
+            last_activity_date: recentActivity.last_activity_date,
+            active_ads_count: entityCountsForAccount?.ad?.active || 0,
+            recent_metrics: {
+              spend: recentActivity.recent_spend,
+              impressions: recentActivity.recent_impressions,
+              clicks: recentActivity.recent_clicks,
+              reach: recentActivity.recent_reach,
+            },
+            activity_status: activityStatus,
+            days_since_last_activity: recentActivity.days_since_last_activity,
+            is_really_active: hasRecentActivity,
+          } : {
+            has_recent_spend: false,
+            has_recent_impressions: false,
+            last_activity_date: null,
+            active_ads_count: entityCountsForAccount?.ad?.active || 0,
+            recent_metrics: {
+              spend: 0,
+              impressions: 0,
+              clicks: 0,
+              reach: 0,
+            },
+            activity_status: activityStatus,
+            days_since_last_activity: null,
+            is_really_active: false,
+          },
         };
       }) || [],
       sync_states: syncStates?.map((state) => ({

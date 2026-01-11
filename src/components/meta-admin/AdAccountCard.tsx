@@ -33,6 +33,8 @@ import {
   Grid3X3,
   ImageIcon,
   Calendar,
+  Activity,
+  Zap,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
@@ -48,6 +50,26 @@ interface EntityCounts {
   campaign: EntityCount;
   adset: EntityCount;
   ad: EntityCount;
+}
+
+// Interface para métricas recentes (últimas 48h)
+interface RecentMetrics {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  reach: number;
+}
+
+// Interface para atividade recente da conta
+interface RecentActivity {
+  has_recent_spend: boolean;
+  has_recent_impressions: boolean;
+  last_activity_date: string | null;
+  active_ads_count: number;
+  recent_metrics: RecentMetrics;
+  activity_status: 'active' | 'paused' | 'inactive';
+  days_since_last_activity: number | null;
+  is_really_active: boolean;
 }
 
 // Interface para os dados da conta de anuncios
@@ -74,6 +96,8 @@ export interface AdAccountData {
     cpc?: number;
     cpm?: number;
   };
+  // Informações de atividade recente (últimas 48h)
+  recentActivity?: RecentActivity;
 }
 
 interface AdAccountCardProps {
@@ -183,8 +207,25 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     return value.toLocaleString('pt-BR');
   };
 
-  // Retorna cor da borda lateral baseado no status de sincronização
+  // Retorna cor da borda lateral baseado no status de atividade real e sincronização
   const getPerformanceColor = (): string => {
+    // Prioridade 1: Status de atividade real (se disponível)
+    if (account.recentActivity) {
+      // Conta realmente ativa (com spend ou impressões nas últimas 48h)
+      if (account.recentActivity.is_really_active) {
+        return 'border-l-4 border-l-emerald-500';
+      }
+      // Tem anúncios ativos mas sem métricas recentes (ramp-up ou problema)
+      if (account.recentActivity.activity_status === 'paused' && account.recentActivity.active_ads_count > 0) {
+        return 'border-l-4 border-l-amber-500';
+      }
+      // Inativa (sem anúncios ativos e sem métricas)
+      if (account.recentActivity.activity_status === 'inactive') {
+        return 'border-l-4 border-l-gray-400';
+      }
+    }
+
+    // Prioridade 2: Status de sincronização (fallback)
     // Se está sincronizado, borda verde
     if (account.syncStatus === 'synced') {
       return 'border-l-4 border-l-green-500';
@@ -394,6 +435,27 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
             <Badge variant={getStatusVariant()}>
               {getStatusText()}
             </Badge>
+            {/* Badge de atividade real (últimas 48h) */}
+            {account.recentActivity && (
+              <>
+                {account.recentActivity.is_really_active ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-300 animate-pulse">
+                    <Zap className="w-3 h-3 mr-1" />
+                    Ativa Agora
+                  </span>
+                ) : account.recentActivity.activity_status === 'paused' && account.recentActivity.active_ads_count > 0 ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-amber-100 text-amber-700 border-amber-300">
+                    <Activity className="w-3 h-3 mr-1" />
+                    Sem Atividade
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-gray-100 text-gray-600 border-gray-300">
+                    <Activity className="w-3 h-3 mr-1" />
+                    Inativa
+                  </span>
+                )}
+              </>
+            )}
             <span className="text-xs text-gray-500 font-mono">{account.metaId}</span>
           </div>
         </div>
@@ -478,6 +540,69 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
             <p className="text-sm font-semibold text-gray-900">
               {formatCurrency(cpm, account.currency)}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Seção de Métricas Recentes (Últimas 48h) */}
+      {account.recentActivity && account.recentActivity.is_really_active && (
+        <div className="mb-4 pb-4 border-b border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-2">
+              <Activity className="w-4 h-4 text-emerald-600" />
+              <h4 className="text-sm font-semibold text-gray-900">Atividade Recente (48h)</h4>
+            </div>
+            {account.recentActivity.days_since_last_activity !== null && (
+              <span className="text-xs text-gray-500">
+                Última atividade: {account.recentActivity.days_since_last_activity === 0 ? 'hoje' : `há ${account.recentActivity.days_since_last_activity}d`}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {/* Gasto Recente */}
+            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-lg p-2.5 border border-emerald-200">
+              <div className="flex items-center space-x-1.5 mb-1">
+                <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
+                <span className="text-xs font-medium text-emerald-700">Gasto</span>
+              </div>
+              <p className="text-base font-bold text-emerald-900">
+                {formatCurrency(account.recentActivity.recent_metrics.spend || 0, account.currency)}
+              </p>
+            </div>
+
+            {/* Impressões Recentes */}
+            <div className="bg-gradient-to-br from-sky-50 to-sky-100/50 rounded-lg p-2.5 border border-sky-200">
+              <div className="flex items-center space-x-1.5 mb-1">
+                <Eye className="h-3.5 w-3.5 text-sky-600" />
+                <span className="text-xs font-medium text-sky-700">Impressões</span>
+              </div>
+              <p className="text-base font-bold text-sky-900">
+                {formatCompact(account.recentActivity.recent_metrics.impressions)}
+              </p>
+            </div>
+
+            {/* Cliques Recentes */}
+            <div className="bg-gradient-to-br from-orange-50 to-orange-100/50 rounded-lg p-2.5 border border-orange-200">
+              <div className="flex items-center space-x-1.5 mb-1">
+                <MousePointer className="h-3.5 w-3.5 text-orange-600" />
+                <span className="text-xs font-medium text-orange-700">Cliques</span>
+              </div>
+              <p className="text-base font-bold text-orange-900">
+                {formatCompact(account.recentActivity.recent_metrics.clicks)}
+              </p>
+            </div>
+
+            {/* Anúncios Ativos */}
+            <div className="bg-gradient-to-br from-teal-50 to-teal-100/50 rounded-lg p-2.5 border border-teal-200">
+              <div className="flex items-center space-x-1.5 mb-1">
+                <Zap className="h-3.5 w-3.5 text-teal-600" />
+                <span className="text-xs font-medium text-teal-700">Ads Ativos</span>
+              </div>
+              <p className="text-base font-bold text-teal-900">
+                {account.recentActivity.active_ads_count}
+              </p>
+            </div>
           </div>
         </div>
       )}
