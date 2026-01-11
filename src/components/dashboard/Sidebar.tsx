@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
+import { UpgradeBanner } from './UpgradeBanner';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -251,52 +252,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </nav>
 
-          {/* Card de Upgrade Pro - Design persuasivo com ilustracao */}
-          <div className="p-3 flex-shrink-0">
-            <div className="rounded-2xl relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 shadow-xl group cursor-pointer hover:shadow-2xl transition-all duration-300">
-              {/* Efeito de brilho sutil no hover */}
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-
-              {/* Padrao decorativo de fundo */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/20 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2" />
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-400/15 rounded-full blur-xl translate-y-1/2 -translate-x-1/2" />
-
-              {/* Container do conteudo */}
-              <div className="relative z-10 p-4 flex gap-3">
-                {/* Imagem da ilustracao */}
-                <div className="flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden shadow-lg border-2 border-white/20">
-                  <img
-                    src="/a-confident-smiling-woma33 copy copy.jpg"
-                    alt="Upgrade para Pro"
-                    className="w-full h-full object-cover object-top"
-                  />
-                </div>
-
-                {/* Textos e CTA */}
-                <div className="flex-1 flex flex-col justify-center min-w-0">
-                  {/* Badge PRO */}
-                  <span className="inline-flex items-center self-start px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-amber-900 mb-1.5 shadow-sm">
-                    PRO
-                  </span>
-
-                  {/* Titulo */}
-                  <h3 className="font-bold text-white text-[14px] leading-tight mb-1">
-                    Desbloqueie todo o potencial
-                  </h3>
-
-                  {/* Descricao */}
-                  <p className="text-[11px] text-blue-100/90 leading-snug mb-2.5">
-                    Analises avancadas, campanhas ilimitadas e suporte prioritario
-                  </p>
-
-                  {/* Botao de Upgrade */}
-                  <button className="w-full bg-white text-blue-700 text-[12px] font-bold py-2 rounded-lg hover:bg-blue-50 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
-                    Fazer Upgrade Agora
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Banner de Upgrade Pro - Componente com exibicao condicional */}
+          <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} />
         </div>
       </aside>
     </>
