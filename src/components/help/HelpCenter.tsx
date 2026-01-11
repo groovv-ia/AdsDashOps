@@ -5,7 +5,7 @@
  * Paleta de cores simplificada (azul/cinza) para manter consistência com o sistema
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Search,
@@ -28,10 +28,14 @@ import {
   BarChart3,
   Shield,
   RefreshCw,
-  Layers
+  Layers,
+  Sparkles
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import ChatService from '../../lib/services/ChatService';
+import { useAuth } from '../../hooks/useAuth';
+import { useCurrentWorkspace } from '../../contexts/WorkspaceContext';
 
 interface HelpCenterProps {
   isOpen: boolean;
@@ -352,7 +356,26 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [chatMessage, setChatMessage] = useState('');
-  const [chatHistory, setChatHistory] = useState<Array<{id: string, message: string, sender: 'user' | 'bot', timestamp: Date}>>([]);
+  const [chatHistory, setChatHistory] = useState<Array<{
+    id: string;
+    message: string;
+    sender: 'user' | 'bot';
+    timestamp: Date;
+    suggestions?: string[];
+    quickActions?: { label: string; action: string }[];
+  }>>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [quickSuggestions, setQuickSuggestions] = useState<string[]>([
+    'Conectar Meta Ads',
+    'Ver minhas métricas',
+    'Problema com sincronização',
+    'Criar dashboard personalizado'
+  ]);
+
+  const chatService = ChatService.getInstance();
+  const { user } = useAuth();
+  const currentWorkspace = useCurrentWorkspace();
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -402,7 +425,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
     }
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!chatMessage.trim()) return;
 
     const userMessage = {
@@ -413,18 +436,89 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
     };
 
     setChatHistory(prev => [...prev, userMessage]);
+    setChatMessage('');
+    setIsTyping(true);
 
+    // Scroll para o final
     setTimeout(() => {
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
+    }, 100);
+
+    try {
+      // Simula delay de digitação (500-1500ms)
+      const typingDelay = 500 + Math.random() * 1000;
+      await new Promise(resolve => setTimeout(resolve, typingDelay));
+
+      // Gera resposta inteligente
+      const response = await chatService.generateResponse(
+        userMessage.message,
+        currentWorkspace?.id
+      );
+
+      // Salva conversa no banco (se usuário estiver logado)
+      if (user?.id) {
+        await chatService.saveConversation(
+          user.id,
+          currentWorkspace?.id || null,
+          userMessage.message,
+          response
+        );
+      }
+
       const botResponse = {
         id: (Date.now() + 1).toString(),
-        message: 'Obrigado pela sua mensagem! Nossa equipe de suporte analisará sua solicitação e responderá em breve. Para respostas mais rápidas, verifique nosso FAQ com as perguntas mais comuns.',
+        message: response.message,
+        sender: 'bot' as const,
+        timestamp: new Date(),
+        suggestions: response.suggestions,
+        quickActions: response.quickActions
+      };
+
+      setChatHistory(prev => [...prev, botResponse]);
+
+      // Atualiza sugestões rápidas
+      if (response.suggestions && response.suggestions.length > 0) {
+        setQuickSuggestions(response.suggestions);
+      }
+    } catch (error) {
+      console.error('Erro ao gerar resposta:', error);
+
+      const errorResponse = {
+        id: (Date.now() + 1).toString(),
+        message: 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente ou entre em contato com suporte@adsops.com',
         sender: 'bot' as const,
         timestamp: new Date()
       };
-      setChatHistory(prev => [...prev, botResponse]);
-    }, 1000);
 
-    setChatMessage('');
+      setChatHistory(prev => [...prev, errorResponse]);
+    } finally {
+      setIsTyping(false);
+
+      // Scroll para o final após resposta
+      setTimeout(() => {
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+      }, 100);
+    }
+  };
+
+  const handleQuickSuggestion = (suggestion: string) => {
+    setChatMessage(suggestion);
+    setTimeout(() => handleSendMessage(), 100);
+  };
+
+  const handleQuickAction = (action: string) => {
+    if (action.startsWith('navigate:')) {
+      const path = action.replace('navigate:', '');
+      window.location.href = path;
+      onClose();
+    } else if (action.startsWith('email:')) {
+      const emailUrl = action.replace('email:', '');
+      window.open(`mailto:${emailUrl}`, '_blank');
+    }
   };
 
   const handleBack = () => {
@@ -586,20 +680,28 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
   const renderChat = () => (
     <div className="flex flex-col h-full">
       <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-blue-700">
-        <div className="flex items-center space-x-3">
-          <img
-            src="/logotipo-adsops.webp"
-            alt="AdsOPS Logo"
-            className="w-10 h-10 rounded-lg bg-white p-1.5"
-          />
-          <div>
-            <h3 className="text-lg font-semibold text-white">Suporte AdsOPS</h3>
-            <p className="text-sm text-blue-100">Respondemos em até 2 horas</p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <img
+              src="/logotipo-adsops.webp"
+              alt="AdsOPS Logo"
+              className="w-10 h-10 rounded-lg bg-white p-1.5"
+            />
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-lg font-semibold text-white">Suporte AdsOPS</h3>
+                <Sparkles className="w-4 h-4 text-yellow-300" />
+              </div>
+              <p className="text-sm text-blue-100">Assistente Inteligente</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-gray-50">
+      <div
+        ref={chatContainerRef}
+        className="flex-1 p-6 overflow-y-auto space-y-4 bg-gray-50"
+      >
         {chatHistory.length === 0 ? (
           <div className="text-center py-8">
             <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -609,16 +711,91 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
                 className="w-14 h-14"
               />
             </div>
-            <h4 className="font-medium text-gray-900 mb-2">Como podemos ajudar?</h4>
-            <p className="text-sm text-gray-600">Descreva seu problema ou dúvida e nossa equipe ajudará você.</p>
+            <h4 className="font-medium text-gray-900 mb-2">Como posso te ajudar?</h4>
+            <p className="text-sm text-gray-600 mb-6">Faça uma pergunta ou escolha um tópico abaixo</p>
+
+            <div className="flex flex-wrap gap-2 justify-center max-w-sm mx-auto">
+              {quickSuggestions.map((suggestion, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleQuickSuggestion(suggestion)}
+                  className="px-3 py-2 text-xs bg-white text-gray-700 rounded-full border border-gray-200 hover:border-blue-500 hover:text-blue-600 hover:shadow-sm transition-all duration-200"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
-          chatHistory.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'} items-end space-x-2`}
-            >
-              {message.sender === 'bot' && (
+          <>
+            {chatHistory.map((message) => (
+              <div key={message.id} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div
+                  className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'} items-end space-x-2`}
+                >
+                  {message.sender === 'bot' && (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                      <img
+                        src="/logotipo-adsops.webp"
+                        alt="AdsOPS"
+                        className="w-6 h-6"
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-col space-y-2 max-w-xs lg:max-w-md">
+                    <div
+                      className={`px-4 py-2.5 rounded-lg ${
+                        message.sender === 'user'
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'bg-white text-gray-900 border border-gray-200 shadow-sm'
+                      }`}
+                    >
+                      <p className="text-sm leading-relaxed whitespace-pre-line">{message.message}</p>
+                      <p className={`text-xs mt-1 ${
+                        message.sender === 'user' ? 'text-blue-100' : 'text-gray-500'
+                      }`}>
+                        {message.timestamp.toLocaleTimeString('pt-BR', {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+
+                    {message.sender === 'bot' && message.quickActions && message.quickActions.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {message.quickActions.map((action, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleQuickAction(action.action)}
+                            className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            <span>{action.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {message.sender === 'bot' && message.suggestions && message.suggestions.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {message.suggestions.map((suggestion, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleQuickSuggestion(suggestion)}
+                            className="px-3 py-1.5 text-xs bg-gray-50 text-gray-700 rounded-full border border-gray-200 hover:border-blue-500 hover:text-blue-600 hover:bg-white transition-all"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {isTyping && (
+              <div className="flex justify-start items-end space-x-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
                   <img
                     src="/logotipo-adsops.webp"
@@ -626,43 +803,41 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({ isOpen, onClose }) => {
                     className="w-6 h-6"
                   />
                 </div>
-              )}
-              <div
-                className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-lg ${
-                  message.sender === 'user'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-white text-gray-900 border border-gray-200 shadow-sm'
-                }`}
-              >
-                <p className="text-sm leading-relaxed">{message.message}</p>
-                <p className={`text-xs mt-1 ${
-                  message.sender === 'user' ? 'text-blue-100' : 'text-gray-500'
-                }`}>
-                  {message.timestamp.toLocaleTimeString('pt-BR', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </p>
+                <div className="px-4 py-3 rounded-lg bg-white border border-gray-200 shadow-sm">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))
+            )}
+          </>
         )}
       </div>
 
-      <div className="p-6 border-t border-gray-200 bg-white">
+      <div className="p-4 border-t border-gray-200 bg-white">
         <div className="flex space-x-2">
           <input
             type="text"
             value={chatMessage}
             onChange={(e) => setChatMessage(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
             placeholder="Digite sua mensagem..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            disabled={isTyping}
+            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:cursor-not-allowed transition-all"
           />
-          <Button onClick={handleSendMessage} disabled={!chatMessage.trim()}>
+          <Button
+            onClick={handleSendMessage}
+            disabled={!chatMessage.trim() || isTyping}
+            className="px-4"
+          >
             <Send className="w-4 h-4" />
           </Button>
         </div>
+        <p className="text-xs text-gray-500 mt-2 text-center">
+          Powered by AdsOPS AI
+        </p>
       </div>
     </div>
   );
