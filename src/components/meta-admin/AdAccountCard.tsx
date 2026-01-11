@@ -149,7 +149,11 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
   };
 
   // Formata numeros grandes de forma compacta (ex: 1.5K, 2.3M)
-  const formatCompact = (value: number) => {
+  // Retorna '0' se o valor for undefined ou null
+  const formatCompact = (value: number | undefined | null) => {
+    if (value === undefined || value === null) {
+      return '0';
+    }
     if (value >= 1000000) {
       return `${(value / 1000000).toFixed(1)}M`;
     }
@@ -298,12 +302,22 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
     return `${minutes}min ${seconds}s`;
   };
 
-  // Calcula CPC e CPM se nao estiver presente
-  const cpc = account.metrics?.cpc ?? (account.metrics?.clicks ? account.metrics.spend / account.metrics.clicks : 0);
-  const cpm = account.metrics?.cpm ?? (account.metrics?.impressions ? (account.metrics.spend / account.metrics.impressions) * 1000 : 0);
+  // Calcula CPC e CPM se nao estiver presente (com verificacoes de undefined)
+  const cpc = account.metrics?.cpc ?? (
+    account.metrics?.clicks && account.metrics?.spend
+      ? account.metrics.spend / account.metrics.clicks
+      : 0
+  );
+  const cpm = account.metrics?.cpm ?? (
+    account.metrics?.impressions && account.metrics?.spend
+      ? (account.metrics.spend / account.metrics.impressions) * 1000
+      : 0
+  );
 
-  // Verifica se a conta tem metricas
-  const hasMetrics = account.metrics && (account.metrics.impressions > 0 || account.metrics.spend > 0);
+  // Verifica se a conta tem metricas completas (spend e impressions definidos)
+  const hasMetrics = account.metrics &&
+    typeof account.metrics.spend === 'number' &&
+    ((account.metrics.impressions || 0) > 0 || account.metrics.spend > 0);
 
   return (
     <Card
@@ -339,7 +353,8 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
       </div>
 
       {/* Secao de metricas principais - Grid 2x2 com gradientes */}
-      {account.metrics && (
+      {/* So mostra metricas se tiver spend, impressions, clicks (estrutura completa) */}
+      {account.metrics && typeof account.metrics.spend === 'number' && (
         <div className="grid grid-cols-2 gap-3 mb-4">
           {/* Gasto */}
           <div className="bg-gradient-to-br from-green-50 to-green-100/50 rounded-lg p-3 border border-green-200">
@@ -348,7 +363,7 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
               <span className="text-xs font-medium text-green-700">Gasto</span>
             </div>
             <p className="text-xl font-bold text-green-900">
-              {formatCurrency(account.metrics.spend, account.currency)}
+              {formatCurrency(account.metrics.spend || 0, account.currency)}
             </p>
           </div>
 
@@ -381,26 +396,26 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
               <span className="text-xs font-medium text-teal-700">Alcance</span>
             </div>
             <p className="text-xl font-bold text-teal-900">
-              {formatCompact(account.metrics.reach || 0)}
+              {formatCompact(account.metrics.reach)}
             </p>
           </div>
         </div>
       )}
 
       {/* Secao de metricas calculadas - linha horizontal */}
-      {account.metrics && (
+      {account.metrics && typeof account.metrics.ctr === 'number' && (
         <div className="grid grid-cols-3 gap-2 mb-4 pb-4 border-b border-gray-200">
           <div className="text-center">
             <p className="text-xs text-gray-500 mb-1">CTR</p>
             <div className="flex items-center justify-center space-x-1">
               <p className="text-sm font-semibold text-gray-900">
-                {account.metrics.ctr.toFixed(2)}%
+                {(account.metrics.ctr || 0).toFixed(2)}%
               </p>
-              {account.metrics.ctr >= 2 ? (
+              {(account.metrics.ctr || 0) >= 2 ? (
                 <TrendingUp className="h-3 w-3 text-green-600" />
-              ) : account.metrics.ctr >= 1 ? (
+              ) : (account.metrics.ctr || 0) >= 1 ? (
                 <TrendingUp className="h-3 w-3 text-yellow-600" />
-              ) : account.metrics.ctr > 0 ? (
+              ) : (account.metrics.ctr || 0) > 0 ? (
                 <TrendingDown className="h-3 w-3 text-red-600" />
               ) : null}
             </div>

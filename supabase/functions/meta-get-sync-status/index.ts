@@ -1,15 +1,10 @@
 /**
  * Edge Function: meta-get-sync-status
- * 
+ *
  * Retorna o status de sincronizacao do Meta Ads.
- * 
- * GET /functions/v1/meta-get-sync-status?client_id=...
- * 
- * Retorna:
- * - Status da conexao
- * - Ultima execucao daily/intraday
- * - Jobs recentes com erro
- * - Data freshness por conta
+ *
+ * CORRECAO: Usa UUIDs (acc.id) ao inves de strings (acc.meta_ad_account_id)
+ * para consultar meta_insights_daily, pois a tabela armazena UUIDs como FK.
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -77,29 +72,17 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (ownedWorkspace) {
-      console.log(`[meta-get-sync-status] ✓ Workspace encontrado como owner: ${ownedWorkspace.id}`);
       workspace = ownedWorkspace;
     } else {
-      console.log(`[meta-get-sync-status] Não é owner, buscando como membro...`);
-
-      // Se não é owner, busca como membro
+      // Se nao e owner, busca como membro
       const { data: memberWorkspace } = await supabaseAdmin
         .from("workspace_members")
-        .select(`
-          workspace_id,
-          workspaces!inner (
-            id,
-            name
-          )
-        `)
+        .select("workspace_id, workspaces!inner(id, name)")
         .eq("user_id", user.id)
         .maybeSingle();
 
       if (memberWorkspace && memberWorkspace.workspaces) {
-        console.log(`[meta-get-sync-status] ✓ Workspace encontrado como membro: ${memberWorkspace.workspaces.id}`);
         workspace = memberWorkspace.workspaces;
-      } else {
-        console.log(`[meta-get-sync-status] ❌ Nenhum workspace encontrado`);
       }
     }
 
@@ -117,7 +100,7 @@ Deno.serve(async (req: Request) => {
       .eq("workspace_id", workspace.id)
       .maybeSingle();
 
-    // 2. Busca ad accounts - corrigido: usa timezone_name ao inves de timezone
+    // 2. Busca ad accounts
     const { data: adAccounts, error: adAccountsError } = await supabaseAdmin
       .from("meta_ad_accounts")
       .select("id, meta_ad_account_id, name, currency, timezone_name, account_status")
@@ -127,41 +110,30 @@ Deno.serve(async (req: Request) => {
       console.error("Erro ao buscar ad accounts:", adAccountsError);
     }
 
-    console.log(`[meta-get-sync-status] workspace_id: ${workspace.id}`);
     console.log(`[meta-get-sync-status] Found ${adAccounts?.length || 0} ad accounts`);
-    if (adAccounts && adAccounts.length > 0) {
-      console.log(`[meta-get-sync-status] First account:`, adAccounts[0]);
+
+    // CORRECAO: Usa UUIDs (acc.id) para consultas em meta_insights_daily
+    // porque a FK meta_ad_account_id referencia meta_ad_accounts.id
+    const accountUuids = adAccounts?.map((a) => a.id) || [];
+    // Strings meta_id (act_xxx) para consultas em meta_sync_state e meta_sync_jobs
+    const accountMetaIds = adAccounts?.map((a) => a.meta_ad_account_id) || [];
+
+    // 3. Busca sync states (usa meta_ad_account_id strings)
+    let syncStatesQuery = supabaseAdmin.from("meta_sync_state").select("*");
+    if (accountMetaIds.length > 0) {
+      syncStatesQuery = syncStatesQuery.in("meta_ad_account_id", accountMetaIds);
     }
-
-    // 3. Busca sync states
-    // IMPORTANTE: Busca TODOS os sync_states das contas do workspace
-    // Não filtra por client_id aqui, pois queremos mostrar todas as contas disponíveis
-    const accountIds = adAccounts?.map((a) => a.meta_ad_account_id) || [];
-
-    let syncStatesQuery = supabaseAdmin
-      .from("meta_sync_state")
-      .select("*");
-
-    if (accountIds.length > 0) {
-      syncStatesQuery = syncStatesQuery.in("meta_ad_account_id", accountIds);
-    }
-
     const { data: syncStates } = await syncStatesQuery;
 
-    console.log(`[meta-get-sync-status] Found ${syncStates?.length || 0} sync states`);
-    if (syncStates && syncStates.length > 0) {
-      console.log(`[meta-get-sync-status] First sync state:`, syncStates[0]);
-    }
-
-    // 4. Busca jobs recentes (com erro ou em execucao)
+    // 4. Busca jobs recentes (usa meta_ad_account_id strings)
     const { data: recentJobs } = await supabaseAdmin
       .from("meta_sync_jobs")
       .select("*")
-      .in("meta_ad_account_id", accountIds.length > 0 ? accountIds : [''])
+      .in("meta_ad_account_id", accountMetaIds.length > 0 ? accountMetaIds : [""])
       .order("created_at", { ascending: false })
       .limit(20);
 
-    // 5. Busca ultimo job completado de cada conta para obter metricas de sincronizacao
+    // 5. Busca ultimo job completado de cada conta (usa meta_ad_account_id strings)
     const lastCompletedJobsByAccount: Record<string, {
       duration_seconds: number | null;
       total_records_synced: number | null;
@@ -189,13 +161,15 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 6. Busca totais de insights
+    // 6. Busca totais de insights - CORRECAO: usa UUIDs!
     const { data: insightsTotals } = await supabaseAdmin
       .from("meta_insights_daily")
       .select("meta_ad_account_id, level, date")
-      .in("meta_ad_account_id", accountIds.length > 0 ? accountIds : ['']);
+      .in("meta_ad_account_id", accountUuids.length > 0 ? accountUuids : [""]);
 
-    // Processa data freshness por conta
+    console.log(`[meta-get-sync-status] Found ${insightsTotals?.length || 0} insight rows`);
+
+    // Processa data freshness por conta - indexado por UUID
     const accountFreshness: Record<string, {
       total_rows: number;
       latest_date: string | null;
@@ -204,21 +178,21 @@ Deno.serve(async (req: Request) => {
 
     if (insightsTotals) {
       for (const insight of insightsTotals) {
-        const accountId = insight.meta_ad_account_id;
-        if (!accountFreshness[accountId]) {
-          accountFreshness[accountId] = {
+        const accountUuid = insight.meta_ad_account_id;
+        if (!accountFreshness[accountUuid]) {
+          accountFreshness[accountUuid] = {
             total_rows: 0,
             latest_date: null,
             levels: { campaign: 0, adset: 0, ad: 0 },
           };
         }
-        accountFreshness[accountId].total_rows++;
-        accountFreshness[accountId].levels[insight.level] = 
-          (accountFreshness[accountId].levels[insight.level] || 0) + 1;
-        
-        if (!accountFreshness[accountId].latest_date || 
-            insight.date > accountFreshness[accountId].latest_date) {
-          accountFreshness[accountId].latest_date = insight.date;
+        accountFreshness[accountUuid].total_rows++;
+        accountFreshness[accountUuid].levels[insight.level] =
+          (accountFreshness[accountUuid].levels[insight.level] || 0) + 1;
+
+        if (!accountFreshness[accountUuid].latest_date ||
+            insight.date > accountFreshness[accountUuid].latest_date) {
+          accountFreshness[accountUuid].latest_date = insight.date;
         }
       }
     }
@@ -262,8 +236,6 @@ Deno.serve(async (req: Request) => {
       healthStatus = "pending_first_sync";
     }
 
-    console.log(`[meta-get-sync-status] Preparing response with ${adAccounts?.length || 0} ad accounts`);
-
     const response = {
       workspace: {
         id: workspace.id,
@@ -279,6 +251,8 @@ Deno.serve(async (req: Request) => {
       ad_accounts: adAccounts?.map((acc) => {
         const syncState = syncStates?.find((s) => s.meta_ad_account_id === acc.meta_ad_account_id);
         const lastJobMetrics = lastCompletedJobsByAccount[acc.meta_ad_account_id];
+        // CORRECAO: Usa acc.id (UUID) para buscar freshness
+        const freshness = accountFreshness[acc.id] || null;
 
         return {
           id: acc.id,
@@ -287,10 +261,17 @@ Deno.serve(async (req: Request) => {
           currency: acc.currency,
           timezone: acc.timezone_name,
           status: acc.account_status,
-          freshness: accountFreshness[acc.meta_ad_account_id] || null,
+          freshness: freshness,
           last_sync_at: syncState?.last_success_at || lastJobMetrics?.ended_at || null,
           last_sync_duration: lastJobMetrics?.duration_seconds || null,
           last_sync_records_count: lastJobMetrics?.total_records_synced || null,
+          // Adiciona metricas agregadas se houver freshness
+          metrics: freshness ? {
+            total_rows: freshness.total_rows,
+            campaigns: freshness.levels.campaign || 0,
+            adsets: freshness.levels.adset || 0,
+            ads: freshness.levels.ad || 0,
+          } : null,
         };
       }) || [],
       sync_states: syncStates?.map((state) => ({
