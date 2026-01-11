@@ -144,6 +144,16 @@ body {
   background: var(--text-tertiary);
 }
 
+/* Hide scrollbar utility class */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Focus styles for accessibility */
 .focus\:ring-2:focus {
   outline: 2px solid transparent;

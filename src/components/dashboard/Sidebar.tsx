@@ -143,7 +143,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Navegacao */}
-          <nav className="flex-1 overflow-y-auto py-4">
+          <nav className="flex-1 overflow-y-auto py-4 scrollbar-hide">
             {/* Secoes colapsaveis (Meta Ads, Google Ads) */}
             <div className="px-3 space-y-2">
               {menuSections.map((section) => {
