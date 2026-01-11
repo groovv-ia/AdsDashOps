@@ -13,10 +13,12 @@
     "@supabase/supabase-js": "^2.39.0",
     "@types/papaparse": "^5.3.14",
     "axios-retry": "^4.5.0",
+    "clsx": "^2.1.1",
     "crypto-js": "^4.2.0",
     "date-fns": "^3.0.6",
     "date-fns-tz": "^3.2.0",
     "facebook-nodejs-business-sdk": "^24.0.0",
+    "framer-motion": "^12.25.0",
     "google-ads-api": "^21.0.1",
     "jspdf": "^2.5.1",
     "lucide-react": "^0.344.0",
@@ -25,7 +27,8 @@
     "react": "^18.3.1",
     "react-datepicker": "^4.25.0",
     "react-dom": "^18.3.1",
-    "recharts": "^2.10.3"
+    "recharts": "^2.10.3",
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
