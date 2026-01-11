@@ -31,7 +31,7 @@ import { AdAccountCard, AdAccountData } from './AdAccountCard';
 import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems } from './BreadcrumbNav';
 import { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
 import { SyncStatusBadge, SyncStatus } from './SyncStatusBadge';
-import { AccountFilters, StatusFilter, SyncFilter, SortOption } from './AccountFilters';
+import { AccountFilters, StatusFilter, SyncFilter, SortOption, ActivityFilter } from './AccountFilters';
 import {
   runMetaSync,
   getMetaSyncStatus,
@@ -157,6 +157,29 @@ export const MetaAdsSyncPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [syncFilter, setSyncFilter] = useState<SyncFilter>('all');
   const [sortBy, setSortBy] = useState<SortOption>('name-asc');
+
+  // Filtro de atividade - carrega preferencia do localStorage
+  const [activityFilter, setActivityFilterState] = useState<ActivityFilter>(() => {
+    try {
+      const saved = localStorage.getItem('meta_ads_activity_filter');
+      if (saved && ['all', 'with-data', 'without-data'].includes(saved)) {
+        return saved as ActivityFilter;
+      }
+    } catch {
+      // Ignora erro de localStorage
+    }
+    return 'all';
+  });
+
+  // Handler para atualizar filtro de atividade e salvar no localStorage
+  const setActivityFilter = (filter: ActivityFilter) => {
+    setActivityFilterState(filter);
+    try {
+      localStorage.setItem('meta_ads_activity_filter', filter);
+    } catch {
+      // Ignora erro de localStorage
+    }
+  };
 
   // Mensagens
   const [error, setError] = useState<string | null>(null);
@@ -647,7 +670,7 @@ export const MetaAdsSyncPage: React.FC = () => {
       });
     }
 
-    // Aplica filtro de status de sincronização
+    // Aplica filtro de status de sincronizacao
     if (syncFilter !== 'all') {
       filtered = filtered.filter((account) => {
         if (syncFilter === 'synced') {
@@ -661,7 +684,23 @@ export const MetaAdsSyncPage: React.FC = () => {
       });
     }
 
-    // Aplica ordenação
+    // Aplica filtro de atividade (gasto > 0 E anuncios ativos > 0)
+    if (activityFilter !== 'all') {
+      filtered = filtered.filter((account) => {
+        const hasSpend = (account.metrics?.spend || 0) > 0;
+        const hasActiveAds = (account.entityCounts?.ad?.active || 0) > 0;
+        const hasData = hasSpend && hasActiveAds;
+
+        if (activityFilter === 'with-data') {
+          return hasData;
+        } else if (activityFilter === 'without-data') {
+          return !hasData;
+        }
+        return true;
+      });
+    }
+
+    // Aplica ordenacao
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'name-asc':
@@ -682,7 +721,7 @@ export const MetaAdsSyncPage: React.FC = () => {
     });
 
     return filtered;
-  }, [accountCards, searchQuery, statusFilter, syncFilter, sortBy]);
+  }, [accountCards, searchQuery, statusFilter, syncFilter, activityFilter, sortBy]);
 
   // Breadcrumb items
   const breadcrumbItems = useMemo(() => createBreadcrumbItems(navigationState), [navigationState]);
@@ -942,6 +981,8 @@ export const MetaAdsSyncPage: React.FC = () => {
             onStatusFilterChange={setStatusFilter}
             syncFilter={syncFilter}
             onSyncFilterChange={setSyncFilter}
+            activityFilter={activityFilter}
+            onActivityFilterChange={setActivityFilter}
             sortBy={sortBy}
             onSortChange={setSortBy}
             totalCount={accountCards.length}
@@ -986,6 +1027,7 @@ export const MetaAdsSyncPage: React.FC = () => {
                 setSearchQuery('');
                 setStatusFilter('all');
                 setSyncFilter('all');
+                setActivityFilter('all');
               }}
               className="mx-auto"
             >
