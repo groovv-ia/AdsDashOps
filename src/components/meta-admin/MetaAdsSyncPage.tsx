@@ -31,6 +31,7 @@ import { AdAccountCard, AdAccountData } from './AdAccountCard';
 import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems } from './BreadcrumbNav';
 import { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
 import { SyncStatusBadge, SyncStatus } from './SyncStatusBadge';
+import { AccountFilters, StatusFilter, SyncFilter, SortOption } from './AccountFilters';
 import {
   runMetaSync,
   getMetaSyncStatus,
@@ -150,6 +151,12 @@ export const MetaAdsSyncPage: React.FC = () => {
     const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === 'last_7');
     return preset ? preset.getDateRange() : { dateFrom: '', dateTo: '' };
   });
+
+  // Filtros de busca e ordenacao de contas
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [syncFilter, setSyncFilter] = useState<SyncFilter>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('name-asc');
 
   // Mensagens
   const [error, setError] = useState<string | null>(null);
@@ -616,6 +623,67 @@ export const MetaAdsSyncPage: React.FC = () => {
     });
   }, [syncStatus, syncingAccountId, syncProgress]);
 
+  // Filtra e ordena as contas com base nos filtros ativos
+  const filteredAndSortedAccounts = useMemo(() => {
+    let filtered = [...accountCards];
+
+    // Aplica filtro de busca por nome
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((account) =>
+        account.name.toLowerCase().includes(query)
+      );
+    }
+
+    // Aplica filtro de status da conta (active/paused)
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((account) => {
+        if (statusFilter === 'active') {
+          return account.status === 1 || account.status === 'ACTIVE';
+        } else if (statusFilter === 'paused') {
+          return account.status === 2 || account.status === 'PAUSED';
+        }
+        return true;
+      });
+    }
+
+    // Aplica filtro de status de sincronização
+    if (syncFilter !== 'all') {
+      filtered = filtered.filter((account) => {
+        if (syncFilter === 'synced') {
+          return account.syncStatus === 'synced';
+        } else if (syncFilter === 'not-synced') {
+          return account.syncStatus === 'never' || account.syncStatus === 'stale';
+        } else if (syncFilter === 'error') {
+          return account.syncStatus === 'error';
+        }
+        return true;
+      });
+    }
+
+    // Aplica ordenação
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'name-asc':
+          return a.name.localeCompare(b.name);
+        case 'name-desc':
+          return b.name.localeCompare(a.name);
+        case 'spend-desc':
+          return (b.metrics?.spend || 0) - (a.metrics?.spend || 0);
+        case 'date-desc':
+          // Ordena por data de última sincronização (mais recente primeiro)
+          if (!a.lastSyncAt && !b.lastSyncAt) return 0;
+          if (!a.lastSyncAt) return 1;
+          if (!b.lastSyncAt) return -1;
+          return new Date(b.lastSyncAt).getTime() - new Date(a.lastSyncAt).getTime();
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [accountCards, searchQuery, statusFilter, syncFilter, sortBy]);
+
   // Breadcrumb items
   const breadcrumbItems = useMemo(() => createBreadcrumbItems(navigationState), [navigationState]);
 
@@ -865,6 +933,22 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         )}
 
+        {/* Filtros e busca de contas */}
+        {accountCards.length > 0 && (
+          <AccountFilters
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            syncFilter={syncFilter}
+            onSyncFilterChange={setSyncFilter}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+            totalCount={accountCards.length}
+            filteredCount={filteredAndSortedAccounts.length}
+          />
+        )}
+
         {/* Grid de Cards de Contas */}
         {accountCards.length === 0 ? (
           <Card className="text-center py-12">
@@ -887,9 +971,30 @@ export const MetaAdsSyncPage: React.FC = () => {
               </p>
             </div>
           </Card>
+        ) : filteredAndSortedAccounts.length === 0 ? (
+          <Card className="text-center py-12">
+            <Filter className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Nenhuma conta corresponde aos filtros
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Tente ajustar os filtros de busca ou limpar todos os filtros para ver todas as contas disponíveis.
+            </p>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setSearchQuery('');
+                setStatusFilter('all');
+                setSyncFilter('all');
+              }}
+              className="mx-auto"
+            >
+              Limpar Filtros
+            </Button>
+          </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {accountCards.map((account) => (
+            {filteredAndSortedAccounts.map((account) => (
               <AdAccountCard
                 key={account.id}
                 account={account}
