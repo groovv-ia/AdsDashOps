@@ -333,6 +333,37 @@ export const MetaAdminPage: React.FC = () => {
     return isConnected ? 'Conectado' : 'Desconectado';
   };
 
+  // Retorna cor do badge de sincronizacao (secundario)
+  const getSyncStatusColor = (status: string) => {
+    switch (status) {
+      case 'healthy':
+        return 'text-green-600 bg-green-50 border border-green-200';
+      case 'pending_first_sync':
+        return 'text-blue-600 bg-blue-50 border border-blue-200';
+      case 'stale':
+        return 'text-amber-600 bg-amber-50 border border-amber-200';
+      case 'error':
+        return 'text-red-600 bg-red-50 border border-red-200';
+      default:
+        return 'text-gray-500 bg-gray-50 border border-gray-200';
+    }
+  };
+
+  // Retorna label do status de sincronizacao
+  const getSyncStatusLabel = (status: string) => {
+    switch (status) {
+      case 'healthy':
+        return 'Dados atualizados';
+      case 'pending_first_sync':
+        return 'Aguardando sincronizacao';
+      case 'stale':
+        return 'Sincronizar dados';
+      case 'error':
+        return 'Erro na sincronizacao';
+      default:
+        return 'Nao sincronizado';
+    }
+  };
 
   if (loadingStatus) {
     return (
@@ -449,6 +480,19 @@ export const MetaAdminPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Badge secundario de sincronizacao - so mostra se conectado */}
+            {syncStatus && connectionStatus.connected && (
+              <div className="flex flex-col items-end gap-2">
+                <span className={`px-3 py-1.5 rounded-lg text-xs font-medium ${getSyncStatusColor(syncStatus.health_status)}`}>
+                  {getSyncStatusLabel(syncStatus.health_status)}
+                </span>
+                {syncStatus.health_status === 'stale' && (
+                  <p className="text-xs text-amber-600">
+                    Acesse "Meta Ads Sync" para atualizar
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {connectionStatus.scopes && connectionStatus.scopes.length > 0 && (
