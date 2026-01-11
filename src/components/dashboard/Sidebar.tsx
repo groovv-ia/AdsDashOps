@@ -63,8 +63,8 @@ const menuSections: MenuSection[] = [
 // Item de Workspaces na navegacao principal
 const workspacesItem: MenuItem = { icon: Building2, label: 'Workspaces', page: 'workspaces' };
 
-// Itens do rodape - exibidos como icones horizontais
-const footerItems: MenuItem[] = [
+// Itens de suporte e configuracoes - exibidos abaixo do Workspaces
+const supportItems: MenuItem[] = [
   { icon: Headphones, label: 'Ajuda e Suporte', page: 'support' },
   { icon: Settings, label: 'Configuracoes', page: 'settings' },
 ];
@@ -248,36 +248,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="text-base font-medium leading-6">{workspacesItem.label}</span>
               </button>
             </div>
-          </nav>
 
-          {/* Banner de Upgrade Pro - acima do rodape */}
-          <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} />
-
-          {/* Rodape fixo com icones de acao */}
-          <div className="flex-shrink-0 border-t border-slate-100">
-            {/* Barra de icones horizontais centralizada */}
-            <div className="flex items-center justify-center gap-2 px-4 py-3">
-              {footerItems.map((item, index) => {
+            {/* Itens de Suporte e Configuracoes */}
+            <div className="px-3 space-y-0.5 mt-1">
+              {supportItems.map((item, index) => {
                 const isItemActive = currentPage === item.page;
                 return (
                   <button
                     key={index}
                     onClick={() => handlePageClick(item.page)}
-                    title={item.label}
                     className={`
-                      p-2.5 rounded-lg transition-all duration-150
+                      w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
+                      transition-all duration-150
                       ${isItemActive
-                        ? 'bg-slate-100 text-slate-900'
-                        : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+                        ? 'bg-slate-50 text-slate-900'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                       }
                     `}
                   >
-                    <item.icon className="w-5 h-5" />
+                    <item.icon className={`
+                      w-5 h-5 flex-shrink-0
+                      ${isItemActive ? 'text-slate-700' : 'text-slate-400'}
+                    `} />
+                    <span className="text-base font-medium leading-6">{item.label}</span>
                   </button>
                 );
               })}
             </div>
-          </div>
+          </nav>
+
+          {/* Banner de Upgrade Pro no rodape */}
+          <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} />
         </div>
       </aside>
     </>
