@@ -188,7 +188,24 @@ export const CreativeAIAnalysisTab: React.FC<CreativeAIAnalysisTabProps> = ({
   // Renderização da Análise Completa
   // ============================================
 
-  const { visual_analysis, copy_analysis, recommendations, performance_correlation, ab_test_suggestions } = analysis;
+  // Destructure com valores padrão seguros para evitar erros
+  const {
+    visual_analysis = {} as any,
+    copy_analysis = {} as any,
+    recommendations = [],
+    performance_correlation,
+    ab_test_suggestions = [],
+  } = analysis || {};
+
+  // Se análise existe mas está vazia/inválida
+  if (!visual_analysis || !copy_analysis) {
+    return (
+      <ErrorState
+        message="Análise incompleta ou inválida. Por favor, gere uma nova análise."
+        onRetry={onAnalyze}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -259,38 +276,50 @@ export const CreativeAIAnalysisTab: React.FC<CreativeAIAnalysisTabProps> = ({
 
           {/* Análises textuais */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <h5 className="font-semibold text-blue-800 text-sm mb-2">Uso de Cores</h5>
-              <p className="text-sm text-blue-700">{visual_analysis.color_usage}</p>
-            </div>
-            <div className="p-4 bg-green-50 rounded-lg">
-              <h5 className="font-semibold text-green-800 text-sm mb-2">Visibilidade de Texto</h5>
-              <p className="text-sm text-green-700">{visual_analysis.text_visibility}</p>
-            </div>
-            <div className="p-4 bg-purple-50 rounded-lg">
-              <h5 className="font-semibold text-purple-800 text-sm mb-2">Consistência de Marca</h5>
-              <p className="text-sm text-purple-700">{visual_analysis.brand_consistency}</p>
-            </div>
-            <div className="p-4 bg-amber-50 rounded-lg">
-              <h5 className="font-semibold text-amber-800 text-sm mb-2">Captura de Atenção</h5>
-              <p className="text-sm text-amber-700">{visual_analysis.attention_grabbing}</p>
-            </div>
+            {visual_analysis.color_usage && (
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h5 className="font-semibold text-blue-800 text-sm mb-2">Uso de Cores</h5>
+                <p className="text-sm text-blue-700">{visual_analysis.color_usage}</p>
+              </div>
+            )}
+            {visual_analysis.text_visibility && (
+              <div className="p-4 bg-green-50 rounded-lg">
+                <h5 className="font-semibold text-green-800 text-sm mb-2">Visibilidade de Texto</h5>
+                <p className="text-sm text-green-700">{visual_analysis.text_visibility}</p>
+              </div>
+            )}
+            {visual_analysis.brand_consistency && (
+              <div className="p-4 bg-purple-50 rounded-lg">
+                <h5 className="font-semibold text-purple-800 text-sm mb-2">Consistência de Marca</h5>
+                <p className="text-sm text-purple-700">{visual_analysis.brand_consistency}</p>
+              </div>
+            )}
+            {visual_analysis.attention_grabbing && (
+              <div className="p-4 bg-amber-50 rounded-lg">
+                <h5 className="font-semibold text-amber-800 text-sm mb-2">Captura de Atenção</h5>
+                <p className="text-sm text-amber-700">{visual_analysis.attention_grabbing}</p>
+              </div>
+            )}
           </div>
 
           {/* Pontos Fortes e Melhorias */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <BadgeList
-              items={visual_analysis.key_strengths}
-              title="Pontos Fortes"
-              color="green"
-              icon={<CheckCircle2 className="w-4 h-4" />}
-            />
-            <BadgeList
-              items={visual_analysis.improvement_areas}
-              title="Áreas de Melhoria"
-              color="amber"
-              icon={<AlertCircle className="w-4 h-4" />}
-            />
+            {visual_analysis.key_strengths && visual_analysis.key_strengths.length > 0 && (
+              <BadgeList
+                items={visual_analysis.key_strengths}
+                title="Pontos Fortes"
+                color="green"
+                icon={<CheckCircle2 className="w-4 h-4" />}
+              />
+            )}
+            {visual_analysis.improvement_areas && visual_analysis.improvement_areas.length > 0 && (
+              <BadgeList
+                items={visual_analysis.improvement_areas}
+                title="Áreas de Melhoria"
+                color="amber"
+                icon={<AlertCircle className="w-4 h-4" />}
+              />
+            )}
           </div>
         </div>
       </ExpandableSection>
@@ -422,27 +451,33 @@ export const CreativeAIAnalysisTab: React.FC<CreativeAIAnalysisTabProps> = ({
 
           {/* Nível de Persuasão e Urgência */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <h5 className="font-semibold text-blue-800 text-sm mb-2">Nível de Persuasão</h5>
-              <p className="text-lg font-bold text-blue-900 capitalize">
-                {copy_analysis.persuasion_level}
-              </p>
-            </div>
-            <div className={`p-4 rounded-lg ${copy_analysis.urgency_present ? 'bg-amber-50' : 'bg-gray-50'}`}>
-              <h5 className="font-semibold text-sm mb-2" style={{ color: copy_analysis.urgency_present ? '#92400e' : '#374151' }}>
-                Urgência Presente
-              </h5>
-              <p className="text-lg font-bold" style={{ color: copy_analysis.urgency_present ? '#78350f' : '#1f2937' }}>
-                {copy_analysis.urgency_present ? 'Sim' : 'Não'}
-              </p>
-            </div>
+            {copy_analysis.persuasion_level && (
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h5 className="font-semibold text-blue-800 text-sm mb-2">Nível de Persuasão</h5>
+                <p className="text-lg font-bold text-blue-900 capitalize">
+                  {copy_analysis.persuasion_level}
+                </p>
+              </div>
+            )}
+            {copy_analysis.urgency_present !== undefined && (
+              <div className={`p-4 rounded-lg ${copy_analysis.urgency_present ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                <h5 className="font-semibold text-sm mb-2" style={{ color: copy_analysis.urgency_present ? '#92400e' : '#374151' }}>
+                  Urgência Presente
+                </h5>
+                <p className="text-lg font-bold" style={{ color: copy_analysis.urgency_present ? '#78350f' : '#1f2937' }}>
+                  {copy_analysis.urgency_present ? 'Sim' : 'Não'}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Análise de CTA */}
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <h5 className="font-semibold text-green-800 text-sm mb-2">Efetividade do CTA</h5>
-            <p className="text-sm text-green-700">{copy_analysis.cta_effectiveness}</p>
-          </div>
+          {copy_analysis.cta_effectiveness && (
+            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+              <h5 className="font-semibold text-green-800 text-sm mb-2">Efetividade do CTA</h5>
+              <p className="text-sm text-green-700">{copy_analysis.cta_effectiveness}</p>
+            </div>
+          )}
 
           {/* Power Words */}
           {copy_analysis.message_analysis?.power_words_used && (
@@ -456,18 +491,22 @@ export const CreativeAIAnalysisTab: React.FC<CreativeAIAnalysisTabProps> = ({
 
           {/* Pontos Fortes e Melhorias */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <BadgeList
-              items={copy_analysis.key_strengths}
-              title="Pontos Fortes"
-              color="green"
-              icon={<CheckCircle2 className="w-4 h-4" />}
-            />
-            <BadgeList
-              items={copy_analysis.improvement_areas}
-              title="Áreas de Melhoria"
-              color="amber"
-              icon={<AlertCircle className="w-4 h-4" />}
-            />
+            {copy_analysis.key_strengths && copy_analysis.key_strengths.length > 0 && (
+              <BadgeList
+                items={copy_analysis.key_strengths}
+                title="Pontos Fortes"
+                color="green"
+                icon={<CheckCircle2 className="w-4 h-4" />}
+              />
+            )}
+            {copy_analysis.improvement_areas && copy_analysis.improvement_areas.length > 0 && (
+              <BadgeList
+                items={copy_analysis.improvement_areas}
+                title="Áreas de Melhoria"
+                color="amber"
+                icon={<AlertCircle className="w-4 h-4" />}
+              />
+            )}
           </div>
         </div>
       </ExpandableSection>
@@ -518,39 +557,51 @@ export const CreativeAIAnalysisTab: React.FC<CreativeAIAnalysisTabProps> = ({
           variant="highlight"
         >
           <div className="space-y-4">
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <h5 className="font-semibold text-blue-800 text-sm mb-2">Resumo de Performance</h5>
-              <p className="text-sm text-blue-700">{performance_correlation.performance_summary}</p>
-            </div>
+            {performance_correlation.performance_summary && (
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h5 className="font-semibold text-blue-800 text-sm mb-2">Resumo de Performance</h5>
+                <p className="text-sm text-blue-700">{performance_correlation.performance_summary}</p>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-purple-50 rounded-lg">
-                <h5 className="font-semibold text-purple-800 text-sm mb-2">Link Visual-Performance</h5>
-                <p className="text-sm text-purple-700">{performance_correlation.visual_performance_link}</p>
-              </div>
-              <div className="p-4 bg-green-50 rounded-lg">
-                <h5 className="font-semibold text-green-800 text-sm mb-2">Link Copy-Performance</h5>
-                <p className="text-sm text-green-700">{performance_correlation.copy_performance_link}</p>
-              </div>
+              {performance_correlation.visual_performance_link && (
+                <div className="p-4 bg-purple-50 rounded-lg">
+                  <h5 className="font-semibold text-purple-800 text-sm mb-2">Link Visual-Performance</h5>
+                  <p className="text-sm text-purple-700">{performance_correlation.visual_performance_link}</p>
+                </div>
+              )}
+              {performance_correlation.copy_performance_link && (
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <h5 className="font-semibold text-green-800 text-sm mb-2">Link Copy-Performance</h5>
+                  <p className="text-sm text-green-700">{performance_correlation.copy_performance_link}</p>
+                </div>
+              )}
             </div>
 
-            <BadgeList
-              items={performance_correlation.underperforming_areas}
-              title="Áreas com Baixa Performance"
-              color="red"
-              icon={<AlertCircle className="w-4 h-4" />}
-            />
-            <BadgeList
-              items={performance_correlation.high_performing_elements}
-              title="Elementos de Alta Performance"
-              color="green"
-              icon={<CheckCircle2 className="w-4 h-4" />}
-            />
+            {performance_correlation.underperforming_areas && performance_correlation.underperforming_areas.length > 0 && (
+              <BadgeList
+                items={performance_correlation.underperforming_areas}
+                title="Áreas com Baixa Performance"
+                color="red"
+                icon={<AlertCircle className="w-4 h-4" />}
+              />
+            )}
+            {performance_correlation.high_performing_elements && performance_correlation.high_performing_elements.length > 0 && (
+              <BadgeList
+                items={performance_correlation.high_performing_elements}
+                title="Elementos de Alta Performance"
+                color="green"
+                icon={<CheckCircle2 className="w-4 h-4" />}
+              />
+            )}
 
-            <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
-              <h5 className="font-semibold text-amber-800 text-sm mb-2">Prioridade de Otimização</h5>
-              <p className="text-sm text-amber-700">{performance_correlation.optimization_priority}</p>
-            </div>
+            {performance_correlation.optimization_priority && (
+              <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                <h5 className="font-semibold text-amber-800 text-sm mb-2">Prioridade de Otimização</h5>
+                <p className="text-sm text-amber-700">{performance_correlation.optimization_priority}</p>
+              </div>
+            )}
           </div>
         </ExpandableSection>
       )}

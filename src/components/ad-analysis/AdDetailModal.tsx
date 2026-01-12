@@ -154,6 +154,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     refreshCreative,
     analysis,
     analysisLoading,
+    analysisError,
     isAnalyzing,
     analyzeAd,
     hasAnalysis,
