@@ -60,19 +60,22 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
   useHdWhenAvailable = true,
   className = '',
 }) => {
-  // Classes base do container
-  const containerClasses = `
+  // Classes base do container (sem background padrão, será adicionado conforme necessário)
+  const baseContainerClasses = `
     ${sizeClasses[size]}
     relative rounded-lg overflow-hidden
-    bg-gray-100 flex items-center justify-center
+    flex items-center justify-center
     ${onClick ? 'cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all' : ''}
     ${className}
   `;
 
+  // Container com background para estados sem imagem
+  const containerClassesWithBg = `${baseContainerClasses} bg-gray-100`;
+
   // Estado de loading
   if (loading) {
     return (
-      <div className={containerClasses}>
+      <div className={containerClassesWithBg}>
         <Loader2 className={`${iconSizes[size]} text-gray-400 animate-spin`} />
       </div>
     );
@@ -82,7 +85,7 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
   if (error) {
     return (
       <div
-        className={`${containerClasses} bg-red-50`}
+        className={`${baseContainerClasses} bg-red-50`}
         title={error}
         onClick={onClick}
       >
@@ -96,11 +99,11 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     console.warn('[AdCreativeThumbnail] Criativo nao fornecido (null/undefined)');
     return (
       <div
-        className={`${containerClasses} bg-gray-100`}
+        className={`${baseContainerClasses} bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200`}
         title="Criativo ainda nao carregado. Clique para tentar carregar."
         onClick={onClick}
       >
-        <Image className={`${iconSizes[size]} text-gray-300`} />
+        <Image className={`${iconSizes[size]} text-gray-400`} />
       </div>
     );
   }
@@ -122,9 +125,8 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     return 'bg-gray-400';
   };
 
-  // Sem imagem disponivel
+  // Sem imagem disponivel - mostra placeholder mais bonito
   if (!imageUrl) {
-    // Log apenas quando não há URL de imagem disponível
     console.debug('[AdCreativeThumbnail] Sem URL de imagem:', {
       ad_id: creative.ad_id,
       creative_type: creative.creative_type,
@@ -133,26 +135,26 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     });
     return (
       <div
-        className={`${containerClasses} bg-gray-100`}
-        title={creative.creative_type === 'unknown' ? 'Tipo desconhecido' : 'Sem preview'}
+        className={`${baseContainerClasses} bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200`}
+        title={creative.creative_type === 'unknown' ? 'Tipo desconhecido' : 'Sem preview disponivel'}
         onClick={onClick}
       >
         {isVideo ? (
-          <Play className={`${iconSizes[size]} text-gray-400`} />
+          <Play className={`${iconSizes[size]} text-blue-500`} />
         ) : (
-          <Image className={`${iconSizes[size]} text-gray-300`} />
+          <Image className={`${iconSizes[size]} text-blue-500`} />
         )}
         {/* Indicador de status incompleto */}
         {creative.fetch_status !== 'success' && (
-          <div className="absolute bottom-0 right-0 w-2 h-2 bg-yellow-400 rounded-full"></div>
+          <div className="absolute bottom-0.5 right-0.5 w-2 h-2 bg-yellow-400 rounded-full border border-white"></div>
         )}
       </div>
     );
   }
 
-  // Renderiza thumbnail com imagem
+  // Renderiza thumbnail com imagem (sem background, a imagem cobre tudo)
   return (
-    <div className={containerClasses} onClick={onClick}>
+    <div className={baseContainerClasses} onClick={onClick}>
       <img
         src={imageUrl}
         alt={creative.title || 'Preview do anuncio'}
