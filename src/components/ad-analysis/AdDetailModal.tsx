@@ -48,6 +48,7 @@ import {
 import { useAdDetailData, type PreloadedMetricsData } from '../../hooks/useAdDetails';
 import { ScoreCircle } from './ScoreCircle';
 import { ImageZoomModal } from './ImageZoomModal';
+import { CreativeAIAnalysisTab } from './CreativeAIAnalysisTab';
 import { AdDetailTab, getCreativeTypeLabel } from '../../types/adAnalysis';
 import type { AdDetailModalState, PreloadedInsightRow, MetaAdCreative } from '../../types/adAnalysis';
 import type { MetricsAIAnalysis } from '../../types/metricsAnalysis';
@@ -319,7 +320,8 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     { id: AdDetailTab.OVERVIEW, label: 'Visão Geral', icon: Eye },
     { id: AdDetailTab.CREATIVE, label: 'Criativo', icon: Image },
     { id: AdDetailTab.METRICS, label: 'Métricas', icon: BarChart3 },
-    { id: AdDetailTab.AI_ANALYSIS, label: 'Análise IA', icon: Sparkles },
+    { id: AdDetailTab.AI_ANALYSIS_METRICS, label: 'Análise IA - Performance', icon: BarChart3 },
+    { id: AdDetailTab.AI_ANALYSIS_CREATIVE, label: 'Análise IA - Criativo', icon: Sparkles },
   ];
 
   // URL da imagem para visualizacao (prioriza HD)
@@ -431,8 +433,8 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
               />
             )}
 
-            {/* AI Analysis Tab - Focado em METRICAS de performance */}
-            {activeTab === AdDetailTab.AI_ANALYSIS && (
+            {/* AI Analysis Tab - METRICAS - Focado em performance */}
+            {activeTab === AdDetailTab.AI_ANALYSIS_METRICS && (
               <MetricsAIAnalysisTab
                 metricsAnalysis={metricsAnalysis}
                 loading={metricsAnalysisLoading}
@@ -440,6 +442,48 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
                 isAnalyzing={isAnalyzingMetrics}
                 hasMetrics={!!metrics && metrics.total_impressions > 0}
                 onAnalyze={analyzeMetrics}
+              />
+            )}
+
+            {/* AI Analysis Tab - CRIATIVO - Focado em elementos visuais e copy */}
+            {activeTab === AdDetailTab.AI_ANALYSIS_CREATIVE && (
+              <CreativeAIAnalysisTab
+                analysis={analysis}
+                creative={creative}
+                metrics={metrics}
+                isAnalyzing={isAnalyzing}
+                error={analysisError}
+                onAnalyze={async () => {
+                  if (!creative || !creative.image_url) {
+                    alert('Criativo não possui imagem disponível para análise.');
+                    return;
+                  }
+
+                  // Prepara contexto de performance se métricas disponíveis
+                  const performanceContext = metrics ? {
+                    total_impressions: metrics.total_impressions,
+                    total_clicks: metrics.total_clicks,
+                    ctr: metrics.avg_ctr,
+                    cpc: metrics.avg_cpc,
+                    cpm: metrics.avg_cpm,
+                    total_spend: metrics.total_spend,
+                    conversions: metrics.total_conversions || 0,
+                    conversion_rate: metrics.avg_conversion_rate || 0,
+                  } : undefined;
+
+                  // Solicita análise do criativo
+                  await analyzeAd({
+                    meta_ad_account_id: creative.meta_ad_account_id,
+                    image_url: creative.image_url,
+                    copy_data: {
+                      title: creative.title || undefined,
+                      body: creative.body || undefined,
+                      description: creative.description || undefined,
+                      cta: creative.call_to_action || undefined,
+                    },
+                    performance_context: performanceContext,
+                  });
+                }}
               />
             )}
           </div>

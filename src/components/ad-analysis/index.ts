@@ -7,3 +7,5 @@ export { RecommendationCard } from './RecommendationCard';
 export { ImageZoomModal } from './ImageZoomModal';
 export { AdDetailModal } from './AdDetailModal';
 export { AdCreativeThumbnail, AdCreativeThumbnailWithTooltip } from './AdCreativeThumbnail';
+export { CreativeAIAnalysisTab } from './CreativeAIAnalysisTab';
+export * from './CreativeAnalysisComponents';
