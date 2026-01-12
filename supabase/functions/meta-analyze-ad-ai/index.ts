@@ -491,51 +491,8 @@ async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string
   const base64 = btoa(binary);
 
   console.log(`Image downloaded: ${uint8Array.length} bytes, type: ${mimeType}`);
-
-  // Valida tamanho da imagem (limite de 20MB para evitar problemas com OpenAI)
-  const maxSize = 20 * 1024 * 1024; // 20MB
-  if (uint8Array.length > maxSize) {
-    throw new Error(`Image too large: ${(uint8Array.length / 1024 / 1024).toFixed(2)}MB (max: 20MB)`);
-  }
-
+  
   return { base64, mimeType };
-}
-
-/**
- * Função auxiliar para fazer retry com backoff exponencial
- */
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  maxRetries = 3,
-  initialDelay = 1000
-): Promise<T> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error as Error;
-
-      // Se for o último retry, não espera
-      if (attempt === maxRetries - 1) {
-        break;
-      }
-
-      // Verifica se é um erro de rate limit (429)
-      const isRateLimit = lastError.message.includes('429') || lastError.message.includes('rate limit');
-
-      // Calcula delay com backoff exponencial
-      const delay = isRateLimit ? 5000 * (attempt + 1) : initialDelay * Math.pow(2, attempt);
-
-      console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms. Error: ${lastError.message}`);
-
-      // Aguarda antes de tentar novamente
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-
-  throw lastError || new Error('Unknown retry error');
 }
 
 // Função expandida para chamar a API do OpenAI com GPT-4 Vision usando base64 e contexto de performance
@@ -551,121 +508,65 @@ async function analyzeWithGPT4Vision(
   // Monta a URL de dados base64 para a imagem
   const imageDataUrl = `data:${imageMimeType};base64,${imageBase64}`;
 
-  // Cria um controller para timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 segundos
-
-  let response;
-  try {
-    response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: SYSTEM_PROMPT,
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: userPrompt,
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${openaiApiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: userPrompt,
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: imageDataUrl,
+                detail: "high",
               },
-              {
-                type: "image_url",
-                image_url: {
-                  url: imageDataUrl,
-                  detail: "high",
-                },
-              },
-            ],
-          },
-        ],
-        max_tokens: 4000, // Aumentado para permitir análises mais profundas e detalhadas
-        temperature: 0.5, // Ajustado para respostas mais criativas e específicas
-        top_p: 0.9, // Controle de diversidade de respostas
-      }),
-      signal: controller.signal,
-    });
-  } catch (fetchError) {
-    if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-      throw new Error('OpenAI request timeout after 90 seconds');
-    }
-    throw fetchError;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+            },
+          ],
+        },
+      ],
+      max_tokens: 4000, // Aumentado para permitir análises mais profundas e detalhadas
+      temperature: 0.5, // Ajustado para respostas mais criativas e específicas
+      top_p: 0.9, // Controle de diversidade de respostas
+    }),
+  });
 
   if (!response.ok) {
-    let errorData;
-    try {
-      errorData = await response.json();
-    } catch {
-      throw new Error(`OpenAI API error (${response.status}): ${response.statusText}`);
-    }
-
-    // Inclui o status code na mensagem de erro para que o retry possa identificar rate limits
-    const errorMessage = errorData.error?.message || response.statusText;
-    throw new Error(`OpenAI API error (${response.status}): ${errorMessage}`);
+    const errorData = await response.json();
+    throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
   }
 
-  let data;
-  try {
-    data = await response.json();
-  } catch (jsonError) {
-    console.error("Failed to parse OpenAI response as JSON:", jsonError);
-    throw new Error("Invalid JSON response from OpenAI");
-  }
-
+  const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   const tokensUsed = data.usage?.total_tokens || 0;
 
   if (!content) {
-    console.error("Empty content from OpenAI:", data);
     throw new Error("No response content from OpenAI");
   }
 
   // Parse do JSON da resposta
   // Remove possíveis backticks de code block
   const cleanContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-
+  
   try {
     const analysis: AIAnalysisResponse = JSON.parse(cleanContent);
-
-    // Valida campos obrigatórios
-    if (typeof analysis.creative_score !== 'number' ||
-        typeof analysis.copy_score !== 'number' ||
-        typeof analysis.overall_score !== 'number') {
-      console.error("Missing required score fields in analysis:", analysis);
-      throw new Error("Invalid analysis: missing required score fields");
-    }
-
-    if (!analysis.visual_analysis || !analysis.copy_analysis) {
-      console.error("Missing required analysis sections:", analysis);
-      throw new Error("Invalid analysis: missing visual_analysis or copy_analysis");
-    }
-
-    if (!Array.isArray(analysis.recommendations) || analysis.recommendations.length === 0) {
-      console.warn("No recommendations provided, adding empty array");
-      analysis.recommendations = [];
-    }
-
-    if (!Array.isArray(analysis.ab_test_suggestions)) {
-      console.warn("No A/B test suggestions provided, adding empty array");
-      analysis.ab_test_suggestions = [];
-    }
-
     return { analysis, tokensUsed };
   } catch (parseError) {
-    console.error("Failed to parse AI analysis JSON. Content:", cleanContent.substring(0, 500));
-    console.error("Parse error:", parseError);
-    throw new Error(`Failed to parse AI analysis response: ${parseError instanceof Error ? parseError.message : 'Unknown parsing error'}`);
+    console.error("Failed to parse OpenAI response:", cleanContent);
+    throw new Error("Failed to parse AI analysis response");
   }
 }
 
@@ -678,7 +579,6 @@ Deno.serve(async (req: Request) => {
   try {
     // Valida método HTTP
     if (req.method !== "POST") {
-      console.error("Method not allowed:", req.method);
       return new Response(
         JSON.stringify({ error: "Method not allowed" }),
         { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -688,7 +588,6 @@ Deno.serve(async (req: Request) => {
     // Valida header de autorização
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      console.error("Missing authorization header");
       return new Response(
         JSON.stringify({ error: "Missing authorization header" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -696,19 +595,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // Parse do body da requisição expandido com contexto de performance
-    let payload: RequestPayload;
-    try {
-      payload = await req.json();
-    } catch (jsonError) {
-      console.error("Invalid JSON payload:", jsonError);
-      return new Response(
-        JSON.stringify({ error: "Invalid JSON in request body" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
+    const payload: RequestPayload = await req.json();
     const { ad_id, meta_ad_account_id, image_url, copy_data, performance_context } = payload;
-    console.log(`Processing AI analysis for ad_id: ${ad_id}, account: ${meta_ad_account_id}`);
 
     // Valida campos obrigatórios
     if (!ad_id || !meta_ad_account_id || !image_url) {
@@ -763,77 +651,22 @@ Deno.serve(async (req: Request) => {
 
     // Baixa a imagem e converte para base64
     console.log("Starting image download...");
-    let imageBase64: string;
-    let imageMimeType: string;
-
-    try {
-      const imageData = await downloadImageAsBase64(image_url);
-      imageBase64 = imageData.base64;
-      imageMimeType = imageData.mimeType;
-      console.log("Image downloaded successfully");
-    } catch (downloadError) {
-      console.error("Failed to download image:", downloadError);
-      return new Response(
-        JSON.stringify({
-          error: "Failed to download image",
-          details: downloadError instanceof Error ? downloadError.message : "Unknown error"
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const { base64: imageBase64, mimeType: imageMimeType } = await downloadImageAsBase64(image_url);
+    console.log("Image downloaded successfully");
 
     // Executa análise expandida com GPT-4 Vision usando imagem em base64 e contexto de performance
     console.log("Starting AI analysis with GPT-4 Vision...");
     if (performance_context) {
       console.log("Performance context provided:", performance_context);
     }
-
-    let analysis: AIAnalysisResponse;
-    let tokensUsed: number;
-
-    try {
-      // Usa retry com backoff exponencial para lidar com erros intermitentes
-      const result = await retryWithBackoff(
-        async () => {
-          return await analyzeWithGPT4Vision(
-            imageBase64,
-            imageMimeType,
-            copy_data || {},
-            performance_context,
-            openaiApiKey
-          );
-        },
-        3, // Máximo de 3 tentativas
-        2000 // Delay inicial de 2 segundos
-      );
-
-      analysis = result.analysis;
-      tokensUsed = result.tokensUsed;
-      console.log("AI analysis completed successfully");
-    } catch (aiError) {
-      console.error("Failed to analyze with GPT-4 Vision after retries:", aiError);
-
-      // Identifica o tipo de erro para fornecer mensagem mais específica
-      const errorMessage = aiError instanceof Error ? aiError.message : "Unknown error";
-      let userFriendlyMessage = "Failed to analyze ad creative";
-
-      if (errorMessage.includes('timeout')) {
-        userFriendlyMessage = "Analysis timed out. The image may be too complex or the service is under heavy load.";
-      } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
-        userFriendlyMessage = "Rate limit exceeded. Please wait a moment and try again.";
-      } else if (errorMessage.includes('parse')) {
-        userFriendlyMessage = "Failed to process AI response. Please try again.";
-      }
-
-      return new Response(
-        JSON.stringify({
-          error: userFriendlyMessage,
-          details: errorMessage,
-          technical_error: errorMessage
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const { analysis, tokensUsed } = await analyzeWithGPT4Vision(
+      imageBase64,
+      imageMimeType,
+      copy_data || {},
+      performance_context,
+      openaiApiKey
+    );
+    console.log("AI analysis completed successfully");
 
     // Prepara registro para salvar no banco
     const analysisRecord = {
@@ -846,18 +679,11 @@ Deno.serve(async (req: Request) => {
       visual_analysis: analysis.visual_analysis,
       copy_analysis: analysis.copy_analysis,
       recommendations: analysis.recommendations,
-      performance_correlation: analysis.performance_correlation || null,
-      ab_test_suggestions: analysis.ab_test_suggestions || [],
-      competitive_analysis: analysis.competitive_analysis || null,
-      audience_insights: analysis.audience_insights || null,
-      strategic_recommendations: analysis.strategic_recommendations || null,
       image_url: image_url,
       model_used: "gpt-4o",
       tokens_used: tokensUsed,
       analyzed_at: new Date().toISOString(),
     };
-
-    console.log("Saving analysis to database...");
 
     // Salva análise no banco (insere nova a cada análise para manter histórico)
     const { data: savedAnalysis, error: insertError } = await supabaseAdmin
@@ -867,31 +693,24 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (insertError) {
-      console.error("Database insert error:", {
-        message: insertError.message,
-        code: insertError.code,
-        details: insertError.details,
-        hint: insertError.hint,
-      });
+      console.error("Insert error:", insertError);
       // Retorna análise mesmo se o save falhar
       return new Response(
-        JSON.stringify({
+        JSON.stringify({ 
           analysis: { ...analysis, analyzed_at: analysisRecord.analyzed_at },
           tokens_used: tokensUsed,
           saved: false,
-          save_error: insertError.message
+          save_error: insertError.message 
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log("Analysis saved successfully to database");
-
     return new Response(
-      JSON.stringify({
+      JSON.stringify({ 
         analysis: savedAnalysis,
         tokens_used: tokensUsed,
-        saved: true
+        saved: true 
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
