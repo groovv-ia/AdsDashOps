@@ -23,7 +23,6 @@ import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtrac
 import { WorkspacesPage } from './components/workspaces/WorkspacesPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
 import { GoogleAdminPage, GoogleAdsSyncPage } from './components/google-admin';
-import { CreativeQualityDashboard } from './components/creative-quality/CreativeQualityDashboard';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -375,8 +374,6 @@ function AppContent() {
         return <SupportPage />;
       case 'workspaces':
         return <WorkspacesPage />;
-      case 'creative-quality':
-        return <CreativeQualityDashboard />;
       default:
         return <MetaAdminPage />;
     }

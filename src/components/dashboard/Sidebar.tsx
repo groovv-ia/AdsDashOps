@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, Sparkles } from 'lucide-react';
+import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 import { UpgradeBanner } from './UpgradeBanner';
 
@@ -62,9 +62,6 @@ const menuSections: MenuSection[] = [
 
 // Item de Workspaces na navegacao principal
 const workspacesItem: MenuItem = { icon: Building2, label: 'Workspaces', page: 'workspaces' };
-
-// Item de Qualidade de Criativos com IA
-const creativeQualityItem: MenuItem = { icon: Sparkles, label: 'Qualidade de Criativos', page: 'creative-quality' };
 
 // Itens de suporte e configuracoes - exibidos abaixo do Workspaces
 const supportItems: MenuItem[] = [
@@ -249,27 +246,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   ${currentPage === workspacesItem.page ? 'text-slate-700' : 'text-slate-400'}
                 `} />
                 <span className="text-base font-medium leading-6">{workspacesItem.label}</span>
-              </button>
-            </div>
-
-            {/* Item Qualidade de Criativos */}
-            <div className="px-3">
-              <button
-                onClick={() => handlePageClick(creativeQualityItem.page)}
-                className={`
-                  w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
-                  transition-all duration-150
-                  ${currentPage === creativeQualityItem.page
-                    ? 'bg-gradient-to-r from-purple-50 to-blue-50 text-purple-900 border border-purple-200'
-                    : 'text-slate-600 hover:bg-gradient-to-r hover:from-purple-50 hover:to-blue-50 hover:text-purple-900'
-                  }
-                `}
-              >
-                <creativeQualityItem.icon className={`
-                  w-5 h-5 flex-shrink-0
-                  ${currentPage === creativeQualityItem.page ? 'text-purple-600' : 'text-slate-400'}
-                `} />
-                <span className="text-base font-medium leading-6">{creativeQualityItem.label}</span>
               </button>
             </div>
 

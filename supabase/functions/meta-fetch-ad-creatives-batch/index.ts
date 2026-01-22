@@ -156,14 +156,6 @@ interface ImageResult {
   quality: 'hd' | 'sd' | 'low' | 'unknown';
 }
 
-// Interface para resultado de vídeo com metadados completos
-interface VideoResult {
-  videoSourceUrl: string | null; // URL direta do vídeo (campo "source")
-  videoDuration: number | null; // Duração em segundos
-  videoFormat: string | null; // Formato do vídeo (mp4, webm, etc.)
-  thumbnail: ImageResult; // Thumbnail do vídeo
-}
-
 /**
  * Determina qualidade da imagem baseado nas dimensões
  */
@@ -258,38 +250,17 @@ async function convertImageHashToUrl(
 }
 
 /**
- * Busca dados completos do vídeo incluindo source URL e metadados
+ * Busca thumbnail de video em HD com informações completas
  */
-async function fetchVideoDataComplete(videoId: string, accessToken: string): Promise<VideoResult> {
+async function fetchVideoThumbnailHD(videoId: string, accessToken: string): Promise<ImageResult> {
   try {
-    const url = `https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails,picture,source,length,format&access_token=${accessToken}`;
+    const url = `https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails,picture,source&access_token=${accessToken}`;
     const response = await fetch(url);
     const data = await response.json();
 
     if (data.error) {
-      console.error(`Video data error for ${videoId}:`, data.error);
-      return {
-        videoSourceUrl: null,
-        videoDuration: null,
-        videoFormat: null,
-        thumbnail: { url: null, url_hd: null, width: null, height: null, quality: 'unknown' }
-      };
-    }
-
-    // Extrai URL direta do vídeo (campo "source")
-    const videoSourceUrl = data.source || null;
-
-    // Extrai duração em segundos
-    const videoDuration = data.length || null;
-
-    // Tenta determinar formato do vídeo
-    let videoFormat: string | null = null;
-    if (videoSourceUrl) {
-      const urlLower = videoSourceUrl.toLowerCase();
-      if (urlLower.includes('.mp4')) videoFormat = 'mp4';
-      else if (urlLower.includes('.webm')) videoFormat = 'webm';
-      else if (urlLower.includes('.mov')) videoFormat = 'mov';
-      else videoFormat = 'mp4'; // Default
+      console.error(`Video thumbnail error for ${videoId}:`, data.error);
+      return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
     }
 
     let bestThumbnail: { uri: string; width: number; height: number } | null = null;
@@ -297,63 +268,58 @@ async function fetchVideoDataComplete(videoId: string, accessToken: string): Pro
 
     // Processa thumbnails se existirem
     if (data.thumbnails?.data && data.thumbnails.data.length > 0) {
+      // Ordena por tamanho (maior primeiro)
       const sorted = data.thumbnails.data.sort((a: { width: number; height: number }, b: { width: number; height: number }) =>
         (b.width * b.height) - (a.width * a.height)
       );
 
       bestThumbnail = sorted[0];
+
+      // Busca thumbnail HD (>= 1280x720)
       hdThumbnail = sorted.find((t: { width: number; height: number }) =>
         t.width >= 1280 && t.height >= 720
       ) || null;
     }
 
-    // Monta resultado do thumbnail
-    let thumbnailResult: ImageResult;
-
+    // Se temos thumbnail HD, usa ele como principal
     if (hdThumbnail) {
       const quality = determineImageQuality(hdThumbnail.width, hdThumbnail.height);
-      thumbnailResult = {
+      return {
         url: hdThumbnail.uri,
         url_hd: hdThumbnail.uri,
         width: hdThumbnail.width,
         height: hdThumbnail.height,
         quality,
       };
-    } else if (bestThumbnail) {
+    }
+
+    // Se temos thumbnail normal, usa como fallback
+    if (bestThumbnail) {
       const quality = determineImageQuality(bestThumbnail.width, bestThumbnail.height);
-      thumbnailResult = {
+      return {
         url: bestThumbnail.uri,
         url_hd: null,
         width: bestThumbnail.width,
         height: bestThumbnail.height,
         quality,
       };
-    } else if (data.picture) {
-      thumbnailResult = {
+    }
+
+    // Fallback para picture do video
+    if (data.picture) {
+      return {
         url: data.picture,
         url_hd: null,
         width: null,
         height: null,
         quality: 'unknown',
       };
-    } else {
-      thumbnailResult = { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
     }
 
-    return {
-      videoSourceUrl,
-      videoDuration,
-      videoFormat,
-      thumbnail: thumbnailResult,
-    };
+    return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
   } catch (err) {
-    console.error(`Error fetching video data for ${videoId}:`, err);
-    return {
-      videoSourceUrl: null,
-      videoDuration: null,
-      videoFormat: null,
-      thumbnail: { url: null, url_hd: null, width: null, height: null, quality: 'unknown' }
-    };
+    console.error(`Error fetching video thumbnail for ${videoId}:`, err);
+    return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
   }
 }
 
@@ -457,8 +423,8 @@ async function extractImageUrl(
       return processUrl(firstVideo.thumbnail_url);
     }
     if (firstVideo.video_id) {
-      const videoResult = await fetchVideoDataComplete(firstVideo.video_id, accessToken);
-      if (videoResult.thumbnail.url) return videoResult.thumbnail;
+      const thumbResult = await fetchVideoThumbnailHD(firstVideo.video_id, accessToken);
+      if (thumbResult.url) return thumbResult;
     }
   }
 
@@ -486,8 +452,8 @@ async function extractImageUrl(
   // 12. Busca thumbnail de video se houver video_id
   const videoId = creative.video_id || videoData?.video_id;
   if (videoId) {
-    const videoResult = await fetchVideoDataComplete(videoId, accessToken);
-    if (videoResult.thumbnail.url) return videoResult.thumbnail;
+    const thumbResult = await fetchVideoThumbnailHD(videoId, accessToken);
+    if (thumbResult.url) return thumbResult;
   }
 
   return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
@@ -684,16 +650,10 @@ async function processAdResponse(
   const videoId = creative.video_id || videoData?.video_id || assetFeed?.videos?.[0]?.video_id || null;
   const videoUrl = videoId ? `https://www.facebook.com/ads/videos/${videoId}` : null;
 
-  // Para videos, busca dados completos (thumbnail, source URL, duração, formato)
+  // Para videos, busca thumbnail em HD se nao tiver imagem
   let finalImageResult = imageResult;
-  let videoResult: VideoResult | null = null;
-
-  if (creativeType === "video" && videoId) {
-    videoResult = await fetchVideoDataComplete(videoId, accessToken);
-    // Se não temos imagem ainda, usa thumbnail do vídeo
-    if (!finalImageResult.url && videoResult.thumbnail.url) {
-      finalImageResult = videoResult.thumbnail;
-    }
+  if (creativeType === "video" && videoId && !finalImageResult.url) {
+    finalImageResult = await fetchVideoThumbnailHD(videoId, accessToken);
   }
 
   // Extrai textos (inclui dados do post)
@@ -728,9 +688,6 @@ async function processAdResponse(
     image_height: finalImageResult.height,
     video_url: videoUrl,
     video_id: videoId,
-    video_source_url: videoResult?.videoSourceUrl || null, // URL direta do vídeo (campo "source")
-    video_duration: videoResult?.videoDuration || null, // Duração em segundos
-    video_format: videoResult?.videoFormat || null, // Formato do vídeo (mp4, webm, etc.)
     preview_url: adData.preview_shareable_link || null,
     title,
     body,

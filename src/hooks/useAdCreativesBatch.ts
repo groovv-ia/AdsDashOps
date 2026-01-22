@@ -4,11 +4,6 @@
  * Gerencia busca em lote de criativos de anuncios.
  * Carrega automaticamente quando recebe lista de ads e
  * fornece acesso individual aos criativos por ad_id.
- *
- * Melhorias:
- * - Cache localStorage como fallback quando API falha
- * - Verifica localStorage antes de chamar API
- * - Salva criativos no localStorage apos busca bem-sucedida
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
@@ -16,10 +11,6 @@ import {
   prefetchCreativesForAds,
   getCreativesFromCacheBatch,
 } from '../lib/services/AdCreativeService';
-import {
-  getCachedCreativesBatch,
-  cacheCreativesBatch,
-} from '../lib/services/CreativesCacheService';
 import type { MetaAdCreative } from '../types/adAnalysis';
 
 // Interface para status de loading individual
@@ -83,14 +74,9 @@ export function useAdCreativesBatch(
 
   /**
    * Busca criativos em lote
-   * Estrategia:
-   * 1. Verifica localStorage primeiro
-   * 2. Busca na API apenas os que faltam
-   * 3. Salva novos criativos no localStorage
-   * 4. Usa localStorage como fallback em caso de erro
    */
   const fetchCreatives = useCallback(async () => {
-    // Recalcula adIds dentro do callback para garantir que sempre esta atualizado
+    // Recalcula adIds dentro do callback para garantir que sempre está atualizado
     const currentAdIds = safeAds
       .filter(ad => ad && typeof ad === 'object' && ad.entity_id)
       .map(ad => ad.entity_id);
@@ -106,7 +92,7 @@ export function useAdCreativesBatch(
 
     // Evita busca duplicada
     if (fetchingRef.current) {
-      console.log('[useAdCreativesBatch] Busca ja em andamento, ignorando...');
+      console.log('[useAdCreativesBatch] Busca já em andamento, ignorando...');
       return;
     }
     fetchingRef.current = true;
@@ -129,40 +115,7 @@ export function useAdCreativesBatch(
       globalError: null,
     }));
 
-    // PASSO 1: Verifica cache localStorage primeiro
-    const localCached = getCachedCreativesBatch(currentAdIds);
-    const localCachedIds = Object.keys(localCached);
-    const missingFromLocalCache = currentAdIds.filter(id => !localCached[id]);
-
-    console.log('[useAdCreativesBatch] Cache localStorage:', {
-      cached_count: localCachedIds.length,
-      missing_count: missingFromLocalCache.length,
-    });
-
-    // Se todos os criativos estao no cache local, usa direto
-    if (missingFromLocalCache.length === 0) {
-      console.log('[useAdCreativesBatch] Todos os criativos encontrados no localStorage');
-
-      const allLoadedStates: Record<string, LoadingState> = {};
-      for (const adId of currentAdIds) {
-        allLoadedStates[adId] = { isLoading: false, hasError: false };
-      }
-
-      setState(prev => ({
-        creatives: { ...prev.creatives, ...localCached },
-        loadingStates: { ...prev.loadingStates, ...allLoadedStates },
-        globalLoading: false,
-        globalError: null,
-        fetchedCount: 0,
-        cachedCount: localCachedIds.length,
-      }));
-
-      fetchingRef.current = false;
-      return;
-    }
-
     try {
-      // PASSO 2: Busca na API (prefetch busca no banco e API se necessario)
       const result = await prefetchCreativesForAds(currentAdIds, metaAdAccountId);
 
       console.log('[useAdCreativesBatch] Resultado do prefetch:', {
@@ -170,32 +123,10 @@ export function useAdCreativesBatch(
         errors_count: Object.keys(result.errors).length,
       });
 
-      // PASSO 3: Combina criativos do localStorage + API
-      const combinedCreatives: Record<string, MetaAdCreative> = {
-        ...localCached,
-        ...result.creatives,
-      };
-
-      // Salva novos criativos no localStorage para cache futuro
-      if (Object.keys(result.creatives).length > 0) {
-        const newCreativesToCache: Record<string, MetaAdCreative> = {};
-        for (const [adId, creative] of Object.entries(result.creatives)) {
-          // So salva se nao estava no cache local
-          if (!localCached[adId]) {
-            newCreativesToCache[adId] = creative;
-          }
-        }
-        if (Object.keys(newCreativesToCache).length > 0) {
-          cacheCreativesBatch(newCreativesToCache);
-          console.log('[useAdCreativesBatch] Salvos no localStorage:', Object.keys(newCreativesToCache).length);
-        }
-      }
-
       // Atualiza estados de loading individuais
       const newLoadingStates: Record<string, LoadingState> = {};
       for (const adId of currentAdIds) {
-        if (result.errors[adId] && !combinedCreatives[adId]) {
-          // So marca erro se nao temos o criativo de nenhuma fonte
+        if (result.errors[adId]) {
           newLoadingStates[adId] = {
             isLoading: false,
             hasError: true,
@@ -210,15 +141,17 @@ export function useAdCreativesBatch(
       }
 
       // Calcula contadores
-      const apiCount = Object.keys(result.creatives).filter(id => !localCached[id]).length;
+      const cachedCount = Object.keys(result.creatives).filter(
+        id => !result.errors[id]
+      ).length;
 
       setState(prev => ({
-        creatives: { ...prev.creatives, ...combinedCreatives },
+        creatives: { ...prev.creatives, ...result.creatives },
         loadingStates: { ...prev.loadingStates, ...newLoadingStates },
         globalLoading: false,
         globalError: result.errors._batch || null,
-        fetchedCount: apiCount,
-        cachedCount: localCachedIds.length,
+        fetchedCount: Object.keys(result.creatives).length - cachedCount,
+        cachedCount,
       }));
 
       console.log('[useAdCreativesBatch] Estado atualizado com sucesso');
@@ -229,53 +162,26 @@ export function useAdCreativesBatch(
         error,
       });
 
-      // PASSO 4: Usa localStorage como fallback em caso de erro
-      if (localCachedIds.length > 0) {
-        console.log('[useAdCreativesBatch] Usando localStorage como fallback apos erro');
-
-        const fallbackLoadingStates: Record<string, LoadingState> = {};
-        for (const adId of currentAdIds) {
-          if (localCached[adId]) {
-            fallbackLoadingStates[adId] = { isLoading: false, hasError: false };
-          } else {
-            fallbackLoadingStates[adId] = {
-              isLoading: false,
-              hasError: true,
-              errorMessage: 'Nao encontrado no cache',
-            };
-          }
-        }
-
-        setState(prev => ({
-          creatives: { ...prev.creatives, ...localCached },
-          loadingStates: { ...prev.loadingStates, ...fallbackLoadingStates },
-          globalLoading: false,
-          globalError: `${errorMessage} (usando cache local)`,
-          fetchedCount: 0,
-          cachedCount: localCachedIds.length,
-        }));
-      } else {
-        // Marca todos como erro se nao tem cache
-        const errorLoadingStates: Record<string, LoadingState> = {};
-        for (const adId of currentAdIds) {
-          errorLoadingStates[adId] = {
-            isLoading: false,
-            hasError: true,
-            errorMessage,
-          };
-        }
-
-        setState(prev => ({
-          ...prev,
-          loadingStates: { ...prev.loadingStates, ...errorLoadingStates },
-          globalLoading: false,
-          globalError: errorMessage,
-        }));
+      // Marca todos como erro
+      const errorLoadingStates: Record<string, LoadingState> = {};
+      for (const adId of currentAdIds) {
+        errorLoadingStates[adId] = {
+          isLoading: false,
+          hasError: true,
+          errorMessage,
+        };
       }
+
+      setState(prev => ({
+        ...prev,
+        loadingStates: { ...prev.loadingStates, ...errorLoadingStates },
+        globalLoading: false,
+        globalError: errorMessage,
+      }));
     } finally {
       fetchingRef.current = false;
     }
-  }, [adsKey, metaAdAccountId, safeAds]);
+  }, [adsKey, metaAdAccountId, safeAds]); // Usando adsKey + safeAds para ter acesso aos dados completos
 
   // Carrega automaticamente quando ads mudam
   useEffect(() => {

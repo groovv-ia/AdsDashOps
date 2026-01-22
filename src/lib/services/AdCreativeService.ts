@@ -34,41 +34,19 @@ const CREATIVE_CACHE_TTL_DAYS = 7;
 const MAX_FETCH_ATTEMPTS = 3;
 
 /**
- * Verifica se um criativo tem imagem valida para exibicao
- */
-function hasValidImage(creative: MetaAdCreative): boolean {
-  return !!(creative.thumbnail_url || creative.image_url || creative.image_url_hd);
-}
-
-/**
- * Verifica se um criativo tem textos disponiveis
- */
-function hasValidTexts(creative: MetaAdCreative): boolean {
-  return !!(creative.title || creative.body || creative.description);
-}
-
-/**
  * Verifica se um criativo tem dados completos (imagem OU textos)
  */
 function isCreativeComplete(creative: MetaAdCreative): boolean {
-  return hasValidImage(creative) || hasValidTexts(creative);
-}
-
-/**
- * Verifica se um criativo pode ser usado/exibido
- * Um criativo e usavel se tem imagem OU textos, independente do status
- */
-export function isCreativeUsable(creative: MetaAdCreative | null): boolean {
-  if (!creative) return false;
-  return hasValidImage(creative) || hasValidTexts(creative);
+  const hasImage = !!(creative.thumbnail_url || creative.image_url);
+  const hasTexts = !!(creative.title || creative.body || creative.description);
+  return hasImage || hasTexts;
 }
 
 /**
  * Verifica se um criativo está expirado e precisa ser revalidado
- * Aumentado o TTL para 30 dias para reduzir rebuscas desnecessarias
  */
 function isCreativeExpired(creative: MetaAdCreative): boolean {
-  if (!creative.last_validated_at) return false;
+  if (!creative.last_validated_at) return true;
 
   const lastValidated = new Date(creative.last_validated_at);
   const now = new Date();
@@ -79,30 +57,26 @@ function isCreativeExpired(creative: MetaAdCreative): boolean {
 
 /**
  * Verifica se um criativo deve ser rebuscado
- * IMPORTANTE: Se o criativo tem imagem valida, NAO rebusca (mesmo com is_complete=false)
- * Rebusca apenas se:
- * - Nao tem imagem E nao tem textos
- * - Expirado (mais de 7 dias)
- * - Status failed com menos de 3 tentativas
+ * Rebusca se: incompleto, expirado, ou com menos de 3 tentativas e status != success
  */
 function shouldRefetchCreative(creative: MetaAdCreative): boolean {
-  // Se tem imagem valida, NAO rebusca - pode ser usado
-  if (hasValidImage(creative)) {
-    return false;
-  }
-
-  // Se tem textos validos, NAO rebusca - pode ser usado
-  if (hasValidTexts(creative)) {
-    return false;
-  }
-
-  // Se chegou ao limite de tentativas e falhou, nao tenta mais
+  // Se chegou ao limite de tentativas e falhou, não tenta mais
   if (creative.fetch_attempts >= MAX_FETCH_ATTEMPTS && creative.fetch_status === 'failed') {
     return false;
   }
 
-  // Se nao tem dados e ainda tem tentativas, rebusca
-  if (creative.fetch_attempts < MAX_FETCH_ATTEMPTS) {
+  // Se não está completo e ainda tem tentativas, rebusca
+  if (!creative.is_complete && creative.fetch_attempts < MAX_FETCH_ATTEMPTS) {
+    return true;
+  }
+
+  // Se está expirado, rebusca
+  if (isCreativeExpired(creative)) {
+    return true;
+  }
+
+  // Se está marcado como partial ou pending, rebusca
+  if (creative.fetch_status === 'partial' || creative.fetch_status === 'pending') {
     return true;
   }
 
