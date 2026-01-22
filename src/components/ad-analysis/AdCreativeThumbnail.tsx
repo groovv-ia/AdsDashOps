@@ -25,6 +25,8 @@ interface AdCreativeThumbnailProps {
   showTypeIndicator?: boolean;
   showQualityIndicator?: boolean; // Novo: mostra indicador de qualidade
   useHdWhenAvailable?: boolean; // Novo: usa imagem HD quando disponível
+  aiScore?: number | null; // Novo: score de IA (0-100) para exibir badge
+  showAiScoreBadge?: boolean; // Novo: exibe badge de score de IA
   className?: string;
 }
 
@@ -58,6 +60,8 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
   showTypeIndicator = true,
   showQualityIndicator = false,
   useHdWhenAvailable = true,
+  aiScore = null,
+  showAiScoreBadge = false,
   className = '',
 }) => {
   // Classes base do container (sem background padrão, será adicionado conforme necessário)
@@ -123,6 +127,14 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     if (quality === 'sd') return 'bg-yellow-500';
     if (quality === 'low') return 'bg-orange-500';
     return 'bg-gray-400';
+  };
+
+  // Helper para obter cor do score de IA
+  const getAiScoreColor = (score: number) => {
+    if (score >= 90) return { bg: 'bg-green-500', text: 'text-white' };
+    if (score >= 70) return { bg: 'bg-blue-500', text: 'text-white' };
+    if (score >= 50) return { bg: 'bg-yellow-500', text: 'text-white' };
+    return { bg: 'bg-red-500', text: 'text-white' };
   };
 
   // Sem imagem disponivel - mostra placeholder mais bonito
@@ -212,6 +224,17 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
           className={`absolute top-1 left-1 w-1.5 h-1.5 rounded-full ${getQualityColor()}`}
           title={`Qualidade: ${quality.toUpperCase()}`}
         ></div>
+      )}
+
+      {/* Badge de Score de IA - canto superior direito */}
+      {showAiScoreBadge && aiScore !== null && aiScore !== undefined && (
+        <div
+          className={`absolute top-0.5 right-0.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full shadow-md ${getAiScoreColor(aiScore).bg} ${getAiScoreColor(aiScore).text}`}
+          title={`Score IA: ${aiScore}/100`}
+        >
+          <Sparkles className="w-2 h-2" />
+          <span className="text-[9px] font-bold leading-none">{aiScore}</span>
+        </div>
       )}
     </div>
   );

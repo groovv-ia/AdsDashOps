@@ -358,6 +358,7 @@ export enum AdDetailTab {
   CREATIVE = 'creative',
   METRICS = 'metrics',
   AI_ANALYSIS = 'ai_analysis',
+  CREATIVE_AI = 'creative_ai', // Nova aba: Análise de Criativo com Claude
 }
 
 // Interface para configuração de cores do score

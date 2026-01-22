@@ -60,6 +60,8 @@ import {
   getBenchmarkStatusColor,
   getBenchmarkStatusLabel,
 } from '../../types/metricsAnalysis';
+import { useCreativeAnalysis } from '../../hooks/useCreativeAnalysis';
+import { CreativeAnalysisView } from './CreativeAnalysisView';
 
 // Interface para props do modal
 interface AdDetailModalProps {
@@ -326,11 +328,22 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     return 'unknown';
   };
 
+  // Hook para análise de criativo com Claude AI
+  const {
+    analysis: creativeAnalysis,
+    loading: creativeAnalysisLoading,
+    error: creativeAnalysisError,
+    analyze: analyzeCreative,
+    reanalyze: reanalyzeCreative,
+    hasAnalysis: hasCreativeAnalysis,
+  } = useCreativeAnalysis(creative?.id || null);
+
   const tabs = [
     { id: AdDetailTab.OVERVIEW, label: 'Visão Geral', icon: Eye },
     { id: AdDetailTab.CREATIVE, label: 'Criativo', icon: Image },
     { id: AdDetailTab.METRICS, label: 'Métricas', icon: BarChart3 },
     { id: AdDetailTab.AI_ANALYSIS, label: 'Análise IA', icon: Sparkles },
+    { id: AdDetailTab.CREATIVE_AI, label: 'Análise IA Criativo', icon: Sparkles },
   ];
 
   // URL da imagem para visualizacao (prioriza HD)
@@ -451,6 +464,20 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
                 isAnalyzing={isAnalyzingMetrics}
                 hasMetrics={!!metrics && metrics.total_impressions > 0}
                 onAnalyze={analyzeMetrics}
+              />
+            )}
+
+            {/* Creative AI Analysis Tab - Focado em ANALISE DE CRIATIVO com Claude */}
+            {activeTab === AdDetailTab.CREATIVE_AI && (
+              <CreativeAIAnalysisTab
+                creative={creative}
+                creativeLoading={creativeLoading}
+                creativeAnalysis={creativeAnalysis}
+                analysisLoading={creativeAnalysisLoading}
+                analysisError={creativeAnalysisError}
+                hasAnalysis={hasCreativeAnalysis}
+                onAnalyze={analyzeCreative}
+                onReanalyze={reanalyzeCreative}
               />
             )}
           </div>
@@ -1739,6 +1766,186 @@ const MetricsAIAnalysisTab: React.FC<MetricsAIAnalysisTabProps> = ({
         </button>
       </div>
     </div>
+  );
+};
+
+// Creative AI Analysis Tab Component - NOVO FOCO EM ANALISE DE CRIATIVO COM CLAUDE
+interface CreativeAIAnalysisTabProps {
+  creative: ReturnType<typeof useAdDetailData>['creative'];
+  creativeLoading: boolean;
+  creativeAnalysis: ReturnType<typeof useCreativeAnalysis>['analysis'];
+  analysisLoading: boolean;
+  analysisError: string | null;
+  hasAnalysis: boolean;
+  onAnalyze: () => Promise<any>;
+  onReanalyze: () => Promise<any>;
+}
+
+const CreativeAIAnalysisTab: React.FC<CreativeAIAnalysisTabProps> = ({
+  creative,
+  creativeLoading,
+  creativeAnalysis,
+  analysisLoading,
+  analysisError,
+  hasAnalysis,
+  onAnalyze,
+  onReanalyze,
+}) => {
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // Handler para analisar criativo
+  const handleAnalyze = async () => {
+    setIsAnalyzing(true);
+    try {
+      await onAnalyze();
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // Handler para re-analisar
+  const handleReanalyze = async () => {
+    setIsAnalyzing(true);
+    try {
+      await onReanalyze();
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  // Handler para exportar análise
+  const handleExport = () => {
+    if (!creativeAnalysis) return;
+
+    const dataStr = JSON.stringify(creativeAnalysis, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `creative-analysis-${creativeAnalysis.creative_id}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Estado de loading inicial
+  if (creativeLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center">
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-500">Carregando criativo...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado sem criativo disponível
+  if (!creative) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Image className="w-8 h-8 text-gray-300" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Criativo não disponível
+          </h3>
+          <p className="text-gray-500">
+            Este anúncio não possui criativo sincronizado. A análise de IA requer um criativo visual.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado de loading durante análise
+  if (analysisLoading || isAnalyzing) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center">
+          <div className="relative">
+            <Sparkles className="w-12 h-12 text-purple-500 animate-pulse mx-auto" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-16 h-16 border-3 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
+            </div>
+          </div>
+          <p className="text-gray-900 font-medium mt-6 mb-2">Analisando criativo com Claude AI...</p>
+          <p className="text-sm text-gray-500">Isso pode levar de 5 a 15 segundos</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado de erro
+  if (analysisError) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Erro na Análise
+          </h3>
+          <p className="text-gray-500 mb-4">{analysisError}</p>
+          <button
+            onClick={handleAnalyze}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all shadow-lg shadow-purple-500/25"
+          >
+            <RefreshCw className="w-5 h-5" />
+            Tentar Novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado sem análise - prompt para analisar
+  if (!creativeAnalysis || !hasAnalysis) {
+    const hasImageOrVideo = creative.image_url || creative.video_url || creative.thumbnail_url;
+
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Sparkles className="w-8 h-8 text-purple-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Análise de Criativo com Claude AI
+          </h3>
+          <p className="text-gray-500 mb-6">
+            Obtenha uma análise completa do seu criativo incluindo scores AIDA, análise visual,
+            análise de copy, pontos fortes, fracos e recomendações detalhadas.
+          </p>
+          {hasImageOrVideo ? (
+            <button
+              onClick={handleAnalyze}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-medium rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all shadow-lg shadow-purple-500/25"
+            >
+              <Sparkles className="w-5 h-5" />
+              Analisar Criativo com IA
+            </button>
+          ) : (
+            <p className="text-sm text-amber-600">
+              Este criativo não possui imagem ou vídeo disponível para análise
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-4">
+            Usa Claude AI para análise estratégica de criativos
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Renderiza análise completa usando CreativeAnalysisView
+  return (
+    <CreativeAnalysisView
+      analysis={creativeAnalysis}
+      loading={isAnalyzing}
+      onReanalyze={handleReanalyze}
+      onExport={handleExport}
+    />
   );
 };
 
