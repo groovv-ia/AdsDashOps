@@ -419,7 +419,7 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
         <Card className="bg-gradient-to-br from-pink-500 to-pink-600 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-pink-100 mb-1">Conversoes</p>
+              <p className="text-sm font-medium text-pink-100 mb-1">Conversas</p>
               <p className="text-3xl font-bold">
                 {formatCompactNumber(campaign.metrics.conversions)}
               </p>
@@ -571,7 +571,7 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
                 <option value="impressions">Impressoes</option>
                 <option value="clicks">Cliques</option>
                 <option value="spend">Gasto</option>
-                <option value="conversions">Conversoes</option>
+                <option value="conversions">Conversas</option>
                 <option value="ctr">CTR</option>
                 <option value="cpc">CPC</option>
               </select>
@@ -706,7 +706,7 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
                       CPC
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                      Conversoes
+                      Conversas
                     </th>
                   </tr>
                 </thead>
@@ -805,7 +805,7 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
                       CPM
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
-                      Conversoes
+                      Conversas
                     </th>
                   </tr>
                 </thead>
