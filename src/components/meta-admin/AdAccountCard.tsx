@@ -418,88 +418,6 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
         </div>
       </div>
 
-      {/* Secao de metricas principais - Grid 2x2 (4 cards) com gradientes */}
-      {/* So mostra metricas se tiver spend, impressions, clicks (estrutura completa) */}
-      {account.metrics && typeof account.metrics.spend === 'number' && (
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          {/* Gasto */}
-          <div className="bg-gradient-to-br from-green-50 to-green-100/50 rounded-lg p-3 border border-green-200">
-            <div className="flex items-center space-x-2 mb-1">
-              <DollarSign className="h-4 w-4 text-green-600" />
-              <span className="text-xs font-medium text-green-700">Gasto</span>
-            </div>
-            <p className="text-xl font-bold text-green-900">
-              {formatCurrency(account.metrics.spend || 0, account.currency)}
-            </p>
-          </div>
-
-          {/* Impressoes */}
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg p-3 border border-blue-200">
-            <div className="flex items-center space-x-2 mb-1">
-              <Eye className="h-4 w-4 text-blue-600" />
-              <span className="text-xs font-medium text-blue-700">Impressoes</span>
-            </div>
-            <p className="text-xl font-bold text-blue-900">
-              {formatCompact(account.metrics.impressions)}
-            </p>
-          </div>
-
-          {/* Cliques */}
-          <div className="bg-gradient-to-br from-orange-50 to-orange-100/50 rounded-lg p-3 border border-orange-200">
-            <div className="flex items-center space-x-2 mb-1">
-              <MousePointer className="h-4 w-4 text-orange-600" />
-              <span className="text-xs font-medium text-orange-700">Cliques</span>
-            </div>
-            <p className="text-xl font-bold text-orange-900">
-              {formatCompact(account.metrics.clicks)}
-            </p>
-          </div>
-
-          {/* Alcance */}
-          <div className="bg-gradient-to-br from-teal-50 to-teal-100/50 rounded-lg p-3 border border-teal-200">
-            <div className="flex items-center space-x-2 mb-1">
-              <Users className="h-4 w-4 text-teal-600" />
-              <span className="text-xs font-medium text-teal-700">Alcance</span>
-            </div>
-            <p className="text-xl font-bold text-teal-900">
-              {formatCompact(account.metrics.reach)}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Secao de metricas calculadas - linha horizontal */}
-      {account.metrics && typeof account.metrics.ctr === 'number' && (
-        <div className="grid grid-cols-3 gap-2 mb-4 pb-4 border-b border-gray-200">
-          <div className="text-center">
-            <p className="text-xs text-gray-500 mb-1">CTR</p>
-            <div className="flex items-center justify-center space-x-1">
-              <p className="text-sm font-semibold text-gray-900">
-                {(account.metrics.ctr || 0).toFixed(2)}%
-              </p>
-              {(account.metrics.ctr || 0) >= 2 ? (
-                <TrendingUp className="h-3 w-3 text-green-600" />
-              ) : (account.metrics.ctr || 0) >= 1 ? (
-                <TrendingUp className="h-3 w-3 text-yellow-600" />
-              ) : (account.metrics.ctr || 0) > 0 ? (
-                <TrendingDown className="h-3 w-3 text-red-600" />
-              ) : null}
-            </div>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-gray-500 mb-1">CPC</p>
-            <p className="text-sm font-semibold text-gray-900">
-              {formatCurrency(cpc, account.currency)}
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-gray-500 mb-1">CPM</p>
-            <p className="text-sm font-semibold text-gray-900">
-              {formatCurrency(cpm, account.currency)}
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Secao de indicadores de entidades (campanhas, conjuntos, anuncios) */}
       {hasEntityCounts && (
@@ -545,15 +463,6 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
         </div>
       )}
 
-      {/* Estado sem metricas */}
-      {!account.metrics && (
-        <div className="bg-gray-50 rounded-lg p-6 mb-4 text-center">
-          <BarChart3 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500">
-            Sincronize para ver metricas
-          </p>
-        </div>
-      )}
 
       {/* Info de sincronizacao com progresso */}
       <div className="mb-4">
