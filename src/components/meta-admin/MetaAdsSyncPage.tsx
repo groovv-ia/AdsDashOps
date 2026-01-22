@@ -1637,11 +1637,11 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Conversoes */}
+        {/* Conversas */}
         <Card className="bg-gradient-to-br from-purple-50 to-white border-purple-100">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-purple-600">Conversoes</p>
+              <p className="text-sm font-medium text-purple-600">Conversas</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
                 {formatCompact(kpis.totalLeads + kpis.totalConversions)}
               </p>
@@ -1657,11 +1657,11 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Custo por Conversao */}
+        {/* Custo por Conversa */}
         <Card className="bg-gradient-to-br from-pink-50 to-white border-pink-100">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-pink-600">Custo/Conversao</p>
+              <p className="text-sm font-medium text-pink-600">Custo/Conversa</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
                 {(kpis.totalLeads + kpis.totalConversions) > 0
                   ? formatCurrency(kpis.totalSpend / (kpis.totalLeads + kpis.totalConversions))
