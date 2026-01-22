@@ -1643,9 +1643,9 @@ export const MetaAdsSyncPage: React.FC = () => {
             <div>
               <p className="text-sm font-medium text-purple-600">Conversas</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCompact(kpis.totalLeads + kpis.totalConversions)}
+                {formatCompact(kpis.totalConversions)}
               </p>
-              {(kpis.totalLeads > 0 || kpis.totalConversions > 0) && (
+              {kpis.totalConversions > 0 && (
                 <p className="text-xs text-purple-500 mt-1">
                   Leads + Conversas
                 </p>
@@ -1663,8 +1663,8 @@ export const MetaAdsSyncPage: React.FC = () => {
             <div>
               <p className="text-sm font-medium text-pink-600">Custo/Conversa</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
-                {(kpis.totalLeads + kpis.totalConversions) > 0
-                  ? formatCurrency(kpis.totalSpend / (kpis.totalLeads + kpis.totalConversions))
+                {kpis.totalConversions > 0
+                  ? formatCurrency(kpis.totalSpend / kpis.totalConversions)
                   : 'N/A'}
               </p>
             </div>

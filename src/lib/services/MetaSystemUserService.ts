@@ -486,11 +486,18 @@ export async function getInsightsFromDatabase(options: {
   }
 
   // Processa os dados para extrair metricas do actions_json
-  const processedData = (data || []).map((row) => ({
-    ...row,
-    leads: extractLeadsFromActions(row.actions_json),
-    messaging_conversations_started: extractMessagingConversationsFromActions(row.actions_json),
-  }));
+  const processedData = (data || []).map((row) => {
+    const leads = extractLeadsFromActions(row.actions_json);
+    const messaging_conversations_started = extractMessagingConversationsFromActions(row.actions_json);
+
+    return {
+      ...row,
+      leads,
+      messaging_conversations_started,
+      // Calcula conversions como soma de leads + conversas iniciadas
+      conversions: leads + messaging_conversations_started,
+    };
+  });
 
   return { data: processedData };
 }
@@ -570,11 +577,18 @@ export async function getAdInsightsByAdset(options: {
   }
 
   // Processa os dados para extrair metricas do actions_json
-  const processedData = (data || []).map((row) => ({
-    ...row,
-    leads: extractLeadsFromActions(row.actions_json),
-    messaging_conversations_started: extractMessagingConversationsFromActions(row.actions_json),
-  }));
+  const processedData = (data || []).map((row) => {
+    const leads = extractLeadsFromActions(row.actions_json);
+    const messaging_conversations_started = extractMessagingConversationsFromActions(row.actions_json);
+
+    return {
+      ...row,
+      leads,
+      messaging_conversations_started,
+      // Calcula conversions como soma de leads + conversas iniciadas
+      conversions: leads + messaging_conversations_started,
+    };
+  });
 
   return { data: processedData };
 }
