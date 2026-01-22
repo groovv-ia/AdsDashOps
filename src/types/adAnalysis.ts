@@ -325,6 +325,9 @@ export interface PreloadedInsightRow {
   ctr: number;
   cpc: number;
   cpm: number;
+  // Campos de conversao extraidos do actions_json
+  leads?: number;
+  messaging_conversations_started?: number;
 }
 
 // Interface para estado do modal de detalhes

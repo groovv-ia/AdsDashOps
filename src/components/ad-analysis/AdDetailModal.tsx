@@ -181,20 +181,27 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   const aggregatedPreloadedMetrics = useMemo(() => {
     if (!hasPreloadedData) return null;
 
+    // Soma todas as metricas incluindo leads e conversas iniciadas
     const totals = preloadedMetrics.reduce(
       (acc, row) => ({
         impressions: acc.impressions + (row.impressions || 0),
         reach: acc.reach + (row.reach || 0),
         clicks: acc.clicks + (row.clicks || 0),
         spend: acc.spend + (row.spend || 0),
+        leads: acc.leads + ((row as any).leads || 0),
+        messaging_conversations_started: acc.messaging_conversations_started + ((row as any).messaging_conversations_started || 0),
       }),
-      { impressions: 0, reach: 0, clicks: 0, spend: 0 }
+      { impressions: 0, reach: 0, clicks: 0, spend: 0, leads: 0, messaging_conversations_started: 0 }
     );
 
     const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
     const avgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
     const avgCpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
     const avgFrequency = totals.reach > 0 ? totals.impressions / totals.reach : 0;
+    const avgCostPerLead = totals.leads > 0 ? totals.spend / totals.leads : 0;
+    const avgCostPerConversation = totals.messaging_conversations_started > 0
+      ? totals.spend / totals.messaging_conversations_started
+      : 0;
 
     const dailyMetrics = [...preloadedMetrics]
       .sort((a, b) => a.date.localeCompare(b.date))
@@ -226,6 +233,10 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
       total_conversions: 0,
       avg_conversion_rate: 0,
       avg_cost_per_conversion: 0,
+      total_leads: totals.leads,
+      avg_cost_per_lead: avgCostPerLead,
+      total_messaging_conversations_started: totals.messaging_conversations_started,
+      avg_cost_per_messaging_conversation_started: avgCostPerConversation,
       daily_metrics: dailyMetrics,
     };
   }, [hasPreloadedData, preloadedMetrics]);

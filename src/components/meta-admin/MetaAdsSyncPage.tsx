@@ -84,6 +84,7 @@ interface InsightRow {
   cpm: number;
   // Campos de conversao para ROAS
   leads?: number;
+  messaging_conversations_started?: number;
   conversions?: number;
   conversion_value?: number;
   purchase_value?: number;

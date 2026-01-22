@@ -393,7 +393,49 @@ export async function getMetaSyncStatus(clientId?: string): Promise<SyncStatusRe
 }
 
 /**
+ * Extrai o valor de um action_type especifico do actions_json
+ * O actions_json pode ser um array de objetos com {action_type, value} ou uma string JSON
+ */
+function extractActionValue(actionsJson: unknown, actionType: string): number {
+  if (!actionsJson) return 0;
+
+  // Se for string, tenta parsear como JSON
+  let parsed = actionsJson;
+  if (typeof actionsJson === 'string') {
+    try {
+      parsed = JSON.parse(actionsJson);
+    } catch {
+      return 0;
+    }
+  }
+
+  // Se for um array, busca o action_type especifico
+  if (Array.isArray(parsed)) {
+    const action = parsed.find((a: { action_type?: string }) => a?.action_type === actionType);
+    return action ? parseFloat(action.value || '0') : 0;
+  }
+
+  return 0;
+}
+
+/**
+ * Extrai leads do actions_json (action_type = 'lead')
+ */
+function extractLeadsFromActions(actionsJson: unknown): number {
+  return extractActionValue(actionsJson, 'lead');
+}
+
+/**
+ * Extrai conversas iniciadas do actions_json
+ * (action_type = 'onsite_conversion.messaging_conversation_started_7d')
+ */
+function extractMessagingConversationsFromActions(actionsJson: unknown): number {
+  return extractActionValue(actionsJson, 'onsite_conversion.messaging_conversation_started_7d');
+}
+
+/**
  * Busca insights do banco de dados local
+ * Processa o actions_json para extrair metricas de conversas e leads
  */
 export async function getInsightsFromDatabase(options: {
   workspaceId?: string;
@@ -437,7 +479,14 @@ export async function getInsightsFromDatabase(options: {
     return { data: [], error: error.message };
   }
 
-  return { data: data || [] };
+  // Processa os dados para extrair metricas do actions_json
+  const processedData = (data || []).map((row) => ({
+    ...row,
+    leads: extractLeadsFromActions(row.actions_json),
+    messaging_conversations_started: extractMessagingConversationsFromActions(row.actions_json),
+  }));
+
+  return { data: processedData };
 }
 
 /**
@@ -514,5 +563,12 @@ export async function getAdInsightsByAdset(options: {
     return { data: [], error: error.message };
   }
 
-  return { data: data || [] };
+  // Processa os dados para extrair metricas do actions_json
+  const processedData = (data || []).map((row) => ({
+    ...row,
+    leads: extractLeadsFromActions(row.actions_json),
+    messaging_conversations_started: extractMessagingConversationsFromActions(row.actions_json),
+  }));
+
+  return { data: processedData };
 }
