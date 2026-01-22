@@ -223,6 +223,11 @@ export interface AdMetrics {
   conversions: number;
   conversion_rate: number;
   cost_per_conversion: number;
+  // Novas metricas de conversas e leads
+  messaging_conversations_started: number;
+  cost_per_messaging_conversation_started: number;
+  leads: number;
+  cost_per_lead: number;
 }
 
 // Interface para dados agregados de métricas
@@ -239,6 +244,11 @@ export interface AdMetricsAggregated {
   avg_conversion_rate: number;
   avg_cost_per_conversion: number;
   daily_metrics: AdMetrics[];
+  // Novas metricas de conversas e leads (agregadas)
+  total_messaging_conversations_started: number;
+  avg_cost_per_messaging_conversation_started: number;
+  total_leads: number;
+  avg_cost_per_lead: number;
 }
 
 // Interface para dados completos do detalhe do anúncio

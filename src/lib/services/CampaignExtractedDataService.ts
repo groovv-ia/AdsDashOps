@@ -36,6 +36,11 @@ export interface CampaignMetrics {
   roas: number;
   reach: number;
   frequency: number;
+  // Novas metricas de conversas e leads
+  messaging_conversations_started: number;
+  cost_per_messaging_conversation_started: number;
+  leads: number;
+  cost_per_lead: number;
 }
 
 /** Dados de um conjunto de anuncios (adset) */
@@ -55,6 +60,11 @@ export interface AdSetData {
   reach: number;
   frequency: number;
   ads_count: number;
+  // Novas metricas de conversas e leads
+  messaging_conversations_started: number;
+  cost_per_messaging_conversation_started: number;
+  leads: number;
+  cost_per_lead: number;
 }
 
 /** Dados de um anuncio individual */
@@ -76,6 +86,11 @@ export interface AdData {
   reach: number;
   frequency: number;
   thumbnail_url?: string;
+  // Novas metricas de conversas e leads
+  messaging_conversations_started: number;
+  cost_per_messaging_conversation_started: number;
+  leads: number;
+  cost_per_lead: number;
 }
 
 /** Resultado da comparacao entre dois periodos */

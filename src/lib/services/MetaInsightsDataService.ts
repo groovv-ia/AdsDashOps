@@ -36,6 +36,11 @@ export interface MetaCampaignData {
     conversion_value: number;
     roas: number;
     cost_per_result: number;
+    // Novas metricas de conversas e leads
+    messaging_conversations_started: number;
+    cost_per_messaging_conversation_started: number;
+    leads: number;
+    cost_per_lead: number;
   };
   first_date: string;
   last_date: string;
@@ -67,6 +72,11 @@ export interface MetaDailyMetrics {
   roas: number;
   cost_per_result: number;
   unique_clicks: number;
+  // Novas metricas de conversas e leads
+  messaging_conversations_started: number;
+  cost_per_messaging_conversation_started: number;
+  leads: number;
+  cost_per_lead: number;
 }
 
 /**
@@ -156,6 +166,73 @@ function extractConversions(actionsJson: Record<string, unknown> | null | undefi
     const purchase = (actionsJson as Record<string, number>)['purchase'] || 0;
     const lead = (actionsJson as Record<string, number>)['lead'] || 0;
     return purchase + lead;
+  }
+
+  return 0;
+}
+
+/**
+ * Extrai conversas iniciadas do campo actions_json
+ * O Meta retorna conversas iniciadas com action_type contendo "messaging_conversation_started"
+ */
+function extractMessagingConversationsStarted(actionsJson: Record<string, unknown> | null | undefined): number {
+  if (!actionsJson) return 0;
+
+  // Se for um array, soma os valores relevantes
+  if (Array.isArray(actionsJson)) {
+    let total = 0;
+    for (const action of actionsJson) {
+      const actionType = action?.action_type || '';
+      // Tipos de acao que contam como conversas iniciadas
+      if (
+        actionType.includes('messaging_conversation_started') ||
+        actionType.includes('onsite_conversion.messaging_conversation_started') ||
+        actionType === 'onsite_conversion.messaging_conversation_started_7d'
+      ) {
+        total += parseFloat(action?.value || '0');
+      }
+    }
+    return total;
+  }
+
+  // Se for objeto, tenta acessar diretamente
+  if (typeof actionsJson === 'object') {
+    const conversations = (actionsJson as Record<string, number>)['messaging_conversation_started'] || 0;
+    return conversations;
+  }
+
+  return 0;
+}
+
+/**
+ * Extrai leads do campo actions_json
+ * O Meta retorna leads com action_type contendo "lead"
+ */
+function extractLeads(actionsJson: Record<string, unknown> | null | undefined): number {
+  if (!actionsJson) return 0;
+
+  // Se for um array, soma os valores relevantes
+  if (Array.isArray(actionsJson)) {
+    let total = 0;
+    for (const action of actionsJson) {
+      const actionType = action?.action_type || '';
+      // Tipos de acao que contam como leads
+      if (
+        actionType === 'lead' ||
+        actionType === 'offsite_conversion.fb_pixel_lead' ||
+        actionType.includes('lead_form') ||
+        actionType === 'onsite_conversion.lead_grouped'
+      ) {
+        total += parseFloat(action?.value || '0');
+      }
+    }
+    return total;
+  }
+
+  // Se for objeto, tenta acessar diretamente
+  if (typeof actionsJson === 'object') {
+    const leads = (actionsJson as Record<string, number>)['lead'] || 0;
+    return leads;
   }
 
   return 0;
@@ -283,9 +360,11 @@ export class MetaInsightsDataService {
         const existing = campaignsMap.get(insight.entity_id);
         const entity = entities.find(e => e.entity_id === insight.entity_id);
 
-        // Extrai conversoes do actions_json
+        // Extrai conversoes e novas metricas do actions_json
         const conversions = extractConversions(insight.actions_json);
         const conversionValue = extractConversionValue(insight.action_values_json);
+        const messagingConversationsStarted = extractMessagingConversationsStarted(insight.actions_json);
+        const leads = extractLeads(insight.actions_json);
 
         if (existing) {
           existing.metrics.impressions += Number(insight.impressions) || 0;
@@ -294,6 +373,8 @@ export class MetaInsightsDataService {
           existing.metrics.reach += Number(insight.reach) || 0;
           existing.metrics.conversions += conversions;
           existing.metrics.conversion_value += conversionValue;
+          existing.metrics.messaging_conversations_started += messagingConversationsStarted;
+          existing.metrics.leads += leads;
           existing.days_with_data += 1;
 
           if (insight.date < existing.first_date) existing.first_date = insight.date;
@@ -321,6 +402,10 @@ export class MetaInsightsDataService {
               conversion_value: conversionValue,
               roas: 0,
               cost_per_result: 0,
+              messaging_conversations_started: messagingConversationsStarted,
+              cost_per_messaging_conversation_started: 0,
+              leads: leads,
+              cost_per_lead: 0,
             },
             first_date: insight.date,
             last_date: insight.date,
@@ -402,6 +487,8 @@ export class MetaInsightsDataService {
         const existing = adsetsMap.get(insight.entity_id);
         const conversions = extractConversions(insight.actions_json);
         const conversionValue = extractConversionValue(insight.action_values_json);
+        const messagingConversationsStarted = extractMessagingConversationsStarted(insight.actions_json);
+        const leads = extractLeads(insight.actions_json);
 
         if (existing) {
           existing.metrics.impressions += Number(insight.impressions) || 0;
@@ -410,6 +497,8 @@ export class MetaInsightsDataService {
           existing.metrics.reach += Number(insight.reach) || 0;
           existing.metrics.conversions += conversions;
           existing.metrics.conversion_value += conversionValue;
+          existing.metrics.messaging_conversations_started += messagingConversationsStarted;
+          existing.metrics.leads += leads;
           existing.days_with_data += 1;
         } else {
           adsetsMap.set(insight.entity_id, {
@@ -434,6 +523,10 @@ export class MetaInsightsDataService {
               conversion_value: conversionValue,
               roas: 0,
               cost_per_result: 0,
+              messaging_conversations_started: messagingConversationsStarted,
+              cost_per_messaging_conversation_started: 0,
+              leads: leads,
+              cost_per_lead: 0,
             },
             first_date: insight.date,
             last_date: insight.date,
@@ -512,6 +605,8 @@ export class MetaInsightsDataService {
         const existing = adsMap.get(insight.entity_id);
         const conversions = extractConversions(insight.actions_json);
         const conversionValue = extractConversionValue(insight.action_values_json);
+        const messagingConversationsStarted = extractMessagingConversationsStarted(insight.actions_json);
+        const leads = extractLeads(insight.actions_json);
 
         if (existing) {
           existing.metrics.impressions += Number(insight.impressions) || 0;
@@ -520,6 +615,8 @@ export class MetaInsightsDataService {
           existing.metrics.reach += Number(insight.reach) || 0;
           existing.metrics.conversions += conversions;
           existing.metrics.conversion_value += conversionValue;
+          existing.metrics.messaging_conversations_started += messagingConversationsStarted;
+          existing.metrics.leads += leads;
           existing.days_with_data += 1;
         } else {
           adsMap.set(insight.entity_id, {
@@ -543,6 +640,10 @@ export class MetaInsightsDataService {
               conversion_value: conversionValue,
               roas: 0,
               cost_per_result: 0,
+              messaging_conversations_started: messagingConversationsStarted,
+              cost_per_messaging_conversation_started: 0,
+              leads: leads,
+              cost_per_lead: 0,
             },
             first_date: insight.date,
             last_date: insight.date,
@@ -600,6 +701,8 @@ export class MetaInsightsDataService {
       const dailyMetrics: MetaDailyMetrics[] = (insights || []).map((insight: RawInsight) => {
         const conversions = extractConversions(insight.actions_json);
         const conversionValue = extractConversionValue(insight.action_values_json);
+        const messagingConversationsStarted = extractMessagingConversationsStarted(insight.actions_json);
+        const leads = extractLeads(insight.actions_json);
         const spend = Number(insight.spend) || 0;
 
         return {
@@ -620,6 +723,10 @@ export class MetaInsightsDataService {
           roas: spend > 0 && conversionValue > 0 ? conversionValue / spend : 0,
           cost_per_result: conversions > 0 ? spend / conversions : 0,
           unique_clicks: Number(insight.unique_clicks) || 0,
+          messaging_conversations_started: messagingConversationsStarted,
+          cost_per_messaging_conversation_started: messagingConversationsStarted > 0 ? spend / messagingConversationsStarted : 0,
+          leads: leads,
+          cost_per_lead: leads > 0 ? spend / leads : 0,
         };
       });
 
@@ -676,9 +783,10 @@ export class MetaInsightsDataService {
   }
 
   /**
-   * Calcula metricas derivadas (CTR, CPC, CPM, ROAS)
+   * Calcula metricas derivadas (CTR, CPC, CPM, ROAS, custo por conversa, custo por lead)
    */
   private calculateDerivedMetrics(metrics: MetaCampaignData['metrics']): void {
+    // Metricas basicas
     metrics.ctr = metrics.impressions > 0
       ? (metrics.clicks / metrics.impressions) * 100
       : 0;
@@ -701,6 +809,15 @@ export class MetaInsightsDataService {
 
     metrics.cost_per_result = metrics.conversions > 0
       ? metrics.spend / metrics.conversions
+      : 0;
+
+    // Novas metricas: custo por conversa iniciada e custo por lead
+    metrics.cost_per_messaging_conversation_started = metrics.messaging_conversations_started > 0
+      ? metrics.spend / metrics.messaging_conversations_started
+      : 0;
+
+    metrics.cost_per_lead = metrics.leads > 0
+      ? metrics.spend / metrics.leads
       : 0;
   }
 }

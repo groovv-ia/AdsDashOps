@@ -482,6 +482,34 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
         </Card>
       </div>
 
+      {/* Novas metricas de conversas e leads */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100/50 border-cyan-200">
+          <p className="text-sm text-cyan-700 font-medium mb-1">Conversas Iniciadas</p>
+          <p className="text-2xl font-bold text-cyan-900">
+            {formatNumber(campaign.metrics.messaging_conversations_started)}
+          </p>
+        </Card>
+        <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100/50 border-cyan-200">
+          <p className="text-sm text-cyan-700 font-medium mb-1">Custo/Conversa</p>
+          <p className="text-2xl font-bold text-cyan-900">
+            {formatCurrency(campaign.metrics.cost_per_messaging_conversation_started)}
+          </p>
+        </Card>
+        <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200">
+          <p className="text-sm text-emerald-700 font-medium mb-1">Total de Leads</p>
+          <p className="text-2xl font-bold text-emerald-900">
+            {formatNumber(campaign.metrics.leads)}
+          </p>
+        </Card>
+        <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200">
+          <p className="text-sm text-emerald-700 font-medium mb-1">Custo/Lead</p>
+          <p className="text-2xl font-bold text-emerald-900">
+            {formatCurrency(campaign.metrics.cost_per_lead)}
+          </p>
+        </Card>
+      </div>
+
       {/* Tabs de navegacao */}
       <div className="border-b border-gray-200">
         <nav className="flex space-x-8">

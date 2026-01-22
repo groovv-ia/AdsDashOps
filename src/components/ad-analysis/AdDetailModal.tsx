@@ -1083,13 +1083,19 @@ const MetricsTab: React.FC<MetricsTabProps> = ({ metrics, loading, startDate, en
       </div>
 
       {/* Metricas secundarias */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricBadge label="CTR" value={formatPercent(metrics.avg_ctr)} trend="up" />
         <MetricBadge label="CPC" value={formatCurrency(metrics.avg_cpc)} />
         <MetricBadge label="CPM" value={formatCurrency(metrics.avg_cpm)} />
         <MetricBadge label="Frequência" value={metrics.avg_frequency.toFixed(2)} />
-        <MetricBadge label="Conversões" value={formatNumber(metrics.total_conversions)} />
-        <MetricBadge label="Custo/Conv." value={formatCurrency(metrics.avg_cost_per_conversion)} />
+      </div>
+
+      {/* Novas metricas de conversas e leads */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricBadge label="Conversas" value={formatNumber(metrics.total_messaging_conversations_started || 0)} />
+        <MetricBadge label="Custo/Conversa" value={formatCurrency(metrics.avg_cost_per_messaging_conversation_started || 0)} />
+        <MetricBadge label="Total Leads" value={formatNumber(metrics.total_leads || 0)} />
+        <MetricBadge label="Custo/Lead" value={formatCurrency(metrics.avg_cost_per_lead || 0)} />
       </div>
 
       {/* Graficos */}
