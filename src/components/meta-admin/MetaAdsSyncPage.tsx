@@ -27,6 +27,8 @@ import {
   Target,
   FolderOpen,
   Image,
+  MessageSquare,
+  CircleDollarSign,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -1569,7 +1571,7 @@ export const MetaAdsSyncPage: React.FC = () => {
       </Card>
 
       {/* KPIs Principais */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Gasto Total */}
         <Card className="bg-gradient-to-br from-green-50 to-white border-green-100">
           <div className="flex items-start justify-between">
@@ -1631,6 +1633,43 @@ export const MetaAdsSyncPage: React.FC = () => {
             </div>
             <div className="p-2 bg-teal-100 rounded-lg">
               <TrendingUp className="w-5 h-5 text-teal-600" />
+            </div>
+          </div>
+        </Card>
+
+        {/* Conversoes */}
+        <Card className="bg-gradient-to-br from-purple-50 to-white border-purple-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-purple-600">Conversoes</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {formatCompact(kpis.totalLeads + kpis.totalConversions)}
+              </p>
+              {(kpis.totalLeads > 0 || kpis.totalConversions > 0) && (
+                <p className="text-xs text-purple-500 mt-1">
+                  Leads + Conversas
+                </p>
+              )}
+            </div>
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <MessageSquare className="w-5 h-5 text-purple-600" />
+            </div>
+          </div>
+        </Card>
+
+        {/* Custo por Conversao */}
+        <Card className="bg-gradient-to-br from-pink-50 to-white border-pink-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-pink-600">Custo/Conversao</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {(kpis.totalLeads + kpis.totalConversions) > 0
+                  ? formatCurrency(kpis.totalSpend / (kpis.totalLeads + kpis.totalConversions))
+                  : 'N/A'}
+              </p>
+            </div>
+            <div className="p-2 bg-pink-100 rounded-lg">
+              <CircleDollarSign className="w-5 h-5 text-pink-600" />
             </div>
           </div>
         </Card>
