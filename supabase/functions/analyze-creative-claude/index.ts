@@ -274,11 +274,33 @@ Deno.serve(async (req: Request) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    // Autentica usuário
+    // Autentica usuario
     const { data: { user }, error: userError } = await supabaseAuth.auth.getUser();
     if (userError || !user) {
+      console.error('[analyze-creative-claude] Auth error:', userError?.message || 'No user found');
+
+      // Mensagem de erro mais descritiva para o frontend
+      let errorMessage = 'Nao autorizado';
+      let errorCode = 'AUTH_FAILED';
+
+      if (userError?.message?.includes('expired')) {
+        errorMessage = 'Sessao expirada. Faca login novamente.';
+        errorCode = 'TOKEN_EXPIRED';
+      } else if (userError?.message?.includes('invalid')) {
+        errorMessage = 'Token invalido. Faca login novamente.';
+        errorCode = 'TOKEN_INVALID';
+      } else if (!authHeader.includes('Bearer ')) {
+        errorMessage = 'Formato de autorizacao invalido.';
+        errorCode = 'AUTH_FORMAT_ERROR';
+      }
+
       return new Response(
-        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        JSON.stringify({
+          success: false,
+          error: errorMessage,
+          code: errorCode,
+          details: userError?.message,
+        }),
         {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -295,11 +317,29 @@ Deno.serve(async (req: Request) => {
       .eq('id', creativeId)
       .maybeSingle();
 
-    if (creativeError || !creative) {
+    if (creativeError) {
+      console.error('[analyze-creative-claude] Database error:', creativeError.message);
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'Creative not found',
+          error: 'Erro ao buscar criativo no banco de dados',
+          code: 'DB_ERROR',
+          details: creativeError.message,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    if (!creative) {
+      console.error('[analyze-creative-claude] Creative not found:', creativeId);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Criativo nao encontrado. Sincronize os criativos primeiro.',
+          code: 'CREATIVE_NOT_FOUND',
         }),
         {
           status: 404,
@@ -339,10 +379,12 @@ Deno.serve(async (req: Request) => {
                      creative.thumbnail_url;
 
     if (!imageUrl) {
+      console.error('[analyze-creative-claude] No image URL for creative:', creativeId);
       return new Response(
         JSON.stringify({
           success: false,
-          error: 'No image available for analysis',
+          error: 'Criativo sem imagem disponivel para analise. Sincronize os criativos novamente.',
+          code: 'NO_IMAGE',
         }),
         {
           status: 400,
@@ -351,10 +393,30 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log(`Analyzing creative ${creativeId} with image: ${imageUrl}`);
+    console.log(`[analyze-creative-claude] Analyzing creative ${creativeId} with image: ${imageUrl}`);
 
     // Converte imagem para base64
-    const { base64, mediaType } = await imageUrlToBase64(imageUrl);
+    let base64: string;
+    let mediaType: string;
+    try {
+      const imageData = await imageUrlToBase64(imageUrl);
+      base64 = imageData.base64;
+      mediaType = imageData.mediaType;
+    } catch (imageError) {
+      console.error('[analyze-creative-claude] Failed to fetch image:', imageError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Falha ao carregar imagem do criativo. A URL pode estar expirada.',
+          code: 'IMAGE_FETCH_ERROR',
+          details: imageError instanceof Error ? imageError.message : 'Unknown error',
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
 
     // Cria prompt de análise
     const analysisPrompt = createAnalysisPrompt(creative);

@@ -3,10 +3,59 @@
  *
  * Este serviço gerencia a comunicação com a Edge Function que usa
  * Claude 3.5 Sonnet para analisar criativos de anúncios.
+ *
+ * Inclui:
+ * - Verificacao de expiracao do token antes de requisicoes
+ * - Refresh automatico do token quando necessario
+ * - Retry automatico em caso de falha de autenticacao
  */
 
 import { supabase } from '../supabase';
 import type { MetaAdCreative } from '../../types/adAnalysis';
+
+// Margem de seguranca para refresh do token (5 minutos antes de expirar)
+const TOKEN_EXPIRY_MARGIN_MS = 5 * 60 * 1000;
+
+// Numero maximo de tentativas de retry
+const MAX_RETRIES = 2;
+
+/**
+ * Verifica se o token da sessao esta expirado ou proximo de expirar
+ */
+function isTokenExpiredOrExpiring(expiresAt: number | undefined): boolean {
+  if (!expiresAt) return true;
+  const expiryTime = expiresAt * 1000;
+  const now = Date.now();
+  return now >= expiryTime - TOKEN_EXPIRY_MARGIN_MS;
+}
+
+/**
+ * Obtem uma sessao valida, fazendo refresh se necessario
+ */
+async function getValidSession() {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session) {
+    throw new Error('Usuario nao autenticado. Faca login novamente.');
+  }
+
+  // Verifica se o token esta expirado ou proximo de expirar
+  if (isTokenExpiredOrExpiring(session.expires_at)) {
+    console.log('[ClaudeAnalysis] Token expirado ou expirando, fazendo refresh...');
+
+    const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession();
+
+    if (refreshError || !newSession) {
+      console.error('[ClaudeAnalysis] Erro ao fazer refresh do token:', refreshError);
+      throw new Error('Sessao expirada. Faca login novamente.');
+    }
+
+    console.log('[ClaudeAnalysis] Token renovado com sucesso');
+    return newSession;
+  }
+
+  return session;
+}
 
 // Interface para análise completa do Claude
 export interface ClaudeCreativeAnalysis {
@@ -100,32 +149,19 @@ interface AnalyzeCreativeResponse {
 }
 
 /**
- * Analisa um criativo usando Claude AI
+ * Faz a requisicao para a Edge Function com retry automatico
  */
-export async function analyzeCreativeWithClaude(
+async function makeAnalysisRequest(
+  functionUrl: string,
   creativeId: string,
-  options: { forceReanalysis?: boolean } = {}
-): Promise<ClaudeCreativeAnalysis> {
-  const { forceReanalysis = false } = options;
+  forceReanalysis: boolean,
+  retryCount: number = 0
+): Promise<AnalyzeCreativeResponse> {
+  // Obtem sessao valida (faz refresh se necessario)
+  const session = await getValidSession();
 
-  console.log(`Analyzing creative ${creativeId} with Claude AI...`);
+  console.log(`[ClaudeAnalysis] Requisicao para ${creativeId} (tentativa ${retryCount + 1})`);
 
-  // Obtém URL da API do Supabase
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  if (!supabaseUrl) {
-    throw new Error('Supabase URL não configurada');
-  }
-
-  // Obtém token de autenticação
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    throw new Error('Usuário não autenticado');
-  }
-
-  // Monta URL da Edge Function
-  const functionUrl = `${supabaseUrl}/functions/v1/analyze-creative-claude`;
-
-  // Faz requisição para a Edge Function
   const response = await fetch(functionUrl, {
     method: 'POST',
     headers: {
@@ -139,20 +175,75 @@ export async function analyzeCreativeWithClaude(
     }),
   });
 
+  // Se receber 401, tenta refresh e retry
+  if (response.status === 401 && retryCount < MAX_RETRIES) {
+    console.warn(`[ClaudeAnalysis] Recebeu 401, tentando refresh do token...`);
+
+    // Forca refresh do token
+    const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession();
+
+    if (refreshError || !newSession) {
+      console.error('[ClaudeAnalysis] Falha no refresh:', refreshError);
+      throw new Error('Sessao expirada. Faca login novamente.');
+    }
+
+    console.log('[ClaudeAnalysis] Token renovado, tentando novamente...');
+
+    // Retry com novo token
+    return makeAnalysisRequest(functionUrl, creativeId, forceReanalysis, retryCount + 1);
+  }
+
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+
+    // Mensagens de erro mais claras
+    if (response.status === 401) {
+      throw new Error('Sessao expirada. Faca login novamente.');
+    }
+    if (response.status === 404) {
+      throw new Error('Criativo nao encontrado. Sincronize os criativos primeiro.');
+    }
+    if (response.status === 500) {
+      throw new Error(errorData.error || 'Erro interno do servidor. Tente novamente.');
+    }
+
     throw new Error(
       errorData.error || `Erro ao analisar criativo: ${response.status} ${response.statusText}`
     );
   }
 
-  const data: AnalyzeCreativeResponse = await response.json();
+  return response.json();
+}
+
+/**
+ * Analisa um criativo usando Claude AI
+ * Inclui verificacao de token e retry automatico
+ */
+export async function analyzeCreativeWithClaude(
+  creativeId: string,
+  options: { forceReanalysis?: boolean } = {}
+): Promise<ClaudeCreativeAnalysis> {
+  const { forceReanalysis = false } = options;
+
+  console.log(`[ClaudeAnalysis] Analisando criativo ${creativeId}...`);
+
+  // Obtem URL da API do Supabase
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) {
+    throw new Error('Supabase URL nao configurada');
+  }
+
+  // Monta URL da Edge Function
+  const functionUrl = `${supabaseUrl}/functions/v1/analyze-creative-claude`;
+
+  // Faz requisicao com retry automatico
+  const data = await makeAnalysisRequest(functionUrl, creativeId, forceReanalysis);
 
   if (!data.success || !data.analysis) {
     throw new Error(data.error || 'Erro desconhecido ao analisar criativo');
   }
 
-  console.log(`Analysis completed. Score: ${data.analysis.overall_score}/100, Cached: ${data.cached}`);
+  console.log(`[ClaudeAnalysis] Analise completa. Score: ${data.analysis.overall_score}/100, Cached: ${data.cached}`);
 
   return data.analysis;
 }
