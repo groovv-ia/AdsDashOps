@@ -151,12 +151,18 @@ export interface SyncStatusResponse {
     // Novos campos para indicadores de entidades
     entity_counts: EntityCounts | null;
     latest_data_date: string | null;
-    // Metricas agregadas por nivel
+    // Metricas agregadas reais incluindo conversoes
     metrics?: {
-      total_rows: number;
-      campaigns: number;
-      adsets: number;
-      ads: number;
+      spend: number;
+      impressions: number;
+      clicks: number;
+      reach: number;
+      ctr: number;
+      cpc: number;
+      cpm: number;
+      leads: number;
+      messaging_conversations_started: number;
+      conversions: number;
     } | null;
   }>;
   sync_states: SyncState[];

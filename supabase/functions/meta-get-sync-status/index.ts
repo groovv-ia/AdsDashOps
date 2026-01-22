@@ -169,6 +169,90 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[meta-get-sync-status] Found ${insightsTotals?.length || 0} insight rows`);
 
+    // 6.5. Agrega metricas reais por conta (spend, impressions, clicks, conversoes)
+    // Usa SQL para extrair leads e messaging_conversations do campo actions_json
+    const { data: aggregatedMetrics } = await supabaseAdmin
+      .rpc('get_aggregated_metrics_by_account', {
+        account_uuids: accountUuids.length > 0 ? accountUuids : null
+      })
+      .then((result) => result)
+      .catch(() => ({ data: null }));
+
+    // Fallback: se a function nao existir, faz agregacao manual
+    let metricsAggregationByAccount: Record<string, {
+      spend: number;
+      impressions: number;
+      clicks: number;
+      reach: number;
+      ctr: number;
+      cpc: number;
+      cpm: number;
+      leads: number;
+      messaging_conversations_started: number;
+      conversions: number;
+    }> = {};
+
+    if (aggregatedMetrics) {
+      // Se a RPC function existe, usa os dados retornados
+      for (const metric of aggregatedMetrics) {
+        metricsAggregationByAccount[metric.account_id] = metric;
+      }
+    } else {
+      // Fallback: busca dados brutos e agrega no codigo
+      const { data: rawInsights } = await supabaseAdmin
+        .from("meta_insights_daily")
+        .select("meta_ad_account_id, spend, impressions, clicks, reach, actions_json")
+        .in("meta_ad_account_id", accountUuids.length > 0 ? accountUuids : [""]);
+
+      if (rawInsights) {
+        for (const insight of rawInsights) {
+          const accountId = insight.meta_ad_account_id;
+          if (!metricsAggregationByAccount[accountId]) {
+            metricsAggregationByAccount[accountId] = {
+              spend: 0,
+              impressions: 0,
+              clicks: 0,
+              reach: 0,
+              ctr: 0,
+              cpc: 0,
+              cpm: 0,
+              leads: 0,
+              messaging_conversations_started: 0,
+              conversions: 0,
+            };
+          }
+
+          // Soma metricas basicas
+          metricsAggregationByAccount[accountId].spend += insight.spend || 0;
+          metricsAggregationByAccount[accountId].impressions += insight.impressions || 0;
+          metricsAggregationByAccount[accountId].clicks += insight.clicks || 0;
+          metricsAggregationByAccount[accountId].reach += insight.reach || 0;
+
+          // Extrai conversoes do actions_json
+          if (insight.actions_json && Array.isArray(insight.actions_json)) {
+            for (const action of insight.actions_json) {
+              if (action.action_type === 'lead') {
+                metricsAggregationByAccount[accountId].leads += parseFloat(action.value) || 0;
+              } else if (action.action_type === 'onsite_conversion.messaging_conversation_started_7d') {
+                metricsAggregationByAccount[accountId].messaging_conversations_started += parseFloat(action.value) || 0;
+              }
+            }
+          }
+        }
+
+        // Calcula metricas derivadas
+        for (const accountId in metricsAggregationByAccount) {
+          const metrics = metricsAggregationByAccount[accountId];
+          metrics.conversions = metrics.leads + metrics.messaging_conversations_started;
+          metrics.ctr = metrics.impressions > 0 ? (metrics.clicks / metrics.impressions) * 100 : 0;
+          metrics.cpc = metrics.clicks > 0 ? metrics.spend / metrics.clicks : 0;
+          metrics.cpm = metrics.impressions > 0 ? (metrics.spend / metrics.impressions) * 1000 : 0;
+        }
+      }
+    }
+
+    console.log(`[meta-get-sync-status] Aggregated metrics for ${Object.keys(metricsAggregationByAccount).length} accounts`);
+
     // 7. Busca contagem de entidades por conta (campanhas, adsets, ads)
     // Agrupa por meta_ad_account_id e entity_type, contando total e ativos
     const { data: entityCounts } = await supabaseAdmin
@@ -296,6 +380,9 @@ Deno.serve(async (req: Request) => {
         // Busca contagem de entidades usando meta_ad_account_id (formato act_XXX)
         const entityCountsForAccount = entityCountsByAccount[acc.meta_ad_account_id] || null;
 
+        // Busca metricas agregadas usando acc.id (UUID)
+        const accountMetrics = metricsAggregationByAccount[acc.id] || null;
+
         return {
           id: acc.id,
           meta_id: acc.meta_ad_account_id,
@@ -311,12 +398,18 @@ Deno.serve(async (req: Request) => {
           entity_counts: entityCountsForAccount,
           // Data mais recente dos dados sincronizados
           latest_data_date: freshness?.latest_date || null,
-          // Adiciona metricas agregadas se houver freshness
-          metrics: freshness ? {
-            total_rows: freshness.total_rows,
-            campaigns: freshness.levels.campaign || 0,
-            adsets: freshness.levels.adset || 0,
-            ads: freshness.levels.ad || 0,
+          // Metricas agregadas reais incluindo conversoes
+          metrics: accountMetrics ? {
+            spend: accountMetrics.spend,
+            impressions: accountMetrics.impressions,
+            clicks: accountMetrics.clicks,
+            reach: accountMetrics.reach,
+            ctr: accountMetrics.ctr,
+            cpc: accountMetrics.cpc,
+            cpm: accountMetrics.cpm,
+            leads: accountMetrics.leads,
+            messaging_conversations_started: accountMetrics.messaging_conversations_started,
+            conversions: accountMetrics.conversions,
           } : null,
         };
       }) || [],

@@ -33,6 +33,8 @@ import {
   Grid3X3,
   ImageIcon,
   Calendar,
+  MessageSquare,
+  CircleDollarSign,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
@@ -80,6 +82,10 @@ export interface AdAccountData {
     reach?: number;
     cpc?: number;
     cpm?: number;
+    // Metricas de conversao
+    leads?: number;
+    messaging_conversations_started?: number;
+    conversions?: number; // Total de conversoes (leads + messaging)
   };
 }
 
@@ -418,7 +424,7 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
         </div>
       </div>
 
-      {/* Secao de metricas principais - Grid 2x2 com gradientes */}
+      {/* Secao de metricas principais - Grid 2x3 (6 cards) com gradientes */}
       {/* So mostra metricas se tiver spend, impressions, clicks (estrutura completa) */}
       {account.metrics && typeof account.metrics.spend === 'number' && (
         <div className="grid grid-cols-2 gap-3 mb-4">
@@ -463,6 +469,30 @@ export const AdAccountCard: React.FC<AdAccountCardProps> = ({
             </div>
             <p className="text-xl font-bold text-teal-900">
               {formatCompact(account.metrics.reach)}
+            </p>
+          </div>
+
+          {/* Conversas */}
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100/50 rounded-lg p-3 border border-purple-200">
+            <div className="flex items-center space-x-2 mb-1">
+              <MessageSquare className="h-4 w-4 text-purple-600" />
+              <span className="text-xs font-medium text-purple-700">Conversas</span>
+            </div>
+            <p className="text-xl font-bold text-purple-900">
+              {formatCompact(account.metrics.conversions)}
+            </p>
+          </div>
+
+          {/* Custo/Conversa */}
+          <div className="bg-gradient-to-br from-pink-50 to-pink-100/50 rounded-lg p-3 border border-pink-200">
+            <div className="flex items-center space-x-2 mb-1">
+              <CircleDollarSign className="h-4 w-4 text-pink-600" />
+              <span className="text-xs font-medium text-pink-700">Custo/Conversa</span>
+            </div>
+            <p className="text-xl font-bold text-pink-900">
+              {account.metrics.conversions && account.metrics.conversions > 0
+                ? formatCurrency(account.metrics.spend / account.metrics.conversions, account.currency)
+                : 'N/A'}
             </p>
           </div>
         </div>
