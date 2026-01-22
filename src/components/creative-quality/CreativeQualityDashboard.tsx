@@ -22,7 +22,7 @@ import { supabase } from '../../lib/supabase';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Loading } from '../ui/Loading';
-import type { ClaudeCreativeAnalysis } from '../../hooks/useCreativeAnalysis';
+import type { ClaudeCreativeAnalysis } from '../../lib/services/ClaudeAnalysisService';
 import { AdCreativeThumbnail } from '../ad-analysis/AdCreativeThumbnail';
 
 /**
@@ -123,14 +123,14 @@ export const CreativeQualityDashboard: React.FC = () => {
 
       // Calcula estatísticas
       const totalAnalyzed = analyses.length;
-      const averageScore = analyses.reduce((sum, a) => sum + a.overall_score, 0) / totalAnalyzed;
-      const totalCost = analyses.reduce((sum, a) => sum + a.cost_usd, 0);
+      const averageScore = analyses.reduce((sum, a) => sum + (a.overall_score || 0), 0) / totalAnalyzed;
+      const totalCost = analyses.reduce((sum, a) => sum + (a.estimated_cost || 0), 0);
 
       const scoreDistribution = {
-        excellent: analyses.filter(a => a.overall_score >= 90).length,
-        good: analyses.filter(a => a.overall_score >= 70 && a.overall_score < 90).length,
-        average: analyses.filter(a => a.overall_score >= 50 && a.overall_score < 70).length,
-        poor: analyses.filter(a => a.overall_score < 50).length,
+        excellent: analyses.filter(a => (a.overall_score || 0) >= 90).length,
+        good: analyses.filter(a => (a.overall_score || 0) >= 70 && (a.overall_score || 0) < 90).length,
+        average: analyses.filter(a => (a.overall_score || 0) >= 50 && (a.overall_score || 0) < 70).length,
+        poor: analyses.filter(a => (a.overall_score || 0) < 50).length,
       };
 
       setStats({ totalAnalyzed, averageScore, totalCost, scoreDistribution });
@@ -156,12 +156,12 @@ export const CreativeQualityDashboard: React.FC = () => {
       index + 1,
       item.analysis.creative_id,
       item.creative?.title || 'N/A',
-      item.analysis.overall_score,
-      item.analysis.aida_attention_score,
-      item.analysis.aida_interest_score,
-      item.analysis.aida_desire_score,
-      item.analysis.aida_action_score,
-      item.analysis.cost_usd.toFixed(4),
+      item.analysis.overall_score || 0,
+      item.analysis.aida_analysis?.attention?.score || 0,
+      item.analysis.aida_analysis?.interest?.score || 0,
+      item.analysis.aida_analysis?.desire?.score || 0,
+      item.analysis.aida_analysis?.action?.score || 0,
+      (item.analysis.estimated_cost || 0).toFixed(4),
       new Date(item.analysis.created_at).toLocaleDateString('pt-BR'),
     ]);
 
@@ -353,12 +353,12 @@ export const CreativeQualityDashboard: React.FC = () => {
                       {item.creative?.title || 'Sem título'}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-sm font-semibold ${getScoreBadgeClass(item.analysis.overall_score)}`}>
-                        {item.analysis.overall_score}
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-sm font-semibold ${getScoreBadgeClass(item.analysis.overall_score || 0)}`}>
+                        {item.analysis.overall_score || 0}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600 text-center">
-                      A:{item.analysis.aida_attention_score} I:{item.analysis.aida_interest_score} D:{item.analysis.aida_desire_score} A:{item.analysis.aida_action_score}
+                      A:{item.analysis.aida_analysis?.attention?.score || 0} I:{item.analysis.aida_analysis?.interest?.score || 0} D:{item.analysis.aida_analysis?.desire?.score || 0} A:{item.analysis.aida_analysis?.action?.score || 0}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500 text-center">
                       {new Date(item.analysis.created_at).toLocaleDateString('pt-BR')}
@@ -413,12 +413,12 @@ const CreativeRankItem: React.FC<CreativeRankItemProps> = ({ item, rank }) => {
         <p className="text-xs text-gray-600 truncate">{creative?.body || 'Sem descrição'}</p>
       </div>
       <div className="flex-shrink-0 text-right">
-        <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold ${getScoreBadgeClass(analysis.overall_score)}`}>
+        <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold ${getScoreBadgeClass(analysis.overall_score || 0)}`}>
           <Sparkles className="w-3 h-3" />
-          {analysis.overall_score}
+          {analysis.overall_score || 0}
         </div>
         <p className="text-xs text-gray-500 mt-1">
-          AIDA: {Math.round((analysis.aida_attention_score + analysis.aida_interest_score + analysis.aida_desire_score + analysis.aida_action_score) / 4)}
+          AIDA: {Math.round(((analysis.aida_analysis?.attention?.score || 0) + (analysis.aida_analysis?.interest?.score || 0) + (analysis.aida_analysis?.desire?.score || 0) + (analysis.aida_analysis?.action?.score || 0)) / 4)}
         </p>
       </div>
     </div>
