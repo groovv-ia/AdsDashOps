@@ -119,7 +119,13 @@ Deno.serve(async (req: Request) => {
     const accountMetaIds = adAccounts?.map((a) => a.meta_ad_account_id) || [];
 
     // 3. Busca sync states (usa meta_ad_account_id strings)
-    let syncStatesQuery = supabaseAdmin.from("meta_sync_state").select("*");
+    // CORRECAO: Filtra por workspace_id E ordena por updated_at DESC
+    // Isso garante que retorne apenas registros do workspace correto do usuario
+    let syncStatesQuery = supabaseAdmin
+      .from("meta_sync_state")
+      .select("*")
+      .eq("workspace_id", workspace.id)
+      .order("updated_at", { ascending: false });
     if (accountMetaIds.length > 0) {
       syncStatesQuery = syncStatesQuery.in("meta_ad_account_id", accountMetaIds);
     }
