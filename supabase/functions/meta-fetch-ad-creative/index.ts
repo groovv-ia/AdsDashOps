@@ -89,7 +89,15 @@ interface MetaVideoThumbnailResponse {
     }>;
   };
   picture?: string;
-  source?: string;
+  source?: string; // URL direta do vídeo (reproduzível)
+  format?: Array<{
+    embed_html?: string;
+    filter?: string;
+    height?: number;
+    width?: number;
+    picture?: string;
+  }>;
+  length?: number; // Duração em segundos
   error?: MetaErrorResponse["error"];
 }
 
@@ -100,6 +108,14 @@ interface ImageResult {
   width: number | null;
   height: number | null;
   quality: 'hd' | 'sd' | 'low' | 'unknown';
+}
+
+// Interface para resultado de vídeo com metadados completos
+interface VideoResult {
+  videoSourceUrl: string | null; // URL direta do vídeo (campo "source")
+  videoDuration: number | null; // Duração em segundos
+  videoFormat: string | null; // Formato do vídeo (mp4, webm, etc.)
+  thumbnail: ImageResult; // Thumbnail do vídeo
 }
 
 /**
@@ -127,21 +143,43 @@ function determineImageQuality(width: number | null, height: number | null): 'hd
 }
 
 /**
- * Busca thumbnail de video em HD com fallbacks progressivos
+ * Busca dados completos do vídeo incluindo source URL e metadados
  */
-async function fetchVideoThumbnailHD(
+async function fetchVideoDataComplete(
   videoId: string,
   accessToken: string
-): Promise<ImageResult> {
+): Promise<VideoResult> {
   try {
-    // Busca thumbnails, picture e source do video
-    const videoUrl = `https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails,picture,source&access_token=${accessToken}`;
+    // Busca thumbnails, picture, source, length e format do video
+    const videoUrl = `https://graph.facebook.com/v21.0/${videoId}?fields=thumbnails,picture,source,length,format&access_token=${accessToken}`;
     const videoResponse = await fetch(videoUrl);
     const videoData: MetaVideoThumbnailResponse = await videoResponse.json();
 
     if (videoData.error) {
-      console.error(`Video thumbnail error for ${videoId}:`, videoData.error);
-      return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
+      console.error(`Video data error for ${videoId}:`, videoData.error);
+      return {
+        videoSourceUrl: null,
+        videoDuration: null,
+        videoFormat: null,
+        thumbnail: { url: null, url_hd: null, width: null, height: null, quality: 'unknown' }
+      };
+    }
+
+    // Extrai URL direta do vídeo (campo "source")
+    const videoSourceUrl = videoData.source || null;
+
+    // Extrai duração em segundos
+    const videoDuration = videoData.length || null;
+
+    // Tenta determinar formato do vídeo
+    let videoFormat: string | null = null;
+    if (videoSourceUrl) {
+      // Extrai extensão da URL
+      const urlLower = videoSourceUrl.toLowerCase();
+      if (urlLower.includes('.mp4')) videoFormat = 'mp4';
+      else if (urlLower.includes('.webm')) videoFormat = 'webm';
+      else if (urlLower.includes('.mov')) videoFormat = 'mov';
+      else videoFormat = 'mp4'; // Default
     }
 
     let bestThumbnail: { uri: string; width: number; height: number } | null = null;
@@ -158,10 +196,13 @@ async function fetchVideoThumbnailHD(
       hdThumbnail = sorted.find(t => t.width >= 1280 && t.height >= 720) || null;
     }
 
+    // Monta resultado do thumbnail
+    let thumbnailResult: ImageResult;
+
     // Se temos thumbnail HD, usa ele como principal
     if (hdThumbnail) {
       const quality = determineImageQuality(hdThumbnail.width, hdThumbnail.height);
-      return {
+      thumbnailResult = {
         url: hdThumbnail.uri,
         url_hd: hdThumbnail.uri,
         width: hdThumbnail.width,
@@ -169,11 +210,10 @@ async function fetchVideoThumbnailHD(
         quality,
       };
     }
-
     // Se temos thumbnail normal, usa como fallback
-    if (bestThumbnail) {
+    else if (bestThumbnail) {
       const quality = determineImageQuality(bestThumbnail.width, bestThumbnail.height);
-      return {
+      thumbnailResult = {
         url: bestThumbnail.uri,
         url_hd: null,
         width: bestThumbnail.width,
@@ -181,10 +221,9 @@ async function fetchVideoThumbnailHD(
         quality,
       };
     }
-
     // Fallback para picture do video
-    if (videoData.picture) {
-      return {
+    else if (videoData.picture) {
+      thumbnailResult = {
         url: videoData.picture,
         url_hd: null,
         width: null,
@@ -192,11 +231,25 @@ async function fetchVideoThumbnailHD(
         quality: 'unknown',
       };
     }
+    // Sem thumbnail disponível
+    else {
+      thumbnailResult = { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
+    }
 
-    return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
+    return {
+      videoSourceUrl,
+      videoDuration,
+      videoFormat,
+      thumbnail: thumbnailResult,
+    };
   } catch (err) {
-    console.error(`Error fetching video thumbnail for ${videoId}:`, err);
-    return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
+    console.error(`Error fetching video data for ${videoId}:`, err);
+    return {
+      videoSourceUrl: null,
+      videoDuration: null,
+      videoFormat: null,
+      thumbnail: { url: null, url_hd: null, width: null, height: null, quality: 'unknown' }
+    };
   }
 }
 
@@ -434,12 +487,14 @@ Deno.serve(async (req: Request) => {
           preview_url: adData.preview_shareable_link || null,
         };
 
-    // Busca imagem/thumbnail em HD
+    // Busca imagem/thumbnail em HD e dados de vídeo se aplicável
     let imageResult: ImageResult;
+    let videoResult: VideoResult | null = null;
 
     if (creativeData.creative_type === 'video' && creativeData.video_id) {
-      // Para videos, busca thumbnail em HD
-      imageResult = await fetchVideoThumbnailHD(creativeData.video_id, accessToken);
+      // Para videos, busca dados completos (thumbnail, source URL, duração, formato)
+      videoResult = await fetchVideoDataComplete(creativeData.video_id, accessToken);
+      imageResult = videoResult.thumbnail;
     } else if (creativeData.image_url) {
       // Para imagens, processa a URL existente
       imageResult = processImageUrl(creativeData.image_url);
@@ -489,6 +544,9 @@ Deno.serve(async (req: Request) => {
       image_height: imageResult.height,
       video_url: creativeData.video_id ? `https://www.facebook.com/ads/videos/${creativeData.video_id}` : null,
       video_id: creativeData.video_id,
+      video_source_url: videoResult?.videoSourceUrl || null, // URL direta do vídeo (campo "source")
+      video_duration: videoResult?.videoDuration || null, // Duração em segundos
+      video_format: videoResult?.videoFormat || null, // Formato do vídeo (mp4, webm, etc.)
       preview_url: creativeData.preview_url,
       title: creativeData.title,
       body: creativeData.body,

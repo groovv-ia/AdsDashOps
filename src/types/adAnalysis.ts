@@ -36,6 +36,14 @@ export interface MetaAdCreative {
   image_height: number | null; // Altura da imagem em pixels
   video_url: string | null;
   video_id: string | null;
+  video_source_url: string | null; // URL direta do vídeo da Meta API (campo "source") - reproduzível
+  video_duration: number | null; // Duração do vídeo em segundos
+  video_format: string | null; // Formato do vídeo (mp4, webm, etc.)
+  cached_video_url: string | null; // URL do vídeo cacheado no Supabase Storage
+  cached_image_url: string | null; // URL da imagem cacheada no Supabase Storage
+  cached_thumbnail_url: string | null; // URL do thumbnail cacheado no Supabase Storage
+  cache_expires_at: string | null; // Data de expiração do cache (30 dias)
+  file_size: number | null; // Tamanho do arquivo de mídia em bytes
   preview_url: string | null;
   title: string | null;
   body: string | null;

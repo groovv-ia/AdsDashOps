@@ -798,7 +798,10 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
 
   // Usa a melhor URL disponivel (prioriza HD)
   const imageUrl = creative.image_url_hd || creative.image_url || creative.thumbnail_url;
-  const videoUrl = creative.video_url;
+
+  // Para vídeos, usa video_source_url (URL direta reproduzível da Meta) ou cached_video_url
+  // video_url é apenas um link de preview do Facebook, não é reproduzível diretamente
+  const videoUrl = creative.video_source_url || creative.cached_video_url || null;
   const isVideo = creative.creative_type === 'video' && videoUrl;
 
   // Determina qualidade da imagem
