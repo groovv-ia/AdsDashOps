@@ -138,13 +138,23 @@ export interface MetaInsightsFilterOptions {
  * Extrai conversoes do campo actions_json
  * O Meta retorna acoes em um formato de array com action_type e value
  */
-function extractConversions(actionsJson: Record<string, unknown> | null | undefined): number {
+function extractConversions(actionsJson: Record<string, unknown> | string | null | undefined): number {
   if (!actionsJson) return 0;
 
+  // Se for string, tenta parsear como JSON
+  let parsedJson = actionsJson;
+  if (typeof actionsJson === 'string') {
+    try {
+      parsedJson = JSON.parse(actionsJson);
+    } catch {
+      return 0;
+    }
+  }
+
   // Se for um array, soma os valores relevantes
-  if (Array.isArray(actionsJson)) {
+  if (Array.isArray(parsedJson)) {
     let total = 0;
-    for (const action of actionsJson) {
+    for (const action of parsedJson) {
       const actionType = action?.action_type || '';
       // Tipos de acao que contam como conversao
       if (
@@ -162,9 +172,9 @@ function extractConversions(actionsJson: Record<string, unknown> | null | undefi
   }
 
   // Se for objeto, tenta acessar diretamente
-  if (typeof actionsJson === 'object') {
-    const purchase = (actionsJson as Record<string, number>)['purchase'] || 0;
-    const lead = (actionsJson as Record<string, number>)['lead'] || 0;
+  if (typeof parsedJson === 'object' && parsedJson !== null) {
+    const purchase = (parsedJson as Record<string, number>)['purchase'] || 0;
+    const lead = (parsedJson as Record<string, number>)['lead'] || 0;
     return purchase + lead;
   }
 
@@ -175,13 +185,23 @@ function extractConversions(actionsJson: Record<string, unknown> | null | undefi
  * Extrai conversas iniciadas do campo actions_json
  * O Meta retorna conversas iniciadas com action_type contendo "messaging_conversation_started"
  */
-function extractMessagingConversationsStarted(actionsJson: Record<string, unknown> | null | undefined): number {
+function extractMessagingConversationsStarted(actionsJson: Record<string, unknown> | string | null | undefined): number {
   if (!actionsJson) return 0;
 
+  // Se for string, tenta parsear como JSON
+  let parsedJson = actionsJson;
+  if (typeof actionsJson === 'string') {
+    try {
+      parsedJson = JSON.parse(actionsJson);
+    } catch {
+      return 0;
+    }
+  }
+
   // Se for um array, soma os valores relevantes
-  if (Array.isArray(actionsJson)) {
+  if (Array.isArray(parsedJson)) {
     let total = 0;
-    for (const action of actionsJson) {
+    for (const action of parsedJson) {
       const actionType = action?.action_type || '';
       // Tipos de acao que contam como conversas iniciadas
       if (
@@ -196,8 +216,8 @@ function extractMessagingConversationsStarted(actionsJson: Record<string, unknow
   }
 
   // Se for objeto, tenta acessar diretamente
-  if (typeof actionsJson === 'object') {
-    const conversations = (actionsJson as Record<string, number>)['messaging_conversation_started'] || 0;
+  if (typeof parsedJson === 'object' && parsedJson !== null) {
+    const conversations = (parsedJson as Record<string, number>)['messaging_conversation_started'] || 0;
     return conversations;
   }
 
@@ -208,21 +228,26 @@ function extractMessagingConversationsStarted(actionsJson: Record<string, unknow
  * Extrai leads do campo actions_json
  * O Meta retorna leads com action_type contendo "lead"
  */
-function extractLeads(actionsJson: Record<string, unknown> | null | undefined): number {
+function extractLeads(actionsJson: Record<string, unknown> | string | null | undefined): number {
   if (!actionsJson) return 0;
 
+  // Se for string, tenta parsear como JSON
+  let parsedJson = actionsJson;
+  if (typeof actionsJson === 'string') {
+    try {
+      parsedJson = JSON.parse(actionsJson);
+    } catch {
+      return 0;
+    }
+  }
+
   // Se for um array, soma os valores relevantes
-  if (Array.isArray(actionsJson)) {
+  if (Array.isArray(parsedJson)) {
     let total = 0;
-    for (const action of actionsJson) {
+    for (const action of parsedJson) {
       const actionType = action?.action_type || '';
-      // Tipos de acao que contam como leads
-      if (
-        actionType === 'lead' ||
-        actionType === 'offsite_conversion.fb_pixel_lead' ||
-        actionType.includes('lead_form') ||
-        actionType === 'onsite_conversion.lead_grouped'
-      ) {
+      // Tipos de acao que contam como leads (usa apenas 'lead' para evitar duplicacao)
+      if (actionType === 'lead') {
         total += parseFloat(action?.value || '0');
       }
     }
@@ -230,8 +255,8 @@ function extractLeads(actionsJson: Record<string, unknown> | null | undefined): 
   }
 
   // Se for objeto, tenta acessar diretamente
-  if (typeof actionsJson === 'object') {
-    const leads = (actionsJson as Record<string, number>)['lead'] || 0;
+  if (typeof parsedJson === 'object' && parsedJson !== null) {
+    const leads = (parsedJson as Record<string, number>)['lead'] || 0;
     return leads;
   }
 
@@ -241,13 +266,23 @@ function extractLeads(actionsJson: Record<string, unknown> | null | undefined): 
 /**
  * Extrai valor de conversao do campo action_values_json
  */
-function extractConversionValue(actionValuesJson: Record<string, unknown> | null | undefined): number {
+function extractConversionValue(actionValuesJson: Record<string, unknown> | string | null | undefined): number {
   if (!actionValuesJson) return 0;
 
+  // Se for string, tenta parsear como JSON
+  let parsedJson = actionValuesJson;
+  if (typeof actionValuesJson === 'string') {
+    try {
+      parsedJson = JSON.parse(actionValuesJson);
+    } catch {
+      return 0;
+    }
+  }
+
   // Se for um array, soma os valores relevantes
-  if (Array.isArray(actionValuesJson)) {
+  if (Array.isArray(parsedJson)) {
     let total = 0;
-    for (const action of actionValuesJson) {
+    for (const action of parsedJson) {
       const actionType = action?.action_type || '';
       if (
         actionType.includes('purchase') ||
@@ -261,8 +296,8 @@ function extractConversionValue(actionValuesJson: Record<string, unknown> | null
   }
 
   // Se for objeto, tenta acessar diretamente
-  if (typeof actionValuesJson === 'object') {
-    const purchase = (actionValuesJson as Record<string, number>)['purchase'] || 0;
+  if (typeof parsedJson === 'object' && parsedJson !== null) {
+    const purchase = (parsedJson as Record<string, number>)['purchase'] || 0;
     return purchase;
   }
 
