@@ -247,6 +247,17 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   const metrics = hasPreloadedData ? aggregatedPreloadedMetrics : fetchedMetrics;
   const isMetricsLoading = hasPreloadedData ? false : metricsLoading;
 
+  // Hook para análise de criativo com Claude AI
+  // IMPORTANTE: Este hook deve ser chamado antes de qualquer early return
+  const {
+    analysis: creativeAnalysis,
+    loading: creativeAnalysisLoading,
+    error: creativeAnalysisError,
+    analyze: analyzeCreative,
+    reanalyze: reanalyzeCreative,
+    hasAnalysis: hasCreativeAnalysis,
+  } = useCreativeAnalysis(creative?.id || null);
+
   // Fecha modal com ESC
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -299,45 +310,6 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     }
   };
 
-  // Tabs disponiveis
-  // Funcao helper para obter a melhor URL de imagem disponivel (prioriza HD)
-  const getBestImageUrl = (creative: MetaAdCreative | null): string | null => {
-    if (!creative) return null;
-
-    // Prioridade: image_url_hd > image_url > thumbnail_url
-    return creative.image_url_hd || creative.image_url || creative.thumbnail_url || null;
-  };
-
-  // Funcao para determinar qualidade da imagem
-  const getImageQuality = (creative: MetaAdCreative | null): 'hd' | 'sd' | 'low' | 'unknown' => {
-    if (!creative) return 'unknown';
-
-    // Usa o campo thumbnail_quality se disponivel
-    if (creative.thumbnail_quality) {
-      return creative.thumbnail_quality as 'hd' | 'sd' | 'low' | 'unknown';
-    }
-
-    // Fallback: determina pela largura/altura
-    const width = creative.image_width || 0;
-    const height = creative.image_height || 0;
-
-    if ((width >= 1280 && height >= 720) || (width >= 720 && height >= 1280)) return 'hd';
-    if ((width >= 640 && height >= 480) || (width >= 480 && height >= 640)) return 'sd';
-    if (width > 0 && height > 0) return 'low';
-
-    return 'unknown';
-  };
-
-  // Hook para análise de criativo com Claude AI
-  const {
-    analysis: creativeAnalysis,
-    loading: creativeAnalysisLoading,
-    error: creativeAnalysisError,
-    analyze: analyzeCreative,
-    reanalyze: reanalyzeCreative,
-    hasAnalysis: hasCreativeAnalysis,
-  } = useCreativeAnalysis(creative?.id || null);
-
   const tabs = [
     { id: AdDetailTab.OVERVIEW, label: 'Visão Geral', icon: Eye },
     { id: AdDetailTab.CREATIVE, label: 'Criativo', icon: Image },
@@ -345,6 +317,26 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     { id: AdDetailTab.AI_ANALYSIS, label: 'Análise IA', icon: Sparkles },
     { id: AdDetailTab.CREATIVE_AI, label: 'Análise IA Criativo', icon: Sparkles },
   ];
+
+  // Funcao helper para obter a melhor URL de imagem disponivel (prioriza HD)
+  const getBestImageUrl = (c: MetaAdCreative | null): string | null => {
+    if (!c) return null;
+    return c.image_url_hd || c.image_url || c.thumbnail_url || null;
+  };
+
+  // Funcao para determinar qualidade da imagem
+  const getImageQuality = (c: MetaAdCreative | null): 'hd' | 'sd' | 'low' | 'unknown' => {
+    if (!c) return 'unknown';
+    if (c.thumbnail_quality) {
+      return c.thumbnail_quality as 'hd' | 'sd' | 'low' | 'unknown';
+    }
+    const width = c.image_width || 0;
+    const height = c.image_height || 0;
+    if ((width >= 1280 && height >= 720) || (width >= 720 && height >= 1280)) return 'hd';
+    if ((width >= 640 && height >= 480) || (width >= 480 && height >= 640)) return 'sd';
+    if (width > 0 && height > 0) return 'low';
+    return 'unknown';
+  };
 
   // URL da imagem para visualizacao (prioriza HD)
   const displayImageUrl = getBestImageUrl(creative);
