@@ -198,8 +198,8 @@ export const DataSourceSetup: React.FC<DataSourceSetupProps> = ({
                 ) : connector.logo === 'google-analytics' ? (
                   <Globe className="w-8 h-8 text-blue-600" />
                 ) : (
-                  <img 
-                    src={connector.logo} 
+                  <img
+                    src={connector.logo}
                     alt={connector.name}
                     className="w-8 h-8 object-contain"
                   />
@@ -334,14 +334,14 @@ const OverviewStep: React.FC<any> = ({ connector, onNext }) => {
   return (
     <div className="p-6 space-y-6">
       <div className="text-center">
-        <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center bg-blue-50 rounded-2xl">
+        <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
           {connector.logo === 'csv' ? (
             <FileText className="w-10 h-10 text-orange-600" />
           ) : connector.logo === 'google-analytics' ? (
             <Globe className="w-10 h-10 text-blue-600" />
           ) : (
-            <img 
-              src={connector.logo} 
+            <img
+              src={connector.logo}
               alt={connector.name}
               className="w-10 h-10 object-contain"
             />
