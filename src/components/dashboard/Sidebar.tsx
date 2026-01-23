@@ -202,7 +202,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 ${isItemActive
                                   ? section.id === 'meta'
                                     ? 'bg-blue-50 text-blue-700 font-medium'
-                                    : 'bg-emerald-50 text-emerald-700 font-medium'
+                                    : 'bg-[#DFE0F4] text-[#4C53F7] font-medium'
                                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                 }
                               `}
@@ -210,7 +210,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               <item.icon className={`
                                 w-[18px] h-[18px] flex-shrink-0
                                 ${isItemActive
-                                  ? section.id === 'meta' ? 'text-blue-500' : 'text-emerald-500'
+                                  ? section.id === 'meta' ? 'text-blue-500' : 'text-[#4C53F7]'
                                   : 'text-slate-400'
                                 }
                               `} />
