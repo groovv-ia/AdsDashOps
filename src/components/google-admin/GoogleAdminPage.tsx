@@ -309,9 +309,7 @@ export const GoogleAdminPage: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="p-3 bg-gradient-to-r from-blue-600 to-green-600 rounded-lg">
-            <GoogleIcon className="w-6 h-6" />
-          </div>
+          <GoogleIcon className="w-8 h-8" />
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Conexao Google Ads</h2>
             <p className="text-gray-600">
