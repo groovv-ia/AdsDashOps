@@ -202,7 +202,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 ${isItemActive
                                   ? section.id === 'meta'
                                     ? 'bg-blue-50 text-blue-700 font-medium'
-                                    : 'bg-[#DFE0F4] text-[#4C53F7] font-medium'
+                                    : 'bg-[#EEEFF9] text-[#4C53F7] font-medium'
                                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                 }
                               `}
