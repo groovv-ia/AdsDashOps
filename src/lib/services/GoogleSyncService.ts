@@ -2,34 +2,81 @@
  * GoogleSyncService
  *
  * Servico responsavel pela sincronizacao de dados do Google Ads.
- * Busca campanhas, grupos de anuncios, anuncios e metricas diarias
- * da API do Google Ads e salva no banco de dados Supabase.
+ * Chama a Edge Function google-run-sync para executar a sincronizacao
+ * no backend, com todos os dados sendo gerenciados pelo servidor.
  */
 
 import { supabase } from '../supabase';
 import type {
   GoogleAdAccount,
   GoogleSyncJob,
-  GoogleInsightsDaily,
   SyncProgressCallback,
   GoogleSyncResult,
+  GoogleSyncStatusResponse,
 } from '../connectors/google/types';
 
 // ============================================
 // Constantes
 // ============================================
 
-// Limite de requisicoes por dia (Google Ads API)
-const DAILY_REQUEST_LIMIT = 15000;
+// URL base das Edge Functions
+const EDGE_FUNCTIONS_URL = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
 
-// Delay entre requisicoes (ms) para evitar rate limiting
-const REQUEST_DELAY_MS = 200;
+// Intervalo de polling para acompanhar progresso (ms)
+const POLL_INTERVAL_MS = 2000;
 
-// Numero de tentativas em caso de erro
-const MAX_RETRIES = 3;
+// Timeout maximo para sincronizacao (10 minutos)
+const SYNC_TIMEOUT_MS = 600000;
 
-// Delay entre tentativas (ms)
-const RETRY_DELAY_MS = 1000;
+// ============================================
+// Helpers para Edge Functions
+// ============================================
+
+/**
+ * Obtem headers de autenticacao para chamadas as Edge Functions
+ */
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('Usuario nao autenticado');
+  }
+
+  return {
+    'Authorization': `Bearer ${session.access_token}`,
+    'Content-Type': 'application/json',
+    'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+  };
+}
+
+/**
+ * Chama uma Edge Function do Google Ads
+ */
+async function callEdgeFunction<T>(
+  functionName: string,
+  method: 'GET' | 'POST' = 'POST',
+  body?: Record<string, unknown>
+): Promise<T> {
+  const headers = await getAuthHeaders();
+
+  const options: RequestInit = {
+    method,
+    headers,
+  };
+
+  if (body && method === 'POST') {
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${EDGE_FUNCTIONS_URL}/${functionName}`, options);
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+    throw new Error(errorData.error || `Erro HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
 
 // ============================================
 // Classe Principal
@@ -37,18 +84,9 @@ const RETRY_DELAY_MS = 1000;
 
 export class GoogleSyncService {
   private workspaceId: string;
-  private developerToken: string;
-  private loginCustomerId?: string;
-  private requestCount: number = 0;
 
-  constructor(
-    workspaceId: string,
-    developerToken: string,
-    loginCustomerId?: string
-  ) {
+  constructor(workspaceId: string) {
     this.workspaceId = workspaceId;
-    this.developerToken = developerToken;
-    this.loginCustomerId = loginCustomerId;
   }
 
   // ============================================
@@ -56,8 +94,8 @@ export class GoogleSyncService {
   // ============================================
 
   /**
-   * Executa sincronizacao completa de uma ou mais contas
-   * @param accounts - Lista de contas para sincronizar
+   * Executa sincronizacao completa via Edge Function
+   * @param accounts - Lista de contas para sincronizar (filtra por is_selected)
    * @param dateFrom - Data inicial do periodo
    * @param dateTo - Data final do periodo
    * @param onProgress - Callback de progresso
@@ -69,12 +107,6 @@ export class GoogleSyncService {
     onProgress?: SyncProgressCallback
   ): Promise<GoogleSyncResult> {
     const startTime = Date.now();
-    const errors: string[] = [];
-    let totalCampaigns = 0;
-    let totalAdGroups = 0;
-    let totalAds = 0;
-    let totalMetrics = 0;
-    let accountsSynced = 0;
 
     // Filtra apenas contas selecionadas
     const selectedAccounts = accounts.filter((acc) => acc.is_selected);
@@ -94,233 +126,184 @@ export class GoogleSyncService {
       };
     }
 
-    // Cria job de sincronizacao
-    const jobId = await this.createSyncJob(dateFrom, dateTo, selectedAccounts.length);
+    // IDs das contas selecionadas
+    const accountIds = selectedAccounts.map((acc) => acc.customer_id);
+
+    onProgress?.({
+      phase: 'Iniciando sincronizacao',
+      percentage: 0,
+      itemsProcessed: 0,
+      itemsTotal: selectedAccounts.length,
+      message: `Preparando ${selectedAccounts.length} conta(s)...`,
+    });
 
     try {
-      // Processa cada conta
-      for (let i = 0; i < selectedAccounts.length; i++) {
-        const account = selectedAccounts[i];
-        const accountProgress = Math.round(((i + 1) / selectedAccounts.length) * 100);
+      // Chama Edge Function para iniciar sincronizacao
+      const response = await callEdgeFunction<{
+        success: boolean;
+        job_id: string;
+        accounts_synced: number;
+        campaigns_synced: number;
+        ad_groups_synced: number;
+        ads_synced: number;
+        keywords_synced: number;
+        metrics_synced: number;
+        error?: string;
+      }>('google-run-sync', 'POST', {
+        account_ids: accountIds,
+        date_from: dateFrom,
+        date_to: dateTo,
+        sync_type: 'full',
+      });
 
+      // Se a Edge Function executa sincrona, retorna resultado direto
+      if (response.success) {
         onProgress?.({
-          phase: `Sincronizando conta ${i + 1} de ${selectedAccounts.length}`,
-          percentage: accountProgress,
-          itemsProcessed: i,
+          phase: 'Sincronizacao concluida',
+          percentage: 100,
+          itemsProcessed: selectedAccounts.length,
           itemsTotal: selectedAccounts.length,
-          message: `Processando: ${account.name}`,
+          message: `${response.accounts_synced} conta(s) sincronizada(s)`,
         });
 
-        try {
-          // Sincroniza a conta individual
-          const result = await this.syncSingleAccount(
-            account,
-            dateFrom,
-            dateTo,
-            jobId,
-            (subProgress) => {
-              onProgress?.({
-                phase: subProgress.phase,
-                percentage: Math.round(
-                  (i / selectedAccounts.length) * 100 +
-                    (subProgress.percentage / selectedAccounts.length)
-                ),
-                itemsProcessed: subProgress.itemsProcessed,
-                itemsTotal: subProgress.itemsTotal,
-                message: `${account.name}: ${subProgress.message}`,
-              });
-            }
-          );
-
-          totalCampaigns += result.campaigns;
-          totalAdGroups += result.adGroups;
-          totalAds += result.ads;
-          totalMetrics += result.metrics;
-          accountsSynced++;
-
-          // Atualiza last_sync_at da conta
-          await supabase
-            .from('google_ad_accounts')
-            .update({ last_sync_at: new Date().toISOString() })
-            .eq('id', account.id);
-        } catch (accountError) {
-          const errorMsg =
-            accountError instanceof Error ? accountError.message : 'Erro desconhecido';
-          errors.push(`${account.name}: ${errorMsg}`);
-          console.error(`Erro ao sincronizar conta ${account.name}:`, accountError);
-        }
-
-        // Delay entre contas
-        await this.delay(REQUEST_DELAY_MS);
+        return {
+          success: true,
+          accounts_synced: response.accounts_synced,
+          campaigns_synced: response.campaigns_synced,
+          ad_groups_synced: response.ad_groups_synced,
+          ads_synced: response.ads_synced,
+          metrics_synced: response.metrics_synced,
+          date_range_start: dateFrom,
+          date_range_end: dateTo,
+          errors: [],
+          duration_ms: Date.now() - startTime,
+        };
       }
 
-      // Atualiza job como concluido
-      await this.updateSyncJob(jobId, {
-        status: errors.length > 0 ? 'completed' : 'completed',
-        progress: 100,
-        completed_at: new Date().toISOString(),
-        campaigns_synced: totalCampaigns,
-        ad_groups_synced: totalAdGroups,
-        ads_synced: totalAds,
-        metrics_synced: totalMetrics,
-        error_message: errors.length > 0 ? errors.join('; ') : null,
-      });
+      // Se temos um job_id, faz polling do progresso
+      if (response.job_id) {
+        return await this.pollSyncProgress(
+          response.job_id,
+          dateFrom,
+          dateTo,
+          startTime,
+          onProgress
+        );
+      }
 
-      onProgress?.({
-        phase: 'Sincronizacao concluida',
-        percentage: 100,
-        itemsProcessed: selectedAccounts.length,
-        itemsTotal: selectedAccounts.length,
-        message: `${accountsSynced} conta(s) sincronizada(s)`,
-      });
-
-      return {
-        success: errors.length === 0,
-        accounts_synced: accountsSynced,
-        campaigns_synced: totalCampaigns,
-        ad_groups_synced: totalAdGroups,
-        ads_synced: totalAds,
-        metrics_synced: totalMetrics,
-        date_range_start: dateFrom,
-        date_range_end: dateTo,
-        errors,
-        duration_ms: Date.now() - startTime,
-      };
+      // Erro generico
+      throw new Error(response.error || 'Falha ao iniciar sincronizacao');
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Erro desconhecido';
 
-      // Atualiza job como falho
-      await this.updateSyncJob(jobId, {
-        status: 'failed',
-        completed_at: new Date().toISOString(),
-        error_message: errorMsg,
+      onProgress?.({
+        phase: 'Erro na sincronizacao',
+        percentage: 0,
+        itemsProcessed: 0,
+        itemsTotal: selectedAccounts.length,
+        message: errorMsg,
       });
 
       return {
         success: false,
-        accounts_synced: accountsSynced,
-        campaigns_synced: totalCampaigns,
-        ad_groups_synced: totalAdGroups,
-        ads_synced: totalAds,
-        metrics_synced: totalMetrics,
+        accounts_synced: 0,
+        campaigns_synced: 0,
+        ad_groups_synced: 0,
+        ads_synced: 0,
+        metrics_synced: 0,
         date_range_start: dateFrom,
         date_range_end: dateTo,
-        errors: [...errors, errorMsg],
+        errors: [errorMsg],
         duration_ms: Date.now() - startTime,
       };
     }
   }
 
   // ============================================
-  // Sincronizacao de Conta Individual
+  // Polling de Progresso
   // ============================================
 
   /**
-   * Sincroniza uma unica conta
+   * Faz polling do status do job de sincronizacao
    */
-  private async syncSingleAccount(
-    account: GoogleAdAccount,
+  private async pollSyncProgress(
+    jobId: string,
     dateFrom: string,
     dateTo: string,
-    jobId: string,
+    startTime: number,
     onProgress?: SyncProgressCallback
-  ): Promise<{
-    campaigns: number;
-    adGroups: number;
-    ads: number;
-    metrics: number;
-  }> {
-    let campaigns = 0;
-    let adGroups = 0;
-    let ads = 0;
-    let metrics = 0;
+  ): Promise<GoogleSyncResult> {
+    const timeoutAt = startTime + SYNC_TIMEOUT_MS;
 
-    // Fase 1: Buscar campanhas
-    onProgress?.({
-      phase: 'Buscando campanhas',
-      percentage: 10,
-      itemsProcessed: 0,
-      itemsTotal: 0,
-      message: 'Carregando campanhas...',
-    });
+    while (Date.now() < timeoutAt) {
+      // Busca status do job
+      const { data: job, error } = await supabase
+        .from('google_sync_jobs')
+        .select('*')
+        .eq('id', jobId)
+        .single();
 
-    const campaignsData = await this.fetchCampaigns(account.customer_id);
-    campaigns = campaignsData.length;
+      if (error || !job) {
+        throw new Error('Job de sincronizacao nao encontrado');
+      }
 
-    // Fase 2: Buscar grupos de anuncios
-    onProgress?.({
-      phase: 'Buscando grupos de anuncios',
-      percentage: 30,
-      itemsProcessed: campaigns,
-      itemsTotal: campaigns,
-      message: `${campaigns} campanhas encontradas`,
-    });
+      // Atualiza progresso
+      onProgress?.({
+        phase: job.current_phase || 'Sincronizando',
+        percentage: job.progress || 0,
+        itemsProcessed: job.items_processed || 0,
+        itemsTotal: job.items_total || 0,
+        message: job.current_phase || 'Processando dados...',
+      });
 
-    const adGroupsData = await this.fetchAdGroups(account.customer_id);
-    adGroups = adGroupsData.length;
+      // Verifica status final
+      if (job.status === 'completed') {
+        return {
+          success: true,
+          accounts_synced: job.items_total || 0,
+          campaigns_synced: job.campaigns_synced || 0,
+          ad_groups_synced: job.ad_groups_synced || 0,
+          ads_synced: job.ads_synced || 0,
+          metrics_synced: job.metrics_synced || 0,
+          date_range_start: dateFrom,
+          date_range_end: dateTo,
+          errors: [],
+          duration_ms: Date.now() - startTime,
+        };
+      }
 
-    // Fase 3: Buscar anuncios
-    onProgress?.({
-      phase: 'Buscando anuncios',
-      percentage: 50,
-      itemsProcessed: adGroups,
-      itemsTotal: adGroups,
-      message: `${adGroups} grupos encontrados`,
-    });
+      if (job.status === 'failed' || job.status === 'cancelled') {
+        return {
+          success: false,
+          accounts_synced: 0,
+          campaigns_synced: job.campaigns_synced || 0,
+          ad_groups_synced: job.ad_groups_synced || 0,
+          ads_synced: job.ads_synced || 0,
+          metrics_synced: job.metrics_synced || 0,
+          date_range_start: dateFrom,
+          date_range_end: dateTo,
+          errors: [job.error_message || 'Sincronizacao falhou'],
+          duration_ms: Date.now() - startTime,
+        };
+      }
 
-    const adsData = await this.fetchAds(account.customer_id);
-    ads = adsData.length;
+      // Aguarda proximo poll
+      await this.delay(POLL_INTERVAL_MS);
+    }
 
-    // Fase 4: Buscar metricas
-    onProgress?.({
-      phase: 'Buscando metricas',
-      percentage: 70,
-      itemsProcessed: ads,
-      itemsTotal: ads,
-      message: `${ads} anuncios encontrados`,
-    });
-
-    const metricsData = await this.fetchInsights(
-      account.customer_id,
-      dateFrom,
-      dateTo,
-      campaignsData,
-      adGroupsData
-    );
-    metrics = metricsData.length;
-
-    // Fase 5: Salvar metricas no banco
-    onProgress?.({
-      phase: 'Salvando metricas',
-      percentage: 90,
-      itemsProcessed: metrics,
-      itemsTotal: metrics,
-      message: `Salvando ${metrics} registros...`,
-    });
-
-    await this.saveInsights(account, metricsData);
-
-    // Atualiza job com progresso
-    await this.updateSyncJob(jobId, {
-      items_processed:
-        (
-          await supabase
-            .from('google_sync_jobs')
-            .select('items_processed')
-            .eq('id', jobId)
-            .single()
-        ).data?.items_processed || 0 + 1,
-    });
-
-    onProgress?.({
-      phase: 'Conta sincronizada',
-      percentage: 100,
-      itemsProcessed: metrics,
-      itemsTotal: metrics,
-      message: 'Concluido',
-    });
-
-    return { campaigns, adGroups, ads, metrics };
+    // Timeout
+    return {
+      success: false,
+      accounts_synced: 0,
+      campaigns_synced: 0,
+      ad_groups_synced: 0,
+      ads_synced: 0,
+      metrics_synced: 0,
+      date_range_start: dateFrom,
+      date_range_end: dateTo,
+      errors: ['Timeout: sincronizacao demorou mais que 10 minutos'],
+      duration_ms: Date.now() - startTime,
+    };
   }
 
   // ============================================
@@ -328,294 +311,205 @@ export class GoogleSyncService {
   // ============================================
 
   /**
-   * Busca campanhas da conta
-   * TODO: Implementar chamada real a API do Google Ads
+   * Busca status da sincronizacao
    */
-  private async fetchCampaigns(
-    customerId: string
-  ): Promise<Array<{ id: string; name: string; status: string }>> {
-    await this.checkRateLimit();
-
-    // Simula dados de campanhas para desenvolvimento
-    // Em producao, fazer chamada real a API usando GAQL:
-    // SELECT campaign.id, campaign.name, campaign.status
-    // FROM campaign WHERE campaign.status != 'REMOVED'
-
-    console.log(`[GoogleSync] Buscando campanhas para customer: ${customerId}`);
-
-    // Retorna dados simulados
-    return [
-      { id: '123456789', name: 'Campanha Principal', status: 'ENABLED' },
-      { id: '987654321', name: 'Campanha Remarketing', status: 'ENABLED' },
-    ];
-  }
-
-  /**
-   * Busca grupos de anuncios da conta
-   * TODO: Implementar chamada real a API do Google Ads
-   */
-  private async fetchAdGroups(
-    customerId: string
-  ): Promise<Array<{ id: string; campaignId: string; name: string; status: string }>> {
-    await this.checkRateLimit();
-
-    console.log(`[GoogleSync] Buscando ad groups para customer: ${customerId}`);
-
-    // Retorna dados simulados
-    return [
-      {
-        id: 'ag_001',
-        campaignId: '123456789',
-        name: 'Grupo Principal',
-        status: 'ENABLED',
-      },
-      {
-        id: 'ag_002',
-        campaignId: '987654321',
-        name: 'Grupo Remarketing',
-        status: 'ENABLED',
-      },
-    ];
-  }
-
-  /**
-   * Busca anuncios da conta
-   * TODO: Implementar chamada real a API do Google Ads
-   */
-  private async fetchAds(
-    customerId: string
-  ): Promise<Array<{ id: string; adGroupId: string; campaignId: string; status: string }>> {
-    await this.checkRateLimit();
-
-    console.log(`[GoogleSync] Buscando ads para customer: ${customerId}`);
-
-    // Retorna dados simulados
-    return [
-      { id: 'ad_001', adGroupId: 'ag_001', campaignId: '123456789', status: 'ENABLED' },
-      { id: 'ad_002', adGroupId: 'ag_002', campaignId: '987654321', status: 'ENABLED' },
-    ];
-  }
-
-  /**
-   * Busca metricas de performance do periodo
-   * TODO: Implementar chamada real a API do Google Ads
-   */
-  private async fetchInsights(
-    customerId: string,
-    dateFrom: string,
-    dateTo: string,
-    campaigns: Array<{ id: string; name: string }>,
-    adGroups: Array<{ id: string; campaignId: string; name: string }>
-  ): Promise<
-    Array<{
-      date: string;
-      campaignId: string;
-      campaignName: string;
-      adGroupId?: string;
-      adGroupName?: string;
-      impressions: number;
-      clicks: number;
-      cost: number;
-      conversions: number;
-      conversionValue: number;
-    }>
-  > {
-    await this.checkRateLimit();
-
-    console.log(
-      `[GoogleSync] Buscando insights para customer: ${customerId}, periodo: ${dateFrom} a ${dateTo}`
-    );
-
-    // Gera dados simulados para cada dia do periodo
-    const insights: Array<{
-      date: string;
-      campaignId: string;
-      campaignName: string;
-      adGroupId?: string;
-      adGroupName?: string;
-      impressions: number;
-      clicks: number;
-      cost: number;
-      conversions: number;
-      conversionValue: number;
-    }> = [];
-
-    const startDate = new Date(dateFrom);
-    const endDate = new Date(dateTo);
-
-    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0];
-
-      // Gera metricas para cada campanha
-      for (const campaign of campaigns) {
-        // Metricas agregadas no nivel de campanha
-        const impressions = Math.floor(Math.random() * 10000) + 1000;
-        const clicks = Math.floor(impressions * (Math.random() * 0.05 + 0.01));
-        const cost = clicks * (Math.random() * 2 + 0.5);
-        const conversions = Math.floor(clicks * (Math.random() * 0.1 + 0.01));
-        const conversionValue = conversions * (Math.random() * 100 + 50);
-
-        insights.push({
-          date: dateStr,
-          campaignId: campaign.id,
-          campaignName: campaign.name,
-          impressions,
-          clicks,
-          cost,
-          conversions,
-          conversionValue,
-        });
-
-        // Metricas no nivel de ad group
-        const campaignAdGroups = adGroups.filter((ag) => ag.campaignId === campaign.id);
-        for (const adGroup of campaignAdGroups) {
-          const agImpressions = Math.floor(impressions * (Math.random() * 0.5 + 0.1));
-          const agClicks = Math.floor(agImpressions * (Math.random() * 0.05 + 0.01));
-          const agCost = agClicks * (Math.random() * 2 + 0.5);
-          const agConversions = Math.floor(agClicks * (Math.random() * 0.1 + 0.01));
-          const agConversionValue = agConversions * (Math.random() * 100 + 50);
-
-          insights.push({
-            date: dateStr,
-            campaignId: campaign.id,
-            campaignName: campaign.name,
-            adGroupId: adGroup.id,
-            adGroupName: adGroup.name,
-            impressions: agImpressions,
-            clicks: agClicks,
-            cost: agCost,
-            conversions: agConversions,
-            conversionValue: agConversionValue,
-          });
-        }
-      }
-    }
-
-    return insights;
-  }
-
-  // ============================================
-  // Metodos de Persistencia
-  // ============================================
-
-  /**
-   * Salva insights no banco de dados
-   */
-  private async saveInsights(
-    account: GoogleAdAccount,
-    insights: Array<{
-      date: string;
-      campaignId: string;
-      campaignName: string;
-      adGroupId?: string;
-      adGroupName?: string;
-      impressions: number;
-      clicks: number;
-      cost: number;
-      conversions: number;
-      conversionValue: number;
-    }>
-  ): Promise<void> {
-    // Processa em lotes para evitar timeout
-    const batchSize = 100;
-
-    for (let i = 0; i < insights.length; i += batchSize) {
-      const batch = insights.slice(i, i + batchSize);
-
-      const records: Partial<GoogleInsightsDaily>[] = batch.map((insight) => {
-        // Calcula metricas derivadas
-        const ctr =
-          insight.impressions > 0 ? (insight.clicks / insight.impressions) * 100 : 0;
-        const cpc = insight.clicks > 0 ? insight.cost / insight.clicks : 0;
-        const cpm = insight.impressions > 0 ? (insight.cost / insight.impressions) * 1000 : 0;
-        const roas = insight.cost > 0 ? insight.conversionValue / insight.cost : 0;
-
-        return {
-          workspace_id: this.workspaceId,
-          account_id: account.id,
-          customer_id: account.customer_id,
-          campaign_id: insight.campaignId,
-          campaign_name: insight.campaignName,
-          ad_group_id: insight.adGroupId || null,
-          ad_group_name: insight.adGroupName || null,
-          date: insight.date,
-          impressions: insight.impressions,
-          clicks: insight.clicks,
-          cost: insight.cost,
-          conversions: insight.conversions,
-          conversion_value: insight.conversionValue,
-          ctr,
-          cpc,
-          cpm,
-          roas,
-        };
-      });
-
-      // Upsert para evitar duplicatas
-      const { error } = await supabase.from('google_insights_daily').upsert(records, {
-        onConflict: 'workspace_id,customer_id,campaign_id,ad_group_id,date',
-        ignoreDuplicates: false,
-      });
-
-      if (error) {
-        console.error('[GoogleSync] Erro ao salvar insights:', error);
-        throw new Error(`Erro ao salvar metricas: ${error.message}`);
-      }
-
-      // Delay entre batches
-      if (i + batchSize < insights.length) {
-        await this.delay(100);
-      }
+  async getSyncStatus(): Promise<GoogleSyncStatusResponse | null> {
+    try {
+      return await callEdgeFunction<GoogleSyncStatusResponse>('google-get-sync-status', 'GET');
+    } catch (error) {
+      console.error('[GoogleSyncService] Erro ao buscar status:', error);
+      return null;
     }
   }
 
   /**
-   * Cria um novo job de sincronizacao
+   * Busca campanhas sincronizadas do banco de dados
    */
-  private async createSyncJob(
-    dateFrom: string,
-    dateTo: string,
-    accountsCount: number
-  ): Promise<string> {
-    const { data, error } = await supabase
-      .from('google_sync_jobs')
-      .insert({
-        workspace_id: this.workspaceId,
-        status: 'running',
-        started_at: new Date().toISOString(),
-        progress: 0,
-        current_phase: 'Iniciando sincronizacao',
-        items_processed: 0,
-        items_total: accountsCount,
-        sync_type: 'full',
-        date_range_start: dateFrom,
-        date_range_end: dateTo,
-      })
-      .select('id')
-      .single();
+  async getCampaigns(customerId?: string): Promise<Array<{
+    id: string;
+    campaign_id: string;
+    name: string;
+    status: string;
+    channel_type: string;
+    budget_amount: number | null;
+    budget_type: string | null;
+  }>> {
+    let query = supabase
+      .from('google_campaigns')
+      .select('*')
+      .eq('workspace_id', this.workspaceId)
+      .order('name');
 
-    if (error || !data) {
-      throw new Error(`Erro ao criar job de sincronizacao: ${error?.message}`);
+    if (customerId) {
+      query = query.eq('customer_id', customerId);
     }
 
-    return data.id;
-  }
-
-  /**
-   * Atualiza job de sincronizacao
-   */
-  private async updateSyncJob(
-    jobId: string,
-    updates: Partial<GoogleSyncJob>
-  ): Promise<void> {
-    const { error } = await supabase
-      .from('google_sync_jobs')
-      .update(updates)
-      .eq('id', jobId);
+    const { data, error } = await query;
 
     if (error) {
-      console.error('[GoogleSync] Erro ao atualizar job:', error);
+      console.error('[GoogleSyncService] Erro ao buscar campanhas:', error);
+      return [];
     }
+
+    return data || [];
+  }
+
+  /**
+   * Busca grupos de anuncios sincronizados
+   */
+  async getAdGroups(campaignId?: string): Promise<Array<{
+    id: string;
+    ad_group_id: string;
+    campaign_id: string;
+    name: string;
+    status: string;
+    ad_group_type: string | null;
+  }>> {
+    let query = supabase
+      .from('google_ad_groups')
+      .select('*')
+      .eq('workspace_id', this.workspaceId)
+      .order('name');
+
+    if (campaignId) {
+      query = query.eq('campaign_id', campaignId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('[GoogleSyncService] Erro ao buscar grupos:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Busca anuncios sincronizados
+   */
+  async getAds(adGroupId?: string): Promise<Array<{
+    id: string;
+    ad_id: string;
+    ad_group_id: string;
+    campaign_id: string;
+    name: string | null;
+    status: string;
+    ad_type: string | null;
+    final_urls: string[] | null;
+  }>> {
+    let query = supabase
+      .from('google_ads')
+      .select('*')
+      .eq('workspace_id', this.workspaceId)
+      .order('created_at', { ascending: false });
+
+    if (adGroupId) {
+      query = query.eq('ad_group_id', adGroupId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('[GoogleSyncService] Erro ao buscar anuncios:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Busca palavras-chave sincronizadas
+   */
+  async getKeywords(adGroupId?: string): Promise<Array<{
+    id: string;
+    keyword_id: string;
+    ad_group_id: string;
+    campaign_id: string;
+    keyword_text: string;
+    match_type: string;
+    status: string;
+    quality_score: number | null;
+  }>> {
+    let query = supabase
+      .from('google_keywords')
+      .select('*')
+      .eq('workspace_id', this.workspaceId)
+      .order('keyword_text');
+
+    if (adGroupId) {
+      query = query.eq('ad_group_id', adGroupId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('[GoogleSyncService] Erro ao buscar keywords:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Busca metricas diarias
+   */
+  async getInsights(options: {
+    customerId?: string;
+    campaignId?: string;
+    adGroupId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }): Promise<Array<{
+    date: string;
+    campaign_id: string;
+    campaign_name: string;
+    ad_group_id: string | null;
+    ad_group_name: string | null;
+    impressions: number;
+    clicks: number;
+    cost: number;
+    conversions: number;
+    conversion_value: number;
+    ctr: number;
+    cpc: number;
+    cpm: number;
+    roas: number;
+  }>> {
+    let query = supabase
+      .from('google_insights_daily')
+      .select('*')
+      .eq('workspace_id', this.workspaceId)
+      .order('date', { ascending: false });
+
+    if (options.customerId) {
+      query = query.eq('customer_id', options.customerId);
+    }
+    if (options.campaignId) {
+      query = query.eq('campaign_id', options.campaignId);
+    }
+    if (options.adGroupId) {
+      query = query.eq('ad_group_id', options.adGroupId);
+    }
+    if (options.dateFrom) {
+      query = query.gte('date', options.dateFrom);
+    }
+    if (options.dateTo) {
+      query = query.lte('date', options.dateTo);
+    }
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('[GoogleSyncService] Erro ao buscar insights:', error);
+      return [];
+    }
+
+    return data || [];
   }
 
   // ============================================
@@ -623,52 +517,10 @@ export class GoogleSyncService {
   // ============================================
 
   /**
-   * Verifica rate limit antes de fazer requisicao
-   */
-  private async checkRateLimit(): Promise<void> {
-    this.requestCount++;
-
-    if (this.requestCount >= DAILY_REQUEST_LIMIT) {
-      throw new Error('Limite diario de requisicoes atingido (15.000)');
-    }
-
-    // Adiciona delay entre requisicoes
-    await this.delay(REQUEST_DELAY_MS);
-  }
-
-  /**
-   * Delay assinciono
+   * Delay assincrono
    */
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  /**
-   * Executa funcao com retry automatico
-   */
-  private async withRetry<T>(
-    fn: () => Promise<T>,
-    operation: string
-  ): Promise<T> {
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error('Erro desconhecido');
-        console.warn(
-          `[GoogleSync] ${operation} falhou (tentativa ${attempt}/${MAX_RETRIES}):`,
-          lastError.message
-        );
-
-        if (attempt < MAX_RETRIES) {
-          await this.delay(RETRY_DELAY_MS * attempt);
-        }
-      }
-    }
-
-    throw lastError || new Error(`${operation} falhou apos ${MAX_RETRIES} tentativas`);
   }
 }
 
@@ -677,77 +529,51 @@ export class GoogleSyncService {
 // ============================================
 
 /**
- * Cria instancia do servico de sincronizacao
+ * Cria instancia do servico de sincronizacao para o usuario atual
  */
 export async function createGoogleSyncService(): Promise<GoogleSyncService | null> {
   try {
-    // Obtem conexao do workspace atual
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
-    // Busca workspace
+    // Busca workspace como owner
     const { data: workspace } = await supabase
       .from('workspaces')
       .select('id')
       .eq('owner_id', user.id)
       .maybeSingle();
 
-    if (!workspace) {
-      // Tenta como membro
-      const { data: membership } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (!membership) return null;
-
-      const workspaceId = membership.workspace_id;
-
-      // Busca conexao
-      const { data: connection } = await supabase
-        .from('google_connections')
-        .select('*')
-        .eq('workspace_id', workspaceId)
-        .maybeSingle();
-
-      if (!connection) return null;
-
-      return new GoogleSyncService(
-        workspaceId,
-        connection.developer_token,
-        connection.login_customer_id
-      );
+    if (workspace) {
+      return new GoogleSyncService(workspace.id);
     }
 
-    // Busca conexao
-    const { data: connection } = await supabase
-      .from('google_connections')
-      .select('*')
-      .eq('workspace_id', workspace.id)
+    // Tenta como membro
+    const { data: membership } = await supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', user.id)
       .maybeSingle();
 
-    if (!connection) return null;
+    if (membership) {
+      return new GoogleSyncService(membership.workspace_id);
+    }
 
-    return new GoogleSyncService(
-      workspace.id,
-      connection.developer_token,
-      connection.login_customer_id
-    );
+    return null;
   } catch (error) {
-    console.error('[GoogleSync] Erro ao criar servico:', error);
+    console.error('[GoogleSyncService] Erro ao criar servico:', error);
     return null;
   }
 }
 
 /**
- * Executa sincronizacao rapida (ultimos 7 dias)
+ * Executa sincronizacao rapida (ultimos 7 dias) via Edge Function
  */
 export async function runQuickSync(
   accountIds?: string[],
   onProgress?: SyncProgressCallback
 ): Promise<GoogleSyncResult> {
   const service = await createGoogleSyncService();
+
   if (!service) {
     return {
       success: false,
@@ -763,7 +589,7 @@ export async function runQuickSync(
     };
   }
 
-  // Busca contas
+  // Busca contas selecionadas
   const { data: accounts } = await supabase
     .from('google_ad_accounts')
     .select('*')
@@ -796,4 +622,63 @@ export async function runQuickSync(
     .split('T')[0];
 
   return service.syncAccounts(targetAccounts, dateFrom, dateTo, onProgress);
+}
+
+/**
+ * Busca status completo da sincronizacao Google Ads
+ */
+export async function getGoogleSyncStatus(): Promise<GoogleSyncStatusResponse | null> {
+  try {
+    return await callEdgeFunction<GoogleSyncStatusResponse>('google-get-sync-status', 'GET');
+  } catch (error) {
+    console.error('[GoogleSyncService] Erro ao buscar status:', error);
+    return null;
+  }
+}
+
+/**
+ * Lista todas as contas Google Ads do workspace
+ */
+export async function listGoogleAccounts(): Promise<{
+  accounts: GoogleAdAccount[];
+  total: number;
+  connected: boolean;
+  error?: string;
+}> {
+  try {
+    return await callEdgeFunction<{
+      accounts: GoogleAdAccount[];
+      total: number;
+      connected: boolean;
+      error?: string;
+    }>('google-list-adaccounts', 'GET');
+  } catch (error) {
+    console.error('[GoogleSyncService] Erro ao listar contas:', error);
+    return {
+      accounts: [],
+      total: 0,
+      connected: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    };
+  }
+}
+
+/**
+ * Alterna selecao de uma conta Google Ads
+ */
+export async function toggleGoogleAccountSelection(
+  accountId: string,
+  isSelected: boolean
+): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('google_ad_accounts')
+      .update({ is_selected: isSelected })
+      .eq('id', accountId);
+
+    return !error;
+  } catch (error) {
+    console.error('[GoogleSyncService] Erro ao alternar selecao:', error);
+    return false;
+  }
 }

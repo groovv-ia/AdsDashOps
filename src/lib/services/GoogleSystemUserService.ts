@@ -4,6 +4,9 @@
  * Servico para gerenciar a conexao com o Google Ads via Developer Token.
  * Responsavel por salvar credenciais, validar conexao, listar contas
  * e gerenciar vinculacoes de contas ao workspace.
+ *
+ * Este servico chama as Edge Functions do Supabase para operacoes
+ * que requerem acesso a API do Google Ads.
  */
 
 import { supabase } from '../supabase';
@@ -18,12 +21,61 @@ import type {
   GoogleInsightsQueryOptions,
 } from '../connectors/google/types';
 
+// URL base das Edge Functions
+const EDGE_FUNCTIONS_URL = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
+
+// ============================================
+// Funcoes Auxiliares para Chamadas de API
+// ============================================
+
+/**
+ * Obtem headers de autorizacao para chamadas as Edge Functions
+ */
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${session?.access_token || ''}`,
+    'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+  };
+}
+
+/**
+ * Chama uma Edge Function com tratamento de erros padronizado
+ */
+async function callEdgeFunction<T>(
+  functionName: string,
+  method: 'GET' | 'POST' = 'POST',
+  body?: Record<string, unknown>
+): Promise<T> {
+  const headers = await getAuthHeaders();
+
+  const options: RequestInit = {
+    method,
+    headers,
+  };
+
+  if (body && method === 'POST') {
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${EDGE_FUNCTIONS_URL}/${functionName}`, options);
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+    throw new Error(errorData.error || `Erro HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
 // ============================================
 // Funcoes de Conexao
 // ============================================
 
 /**
  * Valida as credenciais do Google Ads e salva a conexao
+ * Chama a Edge Function google-validate-connection
  * @param developerToken - Token de desenvolvedor do Google Ads
  * @param customerId - ID do cliente (MCC ou conta individual)
  * @param loginCustomerId - ID de login opcional para acesso MCC
@@ -34,156 +86,50 @@ export async function validateGoogleConnection(
   loginCustomerId?: string
 ): Promise<ValidateGoogleConnectionResponse> {
   try {
-    // Obtem o workspace_id do usuario atual
-    const workspaceId = await getCurrentWorkspaceId();
-    if (!workspaceId) {
-      return {
-        status: 'invalid',
-        error: 'Workspace nao encontrado',
-      };
-    }
+    console.log('[GoogleSystemUserService] Validando conexao via Edge Function...');
 
-    // Formata o Customer ID (remove hifens se houver)
-    const formattedCustomerId = customerId.replace(/-/g, '');
-    const formattedLoginCustomerId = loginCustomerId?.replace(/-/g, '');
-
-    // Verifica se ja existe uma conexao para este workspace
-    const { data: existingConnection } = await supabase
-      .from('google_connections')
-      .select('id')
-      .eq('workspace_id', workspaceId)
-      .maybeSingle();
-
-    // Dados da conexao
-    const connectionData = {
-      workspace_id: workspaceId,
+    const result = await callEdgeFunction<{
+      status: string;
+      workspace_id?: string;
+      customer_id?: string;
+      customer_name?: string;
+      accounts_count?: number;
+      accounts?: Array<{
+        customer_id: string;
+        name: string;
+        currency_code: string;
+        timezone: string;
+        is_manager: boolean;
+      }>;
+      error?: string;
+    }>('google-validate-connection', 'POST', {
       developer_token: developerToken,
-      customer_id: formattedCustomerId,
-      login_customer_id: formattedLoginCustomerId || null,
-      status: 'active' as const,
-      last_validated_at: new Date().toISOString(),
-      error_message: null,
-    };
+      customer_id: customerId,
+      login_customer_id: loginCustomerId,
+    });
 
-    // Insere ou atualiza a conexao
-    let connectionId: string;
-    if (existingConnection) {
-      const { error: updateError } = await supabase
-        .from('google_connections')
-        .update(connectionData)
-        .eq('id', existingConnection.id);
-
-      if (updateError) {
-        return {
-          status: 'invalid',
-          error: 'Erro ao atualizar conexao: ' + updateError.message,
-        };
-      }
-      connectionId = existingConnection.id;
-    } else {
-      const { data: newConnection, error: insertError } = await supabase
-        .from('google_connections')
-        .insert(connectionData)
-        .select('id')
-        .single();
-
-      if (insertError || !newConnection) {
-        return {
-          status: 'invalid',
-          error: 'Erro ao salvar conexao: ' + (insertError?.message || 'Erro desconhecido'),
-        };
-      }
-      connectionId = newConnection.id;
-    }
-
-    // Busca as contas disponiveis usando a API
-    const accountsResult = await fetchGoogleAccounts(
-      developerToken,
-      formattedCustomerId,
-      formattedLoginCustomerId
-    );
-
-    if (accountsResult.error) {
-      // Atualiza status para erro
-      await supabase
-        .from('google_connections')
-        .update({
-          status: 'error',
-          error_message: accountsResult.error,
-        })
-        .eq('id', connectionId);
-
+    if (result.status === 'connected') {
+      console.log(`[GoogleSystemUserService] Conexao validada: ${result.accounts_count} conta(s)`);
       return {
-        status: 'invalid',
-        error: accountsResult.error,
+        status: 'connected',
+        workspace_id: result.workspace_id,
+        customer_id: result.customer_id,
+        customer_name: result.customer_name,
+        accounts_count: result.accounts_count,
       };
-    }
-
-    // Salva as contas encontradas no banco
-    if (accountsResult.accounts && accountsResult.accounts.length > 0) {
-      for (const account of accountsResult.accounts) {
-        await supabase
-          .from('google_ad_accounts')
-          .upsert(
-            {
-              workspace_id: workspaceId,
-              connection_id: connectionId,
-              customer_id: account.customer_id,
-              name: account.name,
-              currency_code: account.currency_code,
-              timezone: account.timezone,
-              status: account.status,
-              is_manager: account.is_manager,
-            },
-            { onConflict: 'workspace_id,customer_id' }
-          );
-      }
     }
 
     return {
-      status: 'connected',
-      workspace_id: workspaceId,
-      customer_id: formattedCustomerId,
-      customer_name: accountsResult.accounts?.[0]?.name || 'Conta Google Ads',
-      accounts_count: accountsResult.accounts?.length || 0,
+      status: 'invalid',
+      error: result.error || 'Erro ao validar conexao',
     };
   } catch (error) {
-    console.error('Erro ao validar conexao Google:', error);
+    console.error('[GoogleSystemUserService] Erro ao validar conexao:', error);
     return {
       status: 'invalid',
       error: error instanceof Error ? error.message : 'Erro desconhecido',
     };
   }
-}
-
-/**
- * Busca contas do Google Ads usando a API REST
- * Nota: Esta funcao simula a chamada a API do Google Ads.
- * Em producao, devera ser substituida por uma Edge Function
- * que faz a chamada real a API.
- */
-async function fetchGoogleAccounts(
-  _developerToken: string,
-  customerId: string,
-  _loginCustomerId?: string
-): Promise<{ accounts: Partial<GoogleAdAccount>[]; error?: string }> {
-  // Por enquanto, retorna a conta principal como uma conta valida
-  // Em producao, esta funcao chamara a Edge Function google-list-accounts
-
-  // Simula uma conta para testes
-  // TODO: Implementar Edge Function para buscar contas reais
-  return {
-    accounts: [
-      {
-        customer_id: customerId,
-        name: `Conta ${customerId}`,
-        currency_code: 'BRL',
-        timezone: 'America/Sao_Paulo',
-        status: 'ENABLED',
-        is_manager: false,
-      },
-    ],
-  };
 }
 
 /**
@@ -221,9 +167,28 @@ export async function disconnectGoogle(): Promise<{ success: boolean; error?: st
 
 /**
  * Lista todas as contas Google Ads vinculadas ao workspace
+ * Pode chamar a Edge Function ou buscar do banco local
  */
-export async function listGoogleAdAccounts(): Promise<ListGoogleAccountsResponse> {
+export async function listGoogleAdAccounts(
+  useEdgeFunction: boolean = false
+): Promise<ListGoogleAccountsResponse> {
   try {
+    if (useEdgeFunction) {
+      // Chama Edge Function para listar contas
+      const result = await callEdgeFunction<{
+        accounts: GoogleAdAccount[];
+        total: number;
+        error?: string;
+      }>('google-list-adaccounts', 'GET');
+
+      return {
+        accounts: result.accounts || [],
+        total: result.total || 0,
+        error: result.error,
+      };
+    }
+
+    // Busca do banco local
     const workspaceId = await getCurrentWorkspaceId();
     if (!workspaceId) {
       return { accounts: [], total: 0, error: 'Workspace nao encontrado' };
@@ -337,8 +302,31 @@ export async function getGoogleConnectionStatus(): Promise<GoogleConnection | nu
 
 /**
  * Obtem status completo de sincronizacao do Google Ads
+ * Chama a Edge Function google-get-sync-status
  */
 export async function getGoogleSyncStatus(): Promise<GoogleSyncStatusResponse> {
+  try {
+    console.log('[GoogleSystemUserService] Buscando status via Edge Function...');
+
+    const result = await callEdgeFunction<GoogleSyncStatusResponse>(
+      'google-get-sync-status',
+      'POST'
+    );
+
+    console.log(`[GoogleSystemUserService] Status recebido: ${result.ad_accounts?.length || 0} contas`);
+    return result;
+  } catch (error) {
+    console.error('[GoogleSystemUserService] Erro ao obter status:', error);
+
+    // Fallback para busca local em caso de erro
+    return getGoogleSyncStatusLocal();
+  }
+}
+
+/**
+ * Versao local do getGoogleSyncStatus (fallback)
+ */
+async function getGoogleSyncStatusLocal(): Promise<GoogleSyncStatusResponse> {
   try {
     const workspaceId = await getCurrentWorkspaceId();
     if (!workspaceId) {
@@ -434,7 +422,7 @@ export async function getGoogleSyncStatus(): Promise<GoogleSyncStatusResponse> {
       },
     };
   } catch (error) {
-    console.error('Erro ao obter status de sincronizacao:', error);
+    console.error('Erro ao obter status de sincronizacao (local):', error);
     return createEmptySyncStatus(
       error instanceof Error ? error.message : 'Erro ao obter status'
     );
@@ -458,6 +446,75 @@ function createEmptySyncStatus(error?: string): GoogleSyncStatusResponse {
     },
     error,
   };
+}
+
+// ============================================
+// Funcoes de Sincronizacao
+// ============================================
+
+/**
+ * Executa sincronizacao de dados do Google Ads
+ * Chama a Edge Function google-run-sync
+ */
+export async function runGoogleSync(options: {
+  accountIds?: string[];
+  dateFrom: string;
+  dateTo: string;
+  syncType?: 'full' | 'incremental';
+}): Promise<{
+  success: boolean;
+  jobId?: string;
+  accountsSynced?: number;
+  campaignsSynced?: number;
+  adGroupsSynced?: number;
+  adsSynced?: number;
+  keywordsSynced?: number;
+  metricsSynced?: number;
+  error?: string;
+}> {
+  try {
+    console.log('[GoogleSystemUserService] Iniciando sincronizacao via Edge Function...');
+
+    const result = await callEdgeFunction<{
+      success: boolean;
+      job_id?: string;
+      accounts_synced?: number;
+      campaigns_synced?: number;
+      ad_groups_synced?: number;
+      ads_synced?: number;
+      keywords_synced?: number;
+      metrics_synced?: number;
+      errors?: string[];
+      error?: string;
+    }>('google-run-sync', 'POST', {
+      account_ids: options.accountIds,
+      date_from: options.dateFrom,
+      date_to: options.dateTo,
+      sync_type: options.syncType || 'full',
+    });
+
+    if (result.success) {
+      console.log(`[GoogleSystemUserService] Sincronizacao concluida: ${result.metrics_synced} metricas`);
+    }
+
+    return {
+      success: result.success,
+      jobId: result.job_id,
+      accountsSynced: result.accounts_synced,
+      campaignsSynced: result.campaigns_synced,
+      adGroupsSynced: result.ad_groups_synced,
+      adsSynced: result.ads_synced,
+      keywordsSynced: result.keywords_synced,
+      metricsSynced: result.metrics_synced,
+      error: result.errors?.join('; ') || result.error,
+    };
+  } catch (error) {
+    console.error('[GoogleSystemUserService] Erro na sincronizacao:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    };
+  }
 }
 
 // ============================================
@@ -622,6 +679,146 @@ export async function getGoogleMetricsSummary(options: {
 }
 
 // ============================================
+// Funcoes de Dados Adicionais
+// ============================================
+
+/**
+ * Busca campanhas do Google Ads
+ */
+export async function getGoogleCampaigns(accountId?: string): Promise<{
+  data: Array<{
+    id: string;
+    campaign_id: string;
+    name: string;
+    status: string;
+    advertising_channel_type: string;
+    budget_amount_micros: number;
+  }>;
+  error?: string;
+}> {
+  try {
+    const workspaceId = await getCurrentWorkspaceId();
+    if (!workspaceId) {
+      return { data: [], error: 'Workspace nao encontrado' };
+    }
+
+    let query = supabase
+      .from('google_campaigns')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .order('name');
+
+    if (accountId) {
+      query = query.eq('account_id', accountId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return { data: [], error: error.message };
+    }
+
+    return { data: data || [] };
+  } catch (error) {
+    return {
+      data: [],
+      error: error instanceof Error ? error.message : 'Erro ao buscar campanhas',
+    };
+  }
+}
+
+/**
+ * Busca ad groups do Google Ads
+ */
+export async function getGoogleAdGroups(campaignId?: string): Promise<{
+  data: Array<{
+    id: string;
+    ad_group_id: string;
+    campaign_id: string;
+    name: string;
+    status: string;
+    type: string;
+  }>;
+  error?: string;
+}> {
+  try {
+    const workspaceId = await getCurrentWorkspaceId();
+    if (!workspaceId) {
+      return { data: [], error: 'Workspace nao encontrado' };
+    }
+
+    let query = supabase
+      .from('google_ad_groups')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .order('name');
+
+    if (campaignId) {
+      query = query.eq('campaign_id', campaignId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return { data: [], error: error.message };
+    }
+
+    return { data: data || [] };
+  } catch (error) {
+    return {
+      data: [],
+      error: error instanceof Error ? error.message : 'Erro ao buscar ad groups',
+    };
+  }
+}
+
+/**
+ * Busca keywords do Google Ads
+ */
+export async function getGoogleKeywords(adGroupId?: string): Promise<{
+  data: Array<{
+    id: string;
+    keyword_id: string;
+    ad_group_id: string;
+    text: string;
+    match_type: string;
+    status: string;
+    quality_score: number;
+  }>;
+  error?: string;
+}> {
+  try {
+    const workspaceId = await getCurrentWorkspaceId();
+    if (!workspaceId) {
+      return { data: [], error: 'Workspace nao encontrado' };
+    }
+
+    let query = supabase
+      .from('google_keywords')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .order('text');
+
+    if (adGroupId) {
+      query = query.eq('ad_group_id', adGroupId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return { data: [], error: error.message };
+    }
+
+    return { data: data || [] };
+  } catch (error) {
+    return {
+      data: [],
+      error: error instanceof Error ? error.message : 'Erro ao buscar keywords',
+    };
+  }
+}
+
+// ============================================
 // Funcoes Auxiliares
 // ============================================
 
@@ -673,4 +870,12 @@ export function formatCustomerId(customerId: string): string {
  */
 export function cleanCustomerId(customerId: string): string {
   return customerId.replace(/\D/g, '');
+}
+
+/**
+ * Valida formato do Customer ID
+ */
+export function isValidCustomerId(customerId: string): boolean {
+  const clean = cleanCustomerId(customerId);
+  return clean.length === 10 && /^\d{10}$/.test(clean);
 }

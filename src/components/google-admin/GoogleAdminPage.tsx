@@ -303,6 +303,9 @@ export const GoogleAdminPage: React.FC = () => {
 
   const isConnected = connectionStatus?.status === 'active';
 
+  // Filtra contas selecionadas para exibicao
+  const selectedAccounts = adAccounts.filter(acc => acc.is_selected);
+
   return (
     <div className="space-y-6">
       {/* Workspace Indicator */}
