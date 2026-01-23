@@ -362,7 +362,7 @@ function AppContent() {
       case 'google-admin':
         return <GoogleAdminPage />;
       case 'google-sync':
-        return <GoogleAdsSyncPage />;
+        return <GoogleAdsSyncPage onNavigate={setCurrentPage} />;
       case 'ai-insights':
         return (
           <AIInsightsPanel

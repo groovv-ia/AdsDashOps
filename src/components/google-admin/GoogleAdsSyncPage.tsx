@@ -21,6 +21,8 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  ArrowRight,
+  Settings,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -54,7 +56,12 @@ interface SyncProgress {
   message: string;
 }
 
-export const GoogleAdsSyncPage: React.FC = () => {
+// Props do componente
+interface GoogleAdsSyncPageProps {
+  onNavigate?: (page: string) => void;
+}
+
+export const GoogleAdsSyncPage: React.FC<GoogleAdsSyncPageProps> = ({ onNavigate }) => {
   // Estado principal
   const [syncStatus, setSyncStatus] = useState<GoogleSyncStatusResponse | null>(null);
   const [accounts, setAccounts] = useState<GoogleAdAccount[]>([]);
@@ -308,6 +315,7 @@ export const GoogleAdsSyncPage: React.FC = () => {
   if (!syncStatus?.connection) {
     return (
       <div className="space-y-6">
+        {/* Header da pagina */}
         <div className="flex items-center space-x-3">
           <GoogleIcon className="w-8 h-8" />
           <div>
@@ -316,17 +324,36 @@ export const GoogleAdsSyncPage: React.FC = () => {
           </div>
         </div>
 
-        <Card className="border-amber-200 bg-amber-50">
-          <div className="flex items-start space-x-3">
-            <AlertTriangle className="w-6 h-6 text-amber-600 flex-shrink-0" />
-            <div>
-              <h3 className="font-semibold text-amber-900">Conexao nao configurada</h3>
-              <p className="text-amber-700 mt-1">
-                Configure a conexao com o Google Ads antes de sincronizar dados.
-              </p>
-              <p className="text-sm text-amber-600 mt-2">
-                Acesse "Conexao Google" no menu lateral para configurar.
-              </p>
+        {/* Card de notificacao - Conexao nao configurada */}
+        <Card className="border-l-4 border-l-[#4C53F7] border-[#C7CAF9] bg-[#EEEFF9] shadow-sm overflow-hidden">
+          <div className="p-5">
+            <div className="flex items-start space-x-4">
+              {/* Icone de alerta */}
+              <div className="flex-shrink-0 p-2 bg-[#4C53F7]/10 rounded-full">
+                <Settings className="w-6 h-6 text-[#4C53F7]" />
+              </div>
+
+              {/* Conteudo textual */}
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-semibold text-[#2D3280]">
+                  Conexão não configurada
+                </h3>
+                <p className="text-[#4C53F7]/80 mt-1">
+                  Configure a conexão com o Google Ads antes de sincronizar dados.
+                </p>
+                <p className="text-sm text-[#6B70B8] mt-2">
+                  Acesse "Conexão Google" no menu lateral para configurar.
+                </p>
+
+                {/* Botao de acao */}
+                <button
+                  onClick={() => onNavigate?.('google-admin')}
+                  className="mt-4 inline-flex items-center px-4 py-2 bg-[#4C53F7] text-white text-sm font-medium rounded-lg hover:bg-[#3D44D9] transition-colors duration-200 shadow-sm hover:shadow-md"
+                >
+                  Configurar agora
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </button>
+              </div>
             </div>
           </div>
         </Card>
