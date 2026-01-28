@@ -20,7 +20,7 @@ interface CampaignAdSetsTableProps {
   selectedAdSetId?: string;
 }
 
-type SortField = 'adset_name' | 'impressions' | 'clicks' | 'spend' | 'conversions' | 'ctr' | 'cpc' | 'roas';
+type SortField = 'adset_name' | 'impressions' | 'clicks' | 'spend' | 'conversions' | 'messaging_conversations_started' | 'ctr' | 'cpc' | 'roas';
 type SortDirection = 'asc' | 'desc';
 
 // ============================================
@@ -247,7 +247,7 @@ export function CampaignAdSetsTable({
 
       {/* Tabela */}
       <div className="overflow-x-auto -mx-4 px-4">
-        <table className="w-full min-w-[900px]">
+        <table className="w-full min-w-[1000px]">
           <thead>
             <tr className="border-b border-gray-200">
               {onSelectAdSet && <th className="w-10" />}
@@ -290,6 +290,14 @@ export function CampaignAdSetsTable({
                   className="flex items-center gap-1 font-medium text-gray-700 hover:text-gray-900 ml-auto"
                 >
                   Conversoes {renderSortIcon('conversions')}
+                </button>
+              </th>
+              <th className="text-right py-3 px-2">
+                <button
+                  onClick={() => handleSort('messaging_conversations_started')}
+                  className="flex items-center gap-1 font-medium text-gray-700 hover:text-gray-900 ml-auto"
+                >
+                  Conversas {renderSortIcon('messaging_conversations_started')}
                 </button>
               </th>
               <th className="text-right py-3 px-2">
@@ -380,6 +388,11 @@ export function CampaignAdSetsTable({
                     {formatNumber(adSet.conversions)}
                   </td>
 
+                  {/* Conversas */}
+                  <td className="py-3 px-2 text-right font-medium text-gray-900">
+                    {formatNumber(adSet.messaging_conversations_started)}
+                  </td>
+
                   {/* CTR */}
                   <td className="py-3 px-2 text-right text-gray-700">
                     {formatPercent(adSet.ctr)}
@@ -409,7 +422,7 @@ export function CampaignAdSetsTable({
 
       {/* Totais */}
       <div className="mt-4 pt-4 border-t border-gray-200">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
           <div>
             <p className="text-gray-500">Total de Impressoes</p>
             <p className="font-semibold text-gray-900">
@@ -432,6 +445,12 @@ export function CampaignAdSetsTable({
             <p className="text-gray-500">Total de Conversoes</p>
             <p className="font-semibold text-gray-900">
               {formatNumber(sortedAndFilteredAdSets.reduce((sum, as) => sum + as.conversions, 0))}
+            </p>
+          </div>
+          <div>
+            <p className="text-gray-500">Total de Conversas</p>
+            <p className="font-semibold text-gray-900">
+              {formatNumber(sortedAndFilteredAdSets.reduce((sum, as) => sum + as.messaging_conversations_started, 0))}
             </p>
           </div>
         </div>

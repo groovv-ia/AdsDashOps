@@ -141,6 +141,8 @@ function calculateDerivedMetrics(metrics: Partial<CampaignMetrics>): CampaignMet
   const spend = metrics.spend || 0;
   const conversions = metrics.conversions || 0;
   const reach = metrics.reach || 0;
+  const messaging_conversations_started = metrics.messaging_conversations_started || 0;
+  const leads = metrics.leads || 0;
 
   return {
     impressions,
@@ -153,6 +155,10 @@ function calculateDerivedMetrics(metrics: Partial<CampaignMetrics>): CampaignMet
     cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
     roas: spend > 0 ? (conversions * 100) / spend : 0,
     frequency: reach > 0 ? impressions / reach : 0,
+    messaging_conversations_started,
+    cost_per_messaging_conversation_started: messaging_conversations_started > 0 ? spend / messaging_conversations_started : 0,
+    leads,
+    cost_per_lead: leads > 0 ? spend / leads : 0,
   };
 }
 
@@ -265,19 +271,28 @@ export class CampaignExtractedDataService {
       // Buscar metricas agregadas por adset
       const { data: metrics, error: metricsError } = await supabase
         .from('ad_metrics')
-        .select('ad_set_id, impressions, clicks, spend, conversions, reach')
+        .select('ad_set_id, impressions, clicks, spend, conversions, reach, messaging_conversations_started, leads')
         .eq('campaign_id', campaignId)
         .eq('user_id', user.id);
 
       // Agregar metricas por adset
-      const metricsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number; reach: number }>();
+      const metricsMap = new Map<string, {
+        impressions: number;
+        clicks: number;
+        spend: number;
+        conversions: number;
+        reach: number;
+        messaging_conversations_started: number;
+        leads: number;
+      }>();
 
       if (metrics && !metricsError) {
         for (const m of metrics) {
           if (!m.ad_set_id) continue;
 
           const existing = metricsMap.get(m.ad_set_id) || {
-            impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0
+            impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0,
+            messaging_conversations_started: 0, leads: 0
           };
 
           existing.impressions += Number(m.impressions) || 0;
@@ -285,6 +300,8 @@ export class CampaignExtractedDataService {
           existing.spend += Number(m.spend) || 0;
           existing.conversions += Number(m.conversions) || 0;
           existing.reach += Number(m.reach) || 0;
+          existing.messaging_conversations_started += Number((m as any).messaging_conversations_started) || 0;
+          existing.leads += Number((m as any).leads) || 0;
 
           metricsMap.set(m.ad_set_id, existing);
         }
@@ -293,7 +310,8 @@ export class CampaignExtractedDataService {
       // Mapear para o formato de saida
       const mappedAdSets: AdSetData[] = (adSets || []).map((as: any) => {
         const asMetrics = metricsMap.get(as.id) || {
-          impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0
+          impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0,
+          messaging_conversations_started: 0, leads: 0
         };
 
         const derived = calculateDerivedMetrics(asMetrics);
@@ -368,7 +386,7 @@ export class CampaignExtractedDataService {
       // Buscar metricas agregadas por anuncio
       let metricsQuery = supabase
         .from('ad_metrics')
-        .select('ad_id, impressions, clicks, spend, conversions, reach')
+        .select('ad_id, impressions, clicks, spend, conversions, reach, messaging_conversations_started, leads')
         .eq('campaign_id', campaignId)
         .eq('user_id', user.id);
 
@@ -379,14 +397,23 @@ export class CampaignExtractedDataService {
       const { data: metrics, error: metricsError } = await metricsQuery;
 
       // Agregar metricas por anuncio
-      const metricsMap = new Map<string, { impressions: number; clicks: number; spend: number; conversions: number; reach: number }>();
+      const metricsMap = new Map<string, {
+        impressions: number;
+        clicks: number;
+        spend: number;
+        conversions: number;
+        reach: number;
+        messaging_conversations_started: number;
+        leads: number;
+      }>();
 
       if (metrics && !metricsError) {
         for (const m of metrics) {
           if (!m.ad_id) continue;
 
           const existing = metricsMap.get(m.ad_id) || {
-            impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0
+            impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0,
+            messaging_conversations_started: 0, leads: 0
           };
 
           existing.impressions += Number(m.impressions) || 0;
@@ -394,6 +421,8 @@ export class CampaignExtractedDataService {
           existing.spend += Number(m.spend) || 0;
           existing.conversions += Number(m.conversions) || 0;
           existing.reach += Number(m.reach) || 0;
+          existing.messaging_conversations_started += Number((m as any).messaging_conversations_started) || 0;
+          existing.leads += Number((m as any).leads) || 0;
 
           metricsMap.set(m.ad_id, existing);
         }
@@ -402,7 +431,8 @@ export class CampaignExtractedDataService {
       // Mapear para o formato de saida
       const mappedAds: AdData[] = (ads || []).map((ad: any) => {
         const adMetrics = metricsMap.get(ad.id) || {
-          impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0
+          impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0,
+          messaging_conversations_started: 0, leads: 0
         };
 
         const derived = calculateDerivedMetrics(adMetrics);
