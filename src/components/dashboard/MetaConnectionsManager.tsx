@@ -464,30 +464,29 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                     <h3 className="text-lg font-semibold text-gray-900">
                       {connection.accountName}
                     </h3>
-                    {getStatusBadge(connection.status)}
-
-                    {/* Aviso se status parece desatualizado */}
-                    {connection.status === 'error' && connection.lastSync && (
-                      (() => {
+                    {(() => {
+                      // Se status é erro mas a última sincronização foi recente (menos de 3 minutos),
+                      // não exibe o badge de erro pois pode estar desatualizado
+                      if (connection.status === 'error' && connection.lastSync) {
                         const lastSyncDate = new Date(connection.lastSync);
                         const now = new Date();
                         const diffMinutes = Math.floor((now.getTime() - lastSyncDate.getTime()) / 60000);
 
-                        // Se a última sincronização foi há menos de 5 minutos, o status pode estar desatualizado
-                        if (diffMinutes < 5) {
+                        // Se foi há menos de 3 minutos, não mostra badge de erro
+                        if (diffMinutes < 3) {
                           return (
                             <button
                               onClick={() => loadConnections()}
-                              className="text-xs text-blue-600 hover:text-blue-800 underline"
-                              title="Clique para atualizar o status"
+                              className="text-xs text-blue-600 hover:text-blue-800 underline px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200"
+                              title="Status pode estar desatualizado. Clique para atualizar."
                             >
                               Atualizar status
                             </button>
                           );
                         }
-                        return null;
-                      })()
-                    )}
+                      }
+                      return getStatusBadge(connection.status);
+                    })()}
                   </div>
 
                   {/* Informações da conta */}
