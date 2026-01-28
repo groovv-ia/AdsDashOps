@@ -172,10 +172,27 @@ export class MetaSyncService {
       logger.info('Iniciando sincronização Meta', { connectionId });
 
       // Atualiza status para sincronizando
-      await supabase
-        .from('data_connections')
-        .update({ status: 'syncing' })
-        .eq('id', connectionId);
+      try {
+        const { error: updateError } = await supabase
+          .from('data_connections')
+          .update({ status: 'syncing' })
+          .eq('id', connectionId);
+
+        if (updateError) {
+          logger.error('Erro ao atualizar status da conexão para "syncing"', {
+            connectionId,
+            error: updateError.message,
+            code: updateError.code
+          });
+        } else {
+          logger.info('Status da conexão atualizado para "syncing"', { connectionId });
+        }
+      } catch (statusUpdateError: any) {
+        logger.error('Exceção ao atualizar status da conexão para "syncing"', {
+          connectionId,
+          error: statusUpdateError.message
+        });
+      }
 
       // Busca dados da conexão
       const { data: connection } = await supabase
@@ -603,13 +620,35 @@ export class MetaSyncService {
       }
 
       // Atualiza status para conectado
-      await supabase
-        .from('data_connections')
-        .update({
-          status: 'connected',
-          last_sync: new Date().toISOString()
-        })
-        .eq('id', connectionId);
+      try {
+        const { error: updateError } = await supabase
+          .from('data_connections')
+          .update({
+            status: 'connected',
+            last_sync: new Date().toISOString()
+          })
+          .eq('id', connectionId);
+
+        if (updateError) {
+          logger.error('Erro ao atualizar status da conexão para "connected"', {
+            connectionId,
+            error: updateError.message,
+            code: updateError.code,
+            details: updateError.details,
+            hint: updateError.hint
+          });
+          // Não lança o erro aqui, pois a sincronização foi bem-sucedida
+        } else {
+          logger.info('Status da conexão atualizado para "connected" com sucesso', { connectionId });
+        }
+      } catch (statusUpdateError: any) {
+        logger.error('Exceção ao atualizar status da conexão', {
+          connectionId,
+          error: statusUpdateError.message,
+          stack: statusUpdateError.stack
+        });
+        // Não lança o erro aqui, pois a sincronização foi bem-sucedida
+      }
 
       this.updateProgress('complete', totalCampaigns, totalCampaigns, 'Sincronização concluída com sucesso!');
 
@@ -627,10 +666,30 @@ export class MetaSyncService {
       this.updateProgress('error', 0, 0, `Erro: ${error.message}`);
 
       // Atualiza status para erro
-      await supabase
-        .from('data_connections')
-        .update({ status: 'error' })
-        .eq('id', connectionId);
+      try {
+        const { error: updateError } = await supabase
+          .from('data_connections')
+          .update({ status: 'error' })
+          .eq('id', connectionId);
+
+        if (updateError) {
+          logger.error('Erro ao atualizar status da conexão para "error"', {
+            connectionId,
+            error: updateError.message,
+            code: updateError.code,
+            details: updateError.details,
+            hint: updateError.hint
+          });
+        } else {
+          logger.info('Status da conexão atualizado para "error"', { connectionId });
+        }
+      } catch (statusUpdateError: any) {
+        logger.error('Exceção ao atualizar status da conexão para "error"', {
+          connectionId,
+          error: statusUpdateError.message,
+          stack: statusUpdateError.stack
+        });
+      }
 
       throw error;
     }

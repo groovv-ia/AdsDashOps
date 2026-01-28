@@ -65,10 +65,26 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
   const [updatingToken, setUpdatingToken] = useState(false);
 
   /**
-   * Carrega todas as conexões Meta do usuário
+   * Carrega todas as conexões Meta do usuário ao montar o componente
    */
   useEffect(() => {
     loadConnections();
+  }, []);
+
+  /**
+   * Escuta eventos de sincronização completa para atualizar a lista automaticamente
+   */
+  useEffect(() => {
+    const handleSyncCompleted = (event: CustomEvent) => {
+      logger.info('Evento de sincronização completa recebido', event.detail);
+      // Aguarda 1 segundo para garantir que o banco de dados foi atualizado
+      setTimeout(() => {
+        loadConnections();
+      }, 1000);
+    };
+
+    window.addEventListener('syncCompleted', handleSyncCompleted as EventListener);
+    return () => window.removeEventListener('syncCompleted', handleSyncCompleted as EventListener);
   }, []);
 
   /**
@@ -198,21 +214,24 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
       // Executa sincronização
       await syncService.syncConnection(connectionId);
 
-      logger.info('Sincronização concluída', { connectionId });
+      logger.info('Sincronização concluída com sucesso', { connectionId });
 
       // Dispara evento de sincronização completa
       window.dispatchEvent(new CustomEvent('syncCompleted', {
         detail: { platform: 'meta', connectionId }
       }));
 
-      // Recarrega conexões para atualizar last_sync
-      await loadConnections();
-
     } catch (err: any) {
       logger.error('Erro na sincronização', err);
       setError(err.message || 'Erro ao sincronizar dados');
     } finally {
       setSyncingId(null);
+
+      // Aguarda 500ms para garantir que o banco de dados foi atualizado antes de recarregar
+      // Isso evita race condition onde a UI recarrega antes do status ser atualizado
+      setTimeout(async () => {
+        await loadConnections();
+      }, 500);
     }
   };
 
@@ -446,6 +465,29 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
                       {connection.accountName}
                     </h3>
                     {getStatusBadge(connection.status)}
+
+                    {/* Aviso se status parece desatualizado */}
+                    {connection.status === 'error' && connection.lastSync && (
+                      (() => {
+                        const lastSyncDate = new Date(connection.lastSync);
+                        const now = new Date();
+                        const diffMinutes = Math.floor((now.getTime() - lastSyncDate.getTime()) / 60000);
+
+                        // Se a última sincronização foi há menos de 5 minutos, o status pode estar desatualizado
+                        if (diffMinutes < 5) {
+                          return (
+                            <button
+                              onClick={() => loadConnections()}
+                              className="text-xs text-blue-600 hover:text-blue-800 underline"
+                              title="Clique para atualizar o status"
+                            >
+                              Atualizar status
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()
+                    )}
                   </div>
 
                   {/* Informações da conta */}
