@@ -156,6 +156,46 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
   };
 
   /**
+   * Carrega conexões do banco com retry logic
+   * Tenta até 3 vezes caso o status ainda esteja como "error" para uma conexão específica
+   * que acabou de ser sincronizada com sucesso
+   */
+  const loadConnectionsWithRetry = async (syncedConnectionId?: string) => {
+    let attempt = 1;
+    const maxAttempts = 3;
+
+    while (attempt <= maxAttempts) {
+      console.log(`🔄 Tentativa ${attempt} de ${maxAttempts} para recarregar conexões...`);
+
+      await loadConnections();
+
+      // Se foi especificado um connectionId, verifica se o status foi atualizado corretamente
+      if (syncedConnectionId) {
+        // Aguarda um pouco para o estado ser atualizado
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Verifica o status atual no estado
+        const currentConnection = connections.find(c => c.id === syncedConnectionId);
+
+        if (currentConnection?.status === 'connected') {
+          console.log('✅ Status verificado com sucesso: "connected"');
+          break;
+        } else if (attempt < maxAttempts) {
+          console.warn(`⚠️ Status ainda não está correto (tentativa ${attempt}). Aguardando e tentando novamente...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          console.warn('⚠️ Status não foi atualizado após todas as tentativas. Mantendo status local.');
+        }
+      } else {
+        // Se não foi especificado connectionId, apenas recarrega uma vez
+        break;
+      }
+
+      attempt++;
+    }
+  };
+
+  /**
    * Sincroniza dados de uma conexão manualmente
    */
   const handleSync = async (connectionId: string) => {
@@ -216,6 +256,22 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
 
       logger.info('Sincronização concluída com sucesso', { connectionId });
 
+      console.log('✅ Sincronização concluída! Atualizando status localmente...');
+
+      // Atualiza o status localmente IMEDIATAMENTE para melhor UX
+      // Isso garante que o usuário veja "connected" mesmo se o banco demorar para atualizar
+      setConnections(prev => prev.map(conn =>
+        conn.id === connectionId
+          ? {
+            ...conn,
+            status: 'connected',
+            lastSync: new Date().toISOString()
+          }
+          : conn
+      ));
+
+      console.log('✅ Status local atualizado para "connected"');
+
       // Dispara evento de sincronização completa
       window.dispatchEvent(new CustomEvent('syncCompleted', {
         detail: { platform: 'meta', connectionId }
@@ -224,14 +280,22 @@ export const MetaConnectionsManager: React.FC<MetaConnectionsManagerProps> = ({ 
     } catch (err: any) {
       logger.error('Erro na sincronização', err);
       setError(err.message || 'Erro ao sincronizar dados');
+
+      // Atualiza status local para "error" se houver falha
+      setConnections(prev => prev.map(conn =>
+        conn.id === connectionId
+          ? { ...conn, status: 'error' }
+          : conn
+      ));
     } finally {
       setSyncingId(null);
 
-      // Aguarda 500ms para garantir que o banco de dados foi atualizado antes de recarregar
-      // Isso evita race condition onde a UI recarrega antes do status ser atualizado
+      // Aguarda 1500ms para garantir que o banco de dados foi atualizado antes de recarregar
+      // Aumentamos de 500ms para 1500ms para dar mais tempo ao banco processar a atualização
       setTimeout(async () => {
-        await loadConnections();
-      }, 500);
+        console.log('🔄 Recarregando conexões do banco...');
+        await loadConnectionsWithRetry(connectionId);
+      }, 1500);
     }
   };
 

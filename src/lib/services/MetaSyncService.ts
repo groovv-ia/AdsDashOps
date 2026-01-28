@@ -619,35 +619,95 @@ export class MetaSyncService {
         console.error('4. Período de datas incorreto');
       }
 
-      // Atualiza status para conectado
-      try {
-        const { error: updateError } = await supabase
-          .from('data_connections')
-          .update({
-            status: 'connected',
-            last_sync: new Date().toISOString()
-          })
-          .eq('id', connectionId);
+      // Atualiza status para conectado com retry logic
+      // Tentativa 1: Atualização direta
+      console.log('🔄 Atualizando status da conexão para "connected"...', { connectionId });
 
-        if (updateError) {
-          logger.error('Erro ao atualizar status da conexão para "connected"', {
+      let statusUpdated = false;
+      let lastError: any = null;
+
+      // Tenta atualizar até 3 vezes com intervalos
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          console.log(`🔄 Tentativa ${attempt} de 3 para atualizar status...`);
+
+          const { data: updateData, error: updateError } = await supabase
+            .from('data_connections')
+            .update({
+              status: 'connected',
+              last_sync: new Date().toISOString()
+            })
+            .eq('id', connectionId)
+            .select();
+
+          if (updateError) {
+            lastError = updateError;
+            console.error(`❌ Tentativa ${attempt} falhou:`, {
+              connectionId,
+              error: updateError.message,
+              code: updateError.code,
+              details: updateError.details,
+              hint: updateError.hint
+            });
+
+            logger.error(`Erro ao atualizar status da conexão (tentativa ${attempt})`, {
+              connectionId,
+              error: updateError.message,
+              code: updateError.code,
+              details: updateError.details,
+              hint: updateError.hint
+            });
+
+            // Se for erro de RLS, não adianta tentar novamente
+            if (updateError.code === '42501' || updateError.code === 'PGRST301') {
+              console.error('❌ Erro de permissão RLS detectado. Não tentando novamente.');
+              break;
+            }
+
+            // Espera 1 segundo antes de tentar novamente
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          } else {
+            statusUpdated = true;
+            console.log('✅ Status atualizado com sucesso!', {
+              connectionId,
+              updateData,
+              attempt
+            });
+
+            logger.info('Status da conexão atualizado para "connected" com sucesso', {
+              connectionId,
+              attempt
+            });
+            break;
+          }
+        } catch (statusUpdateError: any) {
+          lastError = statusUpdateError;
+          console.error(`❌ Exceção na tentativa ${attempt}:`, {
             connectionId,
-            error: updateError.message,
-            code: updateError.code,
-            details: updateError.details,
-            hint: updateError.hint
+            error: statusUpdateError.message,
+            stack: statusUpdateError.stack
           });
-          // Não lança o erro aqui, pois a sincronização foi bem-sucedida
-        } else {
-          logger.info('Status da conexão atualizado para "connected" com sucesso', { connectionId });
+
+          logger.error(`Exceção ao atualizar status da conexão (tentativa ${attempt})`, {
+            connectionId,
+            error: statusUpdateError.message,
+            stack: statusUpdateError.stack
+          });
+
+          // Espera 1 segundo antes de tentar novamente
+          if (attempt < 3) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
-      } catch (statusUpdateError: any) {
-        logger.error('Exceção ao atualizar status da conexão', {
-          connectionId,
-          error: statusUpdateError.message,
-          stack: statusUpdateError.stack
-        });
-        // Não lança o erro aqui, pois a sincronização foi bem-sucedida
+      }
+
+      if (!statusUpdated) {
+        console.error('❌ FALHA: Não foi possível atualizar o status após 3 tentativas');
+        console.error('Último erro:', lastError);
+        console.warn('⚠️ A sincronização foi bem-sucedida, mas o status não foi atualizado no banco.');
+        console.warn('O frontend tentará atualizar o status localmente.');
       }
 
       this.updateProgress('complete', totalCampaigns, totalCampaigns, 'Sincronização concluída com sucesso!');
