@@ -408,14 +408,19 @@ Deno.serve(async (req: Request) => {
     // =====================================================
     // 3. BUSCAR CONTAS PARA SINCRONIZAR
     // =====================================================
+    // Se account_ids foram passados, usa eles diretamente (selecao da UI)
+    // Caso contrario, busca contas marcadas como is_selected no banco
     let accountsQuery = supabaseAdmin
       .from("google_ad_accounts")
       .select("*")
-      .eq("workspace_id", workspaceId)
-      .eq("is_selected", true);
+      .eq("workspace_id", workspaceId);
 
     if (account_ids && account_ids.length > 0) {
+      // Usa os IDs passados pelo frontend (selecao do usuario na UI)
       accountsQuery = accountsQuery.in("id", account_ids);
+    } else {
+      // Fallback: busca contas marcadas como is_selected no banco
+      accountsQuery = accountsQuery.eq("is_selected", true);
     }
 
     const { data: accounts } = await accountsQuery;

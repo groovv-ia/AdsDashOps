@@ -95,7 +95,7 @@ export class GoogleSyncService {
 
   /**
    * Executa sincronizacao completa via Edge Function
-   * @param accounts - Lista de contas para sincronizar (filtra por is_selected)
+   * @param accounts - Lista de contas para sincronizar (ja filtradas pela UI)
    * @param dateFrom - Data inicial do periodo
    * @param dateTo - Data final do periodo
    * @param onProgress - Callback de progresso
@@ -108,8 +108,8 @@ export class GoogleSyncService {
   ): Promise<GoogleSyncResult> {
     const startTime = Date.now();
 
-    // Filtra apenas contas selecionadas
-    const selectedAccounts = accounts.filter((acc) => acc.is_selected);
+    // Usa as contas passadas diretamente (ja filtradas pela UI)
+    const selectedAccounts = accounts;
 
     if (selectedAccounts.length === 0) {
       return {
@@ -126,8 +126,8 @@ export class GoogleSyncService {
       };
     }
 
-    // IDs das contas selecionadas
-    const accountIds = selectedAccounts.map((acc) => acc.customer_id);
+    // IDs das contas para enviar a edge function (usa o ID do banco, nao customer_id)
+    const accountIds = selectedAccounts.map((acc) => acc.id);
 
     onProgress?.({
       phase: 'Iniciando sincronizacao',
@@ -589,11 +589,10 @@ export async function runQuickSync(
     };
   }
 
-  // Busca contas selecionadas
+  // Busca todas as contas do workspace
   const { data: accounts } = await supabase
     .from('google_ad_accounts')
-    .select('*')
-    .eq('is_selected', true);
+    .select('*');
 
   if (!accounts || accounts.length === 0) {
     return {
@@ -605,15 +604,30 @@ export async function runQuickSync(
       metrics_synced: 0,
       date_range_start: '',
       date_range_end: '',
-      errors: ['Nenhuma conta selecionada'],
+      errors: ['Nenhuma conta encontrada'],
       duration_ms: 0,
     };
   }
 
-  // Filtra por IDs se especificado
-  const targetAccounts = accountIds
+  // Filtra por IDs se especificado, senao usa todas as contas
+  const targetAccounts = accountIds && accountIds.length > 0
     ? accounts.filter((acc) => accountIds.includes(acc.id))
     : accounts;
+
+  if (targetAccounts.length === 0) {
+    return {
+      success: false,
+      accounts_synced: 0,
+      campaigns_synced: 0,
+      ad_groups_synced: 0,
+      ads_synced: 0,
+      metrics_synced: 0,
+      date_range_start: '',
+      date_range_end: '',
+      errors: ['Nenhuma conta selecionada para sincronizacao'],
+      duration_ms: 0,
+    };
+  }
 
   // Define periodo (ultimos 7 dias)
   const dateTo = new Date().toISOString().split('T')[0];

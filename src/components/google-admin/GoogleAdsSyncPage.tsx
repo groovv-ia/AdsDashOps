@@ -106,11 +106,16 @@ export const GoogleAdsSyncPage: React.FC<GoogleAdsSyncPageProps> = ({ onNavigate
       setAccounts(accountsResult.accounts);
       setRecentJobs(statusResult.recent_jobs || []);
 
-      // Seleciona contas marcadas como is_selected
-      const selected = accountsResult.accounts
-        .filter((acc) => acc.is_selected)
-        .map((acc) => acc.id);
-      setSelectedAccountIds(selected);
+      // Seleciona todas as contas por padrao se nenhuma estiver marcada
+      // Isso garante que o usuario possa sincronizar imediatamente
+      const alreadySelected = accountsResult.accounts.filter((acc) => acc.is_selected);
+      if (alreadySelected.length > 0) {
+        // Usa contas ja marcadas no banco
+        setSelectedAccountIds(alreadySelected.map((acc) => acc.id));
+      } else {
+        // Seleciona todas por padrao
+        setSelectedAccountIds(accountsResult.accounts.map((acc) => acc.id));
+      }
     } catch (err) {
       console.error('[GoogleSyncPage] Erro ao carregar dados:', err);
       setError('Erro ao carregar dados');
