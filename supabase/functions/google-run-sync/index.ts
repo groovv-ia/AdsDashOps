@@ -628,70 +628,89 @@ Deno.serve(async (req: Request) => {
 
             await delay(OPERATION_DELAY_MS);
 
-            // =====================================================
-            // 5.5. GERAR E SALVAR METRICAS DIARIAS
-            // =====================================================
-            // Metricas no nivel de campanha
-            const campaignMetrics = generateDailyMetrics(
-              account.customer_id,
-              campaign.campaign_id,
-              campaign.name,
-              null,
-              null,
-              null,
-              null,
-              null,
-              null,
-              date_from,
-              date_to
+            await delay(OPERATION_DELAY_MS);
+          }
+        }
+
+        // =====================================================
+        // 5.5. GERAR E SALVAR METRICAS DIARIAS (por campanha)
+        // =====================================================
+        // Primeiro, deleta metricas existentes do periodo para esta conta
+        await supabaseAdmin
+          .from("google_insights_daily")
+          .delete()
+          .eq("workspace_id", workspaceId)
+          .eq("customer_id", account.customer_id)
+          .gte("date", date_from)
+          .lte("date", date_to);
+
+        // Gera e insere metricas para cada campanha
+        for (const campaign of campaigns) {
+          const campaignMetrics = generateDailyMetrics(
+            account.customer_id,
+            campaign.campaign_id,
+            campaign.name,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            date_from,
+            date_to
+          );
+
+          // Prepara batch de metricas para insert
+          const metricsToInsert = campaignMetrics.map((metric) => {
+            const ctr =
+              metric.impressions > 0
+                ? (metric.clicks / metric.impressions) * 100
+                : 0;
+            const cpc = metric.clicks > 0 ? metric.cost / metric.clicks : 0;
+            const cpm =
+              metric.impressions > 0
+                ? (metric.cost / metric.impressions) * 1000
+                : 0;
+            const roas =
+              metric.cost > 0 ? metric.conversion_value / metric.cost : 0;
+
+            return {
+              workspace_id: workspaceId,
+              account_id: account.id,
+              customer_id: account.customer_id,
+              campaign_id: metric.campaign_id,
+              campaign_name: metric.campaign_name,
+              ad_group_id: metric.ad_group_id,
+              ad_group_name: metric.ad_group_name,
+              ad_id: metric.ad_id,
+              ad_name: metric.ad_name,
+              keyword_id: metric.keyword_id,
+              keyword_text: metric.keyword_text,
+              date: metric.date,
+              impressions: metric.impressions,
+              clicks: metric.clicks,
+              cost: metric.cost,
+              conversions: metric.conversions,
+              conversion_value: metric.conversion_value,
+              ctr,
+              cpc,
+              cpm,
+              roas,
+            };
+          });
+
+          // Insert em batch para melhor performance
+          const { error: insertError } = await supabaseAdmin
+            .from("google_insights_daily")
+            .insert(metricsToInsert);
+
+          if (insertError) {
+            console.error(
+              `[google-run-sync] Error inserting metrics for campaign ${campaign.name}:`,
+              insertError
             );
-
-            for (const metric of campaignMetrics) {
-              const ctr =
-                metric.impressions > 0
-                  ? (metric.clicks / metric.impressions) * 100
-                  : 0;
-              const cpc =
-                metric.clicks > 0 ? metric.cost / metric.clicks : 0;
-              const cpm =
-                metric.impressions > 0
-                  ? (metric.cost / metric.impressions) * 1000
-                  : 0;
-              const roas =
-                metric.cost > 0 ? metric.conversion_value / metric.cost : 0;
-
-              await supabaseAdmin.from("google_insights_daily").upsert(
-                {
-                  workspace_id: workspaceId,
-                  account_id: account.id,
-                  customer_id: account.customer_id,
-                  campaign_id: metric.campaign_id,
-                  campaign_name: metric.campaign_name,
-                  ad_group_id: metric.ad_group_id,
-                  ad_group_name: metric.ad_group_name,
-                  ad_id: metric.ad_id,
-                  ad_name: metric.ad_name,
-                  keyword_id: metric.keyword_id,
-                  keyword_text: metric.keyword_text,
-                  date: metric.date,
-                  impressions: metric.impressions,
-                  clicks: metric.clicks,
-                  cost: metric.cost,
-                  conversions: metric.conversions,
-                  conversion_value: metric.conversion_value,
-                  ctr,
-                  cpc,
-                  cpm,
-                  roas,
-                  updated_at: new Date().toISOString(),
-                },
-                {
-                  onConflict:
-                    "workspace_id,customer_id,campaign_id,ad_group_id,date",
-                }
-              );
-              totalMetrics++;
-            }
+          } else {
+            totalMetrics += metricsToInsert.length;
           }
         }
 
