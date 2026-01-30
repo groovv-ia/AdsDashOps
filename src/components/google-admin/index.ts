@@ -7,3 +7,4 @@ export { GoogleAdsSyncPage } from './GoogleAdsSyncPage';
 export { GoogleCampaignsPage } from './GoogleCampaignsPage';
 export { GoogleCampaignCard } from './GoogleCampaignCard';
 export { GoogleCampaignDetailPage } from './GoogleCampaignDetailPage';
+export { SimpleGoogleConnect } from './SimpleGoogleConnect';

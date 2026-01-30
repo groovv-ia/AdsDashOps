@@ -3,31 +3,32 @@ import { Loader, CheckCircle, XCircle } from 'lucide-react';
 
 /**
  * Componente para processar o callback OAuth
- * Executa automaticamente quando a plataforma de anúncios redireciona de volta
- * após a autorização do usuário
+ * Executa automaticamente quando a plataforma de anuncios redireciona de volta
+ * apos a autorizacao do usuario
+ *
+ * Suporta multiplas plataformas: Meta, Google, TikTok
+ * Identifica a plataforma pelo prefixo do state (meta_, google_, tiktok_)
  */
 export const OAuthCallback: React.FC = () => {
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
-  const [message, setMessage] = useState('Processando autorização...');
+  const [message, setMessage] = useState('Processando autorizacao...');
+  const [platform, setPlatform] = useState<string>('');
 
   useEffect(() => {
     processCallback();
   }, []);
 
   /**
-   * Processa o callback OAuth extraindo parâmetros da URL
+   * Processa o callback OAuth extraindo parametros da URL
    * e redirecionando de volta para o dashboard com os dados
    */
   const processCallback = () => {
     try {
-      console.log('📨 [OAuth Callback] ========================================');
-      console.log('📨 [OAuth Callback] Iniciando processamento do callback');
-      console.log('📨 [OAuth Callback] URL completa:', window.location.href);
-      console.log('📨 [OAuth Callback] Origin:', window.location.origin);
-      console.log('📨 [OAuth Callback] Pathname:', window.location.pathname);
-      console.log('📨 [OAuth Callback] Search:', window.location.search);
+      console.log('[OAuth Callback] ========================================');
+      console.log('[OAuth Callback] Iniciando processamento do callback');
+      console.log('[OAuth Callback] URL completa:', window.location.href);
 
-      // Extrai parâmetros da URL
+      // Extrai parametros da URL
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const error = urlParams.get('error');
@@ -35,41 +36,31 @@ export const OAuthCallback: React.FC = () => {
       const errorReason = urlParams.get('error_reason');
       const state = urlParams.get('state');
 
-      // Lista todos os parâmetros recebidos
-      console.log('📨 [OAuth Callback] Todos os parâmetros da URL:');
-      urlParams.forEach((value, key) => {
-        console.log(`  - ${key}:`, value);
-      });
-
-      console.log('📨 [OAuth Callback] Parâmetros extraídos:', {
+      // Log de parametros recebidos
+      console.log('[OAuth Callback] Parametros extraidos:', {
         hasCode: !!code,
-        codePreview: code ? `${code.substring(0, 20)}...` : null,
         codeLength: code?.length,
         error,
         errorDescription,
-        errorReason,
         state,
       });
 
       // Identifica a plataforma pelo state (meta_, google_, tiktok_)
-      let platform = 'unknown';
+      let detectedPlatform = 'unknown';
       if (state?.startsWith('meta_')) {
-        platform = 'meta';
+        detectedPlatform = 'meta';
       } else if (state?.startsWith('google_')) {
-        platform = 'google';
+        detectedPlatform = 'google';
       } else if (state?.startsWith('tiktok_')) {
-        platform = 'tiktok';
+        detectedPlatform = 'tiktok';
       }
 
-      console.log('📨 [OAuth Callback] Plataforma identificada:', platform);
+      setPlatform(detectedPlatform);
+      console.log('[OAuth Callback] Plataforma identificada:', detectedPlatform);
 
-      // Verifica se houve erro na autorização
+      // Verifica se houve erro na autorizacao
       if (error) {
-        console.error('❌ [OAuth Callback] Erro recebido do provedor Facebook:');
-        console.error('  - error:', error);
-        console.error('  - error_description:', errorDescription);
-        console.error('  - error_reason:', errorReason);
-
+        console.error('[OAuth Callback] Erro recebido do provedor:', error);
         setStatus('error');
 
         // Monta mensagem de erro detalhada
@@ -80,71 +71,97 @@ export const OAuthCallback: React.FC = () => {
 
         setMessage(fullErrorMessage);
 
-        // Salva erro no localStorage para exibir na página principal
-        localStorage.setItem('meta_oauth_error', fullErrorMessage);
-        localStorage.removeItem('meta_oauth_flow');
+        // Salva erro no localStorage usando prefixo da plataforma
+        localStorage.setItem(`${detectedPlatform}_oauth_error`, fullErrorMessage);
+        localStorage.removeItem(`${detectedPlatform}_oauth_flow`);
 
-        console.log('📨 [OAuth Callback] Erro salvo no localStorage');
-        console.log('📨 [OAuth Callback] Redirecionando de volta para o dashboard em 2 segundos...');
+        // Redireciona de volta para a pagina apropriada
+        const redirectUrl = getRedirectUrl(detectedPlatform);
+        console.log('[OAuth Callback] Redirecionando para:', redirectUrl);
 
-        // Redireciona de volta para o dashboard após 2 segundos
         setTimeout(() => {
-          console.log('📨 [OAuth Callback] Executando redirecionamento...');
-          window.location.href = '/';
+          window.location.href = redirectUrl;
         }, 2000);
         return;
       }
 
-      // Verifica se recebeu o código de autorização
+      // Verifica se recebeu o codigo de autorizacao
       if (!code) {
-        console.error('❌ [OAuth Callback] ERRO: Nenhum código de autorização recebido!');
-        console.error('❌ [OAuth Callback] Isso pode indicar:');
-        console.error('  1. URL de callback incorreta');
-        console.error('  2. Configuração errada no Facebook');
-        console.error('  3. Usuário cancelou a autorização');
-        throw new Error('Código de autorização não recebido');
+        console.error('[OAuth Callback] ERRO: Nenhum codigo de autorizacao recebido!');
+        throw new Error('Codigo de autorizacao nao recebido');
       }
 
-      console.log('✅ [OAuth Callback] Código de autorização recebido com sucesso!');
-      console.log('✅ [OAuth Callback] Código tem', code.length, 'caracteres');
+      console.log('[OAuth Callback] Codigo de autorizacao recebido com sucesso!');
       setStatus('success');
-      setMessage('Autorização concluída! Redirecionando...');
+      setMessage('Autorizacao concluida! Redirecionando...');
 
-      // Salva código no localStorage para ser processado na página principal
-      console.log('📨 [OAuth Callback] Salvando código no localStorage...');
-      localStorage.setItem('meta_oauth_code', code);
-      localStorage.setItem('meta_oauth_platform', platform);
-      localStorage.removeItem('meta_oauth_error');
+      // Salva codigo no localStorage usando prefixo da plataforma
+      localStorage.setItem(`${detectedPlatform}_oauth_code`, code);
+      localStorage.setItem(`${detectedPlatform}_oauth_platform`, detectedPlatform);
+      localStorage.removeItem(`${detectedPlatform}_oauth_error`);
 
-      console.log('📨 [OAuth Callback] Dados salvos no localStorage:');
-      console.log('  - meta_oauth_code:', localStorage.getItem('meta_oauth_code')?.substring(0, 20) + '...');
-      console.log('  - meta_oauth_platform:', localStorage.getItem('meta_oauth_platform'));
+      // Para compatibilidade com o codigo existente do Meta
+      if (detectedPlatform === 'meta') {
+        localStorage.setItem('meta_oauth_code', code);
+        localStorage.setItem('meta_oauth_platform', 'meta');
+      }
 
-      // Redireciona de volta para o dashboard
-      console.log('📨 [OAuth Callback] Redirecionando de volta para o dashboard em 1 segundo...');
+      console.log('[OAuth Callback] Dados salvos no localStorage');
+
+      // Redireciona de volta para a pagina apropriada
+      const redirectUrl = getRedirectUrl(detectedPlatform);
+      console.log('[OAuth Callback] Redirecionando para:', redirectUrl);
+
       setTimeout(() => {
-        console.log('📨 [OAuth Callback] Executando redirecionamento para /');
-        window.location.href = '/';
+        window.location.href = redirectUrl;
       }, 1000);
-    } catch (err: any) {
-      console.error('❌ [OAuth Callback] EXCEÇÃO CAPTURADA ao processar callback:');
-      console.error('❌ [OAuth Callback] Mensagem:', err.message);
-      console.error('❌ [OAuth Callback] Stack:', err.stack);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
+      console.error('[OAuth Callback] ERRO ao processar callback:', errorMessage);
 
       setStatus('error');
-      setMessage(err.message || 'Erro ao processar autorização');
+      setMessage(errorMessage);
 
       // Salva erro no localStorage
-      localStorage.setItem('meta_oauth_error', err.message || 'Erro desconhecido');
-      localStorage.removeItem('meta_oauth_flow');
+      const detectedPlatform = platform || 'unknown';
+      localStorage.setItem(`${detectedPlatform}_oauth_error`, errorMessage);
 
-      console.log('📨 [OAuth Callback] Erro salvo no localStorage');
-
-      // Redireciona de volta após 2 segundos
+      // Redireciona de volta apos 2 segundos
       setTimeout(() => {
-        console.log('📨 [OAuth Callback] Redirecionando de volta após exceção');
         window.location.href = '/';
       }, 2000);
+    }
+  };
+
+  /**
+   * Retorna a URL de redirecionamento apropriada para cada plataforma
+   */
+  const getRedirectUrl = (detectedPlatform: string): string => {
+    switch (detectedPlatform) {
+      case 'google':
+        return '/google-admin';
+      case 'meta':
+        return '/';
+      case 'tiktok':
+        return '/';
+      default:
+        return '/';
+    }
+  };
+
+  /**
+   * Retorna o nome da plataforma para exibicao
+   */
+  const getPlatformName = (): string => {
+    switch (platform) {
+      case 'google':
+        return 'Google Ads';
+      case 'meta':
+        return 'Meta Ads';
+      case 'tiktok':
+        return 'TikTok Ads';
+      default:
+        return 'Plataforma';
     }
   };
 
@@ -152,7 +169,7 @@ export const OAuthCallback: React.FC = () => {
    * Renderiza estado visual do processamento
    */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
         {status === 'processing' && (
           <>
@@ -160,9 +177,14 @@ export const OAuthCallback: React.FC = () => {
               <Loader className="w-8 h-8 text-blue-600 animate-spin" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              Processando Autorização
+              Processando Autorizacao
             </h2>
             <p className="text-gray-600">{message}</p>
+            {platform && (
+              <p className="text-sm text-gray-500 mt-2">
+                Plataforma: {getPlatformName()}
+              </p>
+            )}
           </>
         )}
 
@@ -172,9 +194,14 @@ export const OAuthCallback: React.FC = () => {
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              Autorização Concluída!
+              Autorizacao Concluida!
             </h2>
             <p className="text-gray-600">{message}</p>
+            {platform && (
+              <p className="text-sm text-gray-500 mt-2">
+                {getPlatformName()} conectado com sucesso
+              </p>
+            )}
           </>
         )}
 
@@ -184,14 +211,14 @@ export const OAuthCallback: React.FC = () => {
               <XCircle className="w-8 h-8 text-red-600" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              Erro na Autorização
+              Erro na Autorizacao
             </h2>
             <p className="text-gray-600">{message}</p>
             <button
-              onClick={() => window.close()}
+              onClick={() => window.location.href = getRedirectUrl(platform)}
               className="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
             >
-              Fechar Janela
+              Voltar
             </button>
           </>
         )}

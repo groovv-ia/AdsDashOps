@@ -1,8 +1,12 @@
 /**
  * Edge Function: google-list-adaccounts
  *
- * Lista todas as contas de anuncio do Google Ads vinculadas ao workspace.
- * Retorna contas do banco de dados e opcionalmente atualiza da API.
+ * Lista contas de anuncio do Google Ads.
+ *
+ * Modos de operacao:
+ * 1. OAuth Mode: Se access_token e developer_token forem fornecidos,
+ *    busca contas diretamente da Google Ads API
+ * 2. Database Mode: Caso contrario, retorna contas do banco de dados
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -33,6 +37,16 @@ interface GoogleAdAccount {
   updated_at: string;
 }
 
+// Interface para conta retornada pela API do Google
+interface GoogleApiAccount {
+  customer_id: string;
+  name: string;
+  currency_code: string;
+  timezone: string;
+  status: string;
+  is_manager?: boolean;
+}
+
 /**
  * Formata Customer ID para exibicao (XXX-XXX-XXXX)
  */
@@ -40,6 +54,98 @@ function formatCustomerId(customerId: string): string {
   const clean = customerId.replace(/\D/g, "");
   if (clean.length !== 10) return customerId;
   return `${clean.slice(0, 3)}-${clean.slice(3, 6)}-${clean.slice(6)}`;
+}
+
+/**
+ * Busca contas acessiveis via Google Ads API usando OAuth token
+ */
+async function fetchAccountsFromGoogleApi(
+  accessToken: string,
+  developerToken: string
+): Promise<GoogleApiAccount[]> {
+  console.log("[google-list-adaccounts] Fetching accounts from Google Ads API");
+
+  // URL da Google Ads API para listar clientes acessiveis
+  const apiUrl =
+    "https://googleads.googleapis.com/v17/customers:listAccessibleCustomers";
+
+  const response = await fetch(apiUrl, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "developer-token": developerToken,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("[google-list-adaccounts] API Error:", errorText);
+    throw new Error(`Google Ads API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  const resourceNames: string[] = data.resourceNames || [];
+
+  console.log(
+    `[google-list-adaccounts] Found ${resourceNames.length} accessible customers`
+  );
+
+  // Para cada cliente acessivel, busca detalhes
+  const accounts: GoogleApiAccount[] = [];
+
+  for (const resourceName of resourceNames) {
+    // Extrai customer ID do resourceName (format: customers/1234567890)
+    const customerId = resourceName.replace("customers/", "");
+
+    try {
+      // Busca detalhes da conta
+      const detailsUrl = `https://googleads.googleapis.com/v17/${resourceName}`;
+      const detailsResponse = await fetch(detailsUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "developer-token": developerToken,
+          "login-customer-id": customerId,
+        },
+      });
+
+      if (detailsResponse.ok) {
+        const details = await detailsResponse.json();
+        accounts.push({
+          customer_id: customerId,
+          name: details.descriptiveName || `Account ${formatCustomerId(customerId)}`,
+          currency_code: details.currencyCode || "BRL",
+          timezone: details.timeZone || "America/Sao_Paulo",
+          status: details.status || "ENABLED",
+          is_manager: details.manager || false,
+        });
+      } else {
+        // Se nao conseguir detalhes, adiciona com info basica
+        accounts.push({
+          customer_id: customerId,
+          name: `Account ${formatCustomerId(customerId)}`,
+          currency_code: "BRL",
+          timezone: "America/Sao_Paulo",
+          status: "ENABLED",
+        });
+      }
+    } catch (detailError) {
+      console.warn(
+        `[google-list-adaccounts] Could not fetch details for ${customerId}:`,
+        detailError
+      );
+      // Adiciona com info basica
+      accounts.push({
+        customer_id: customerId,
+        name: `Account ${formatCustomerId(customerId)}`,
+        currency_code: "BRL",
+        timezone: "America/Sao_Paulo",
+        status: "ENABLED",
+      });
+    }
+  }
+
+  return accounts;
 }
 
 // Handler principal
@@ -69,6 +175,65 @@ Deno.serve(async (req: Request) => {
         }
       );
     }
+
+    // Parseia body se for POST
+    let body: {
+      access_token?: string;
+      developer_token?: string;
+    } = {};
+
+    if (req.method === "POST") {
+      try {
+        body = await req.json();
+      } catch {
+        body = {};
+      }
+    }
+
+    // =====================================================
+    // MODO OAUTH: Busca contas direto da API do Google
+    // =====================================================
+    if (body.access_token && body.developer_token) {
+      console.log("[google-list-adaccounts] OAuth mode - fetching from Google API");
+
+      try {
+        const accounts = await fetchAccountsFromGoogleApi(
+          body.access_token,
+          body.developer_token
+        );
+
+        return new Response(
+          JSON.stringify({
+            accounts,
+            total: accounts.length,
+            mode: "oauth",
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      } catch (apiError) {
+        console.error("[google-list-adaccounts] OAuth mode error:", apiError);
+        return new Response(
+          JSON.stringify({
+            accounts: [],
+            total: 0,
+            error: apiError instanceof Error ? apiError.message : "API error",
+            mode: "oauth",
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+    }
+
+    // =====================================================
+    // MODO DATABASE: Busca contas do banco de dados
+    // =====================================================
+    console.log("[google-list-adaccounts] Database mode - fetching from Supabase");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

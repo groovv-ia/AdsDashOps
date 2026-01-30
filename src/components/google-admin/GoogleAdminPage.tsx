@@ -2,8 +2,10 @@
  * GoogleAdminPage
  *
  * Pagina de administracao para configurar conexao com Google Ads.
- * Permite inserir Developer Token e Customer ID, validar conexao
- * e listar contas disponiveis para sincronizacao.
+ *
+ * Oferece duas formas de conexao:
+ * 1. OAuth (Recomendado): Fluxo simplificado com autenticacao Google
+ * 2. Developer Token (Avancado): Configuracao manual com credenciais
  */
 
 import React, { useState, useEffect } from 'react';
@@ -20,9 +22,12 @@ import {
   Loader2,
   Unplug,
   Info,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { SimpleGoogleConnect } from './SimpleGoogleConnect';
 import {
   validateGoogleConnection,
   getGoogleSyncStatus,
@@ -37,13 +42,14 @@ import type {
   GoogleAdAccount,
   GoogleSyncStatusResponse,
 } from '../../lib/connectors/google/types';
+
 // Componente para renderizar o icone do Google Ads
 const GoogleIcon: React.FC<{ className?: string }> = ({ className }) => (
   <img src="/google-ads-icon.svg" alt="Google Ads" className={className} />
 );
 
 export const GoogleAdminPage: React.FC = () => {
-  // Estado do formulario
+  // Estado do formulario (modo avancado)
   const [developerToken, setDeveloperToken] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [loginCustomerId, setLoginCustomerId] = useState('');
@@ -63,6 +69,9 @@ export const GoogleAdminPage: React.FC = () => {
   // Mensagens
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Estado para toggle do modo avancado
+  const [showAdvancedMode, setShowAdvancedMode] = useState(false);
 
   // Carrega status inicial
   useEffect(() => {
@@ -313,7 +322,7 @@ export const GoogleAdminPage: React.FC = () => {
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Conexao Google Ads</h2>
             <p className="text-gray-600">
-              Configure as credenciais para sincronizar dados do Google Ads
+              Conecte sua conta Google para importar dados de campanhas
             </p>
           </div>
         </div>
@@ -342,8 +351,31 @@ export const GoogleAdminPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Status Card */}
-      {connectionStatus && (
+      {/* Conexao Simplificada via OAuth (Recomendado) */}
+      <SimpleGoogleConnect />
+
+      {/* Separador para modo avancado */}
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-200" />
+        </div>
+        <div className="relative flex justify-center">
+          <button
+            onClick={() => setShowAdvancedMode(!showAdvancedMode)}
+            className="bg-white px-4 py-2 text-sm text-gray-500 hover:text-gray-700 flex items-center space-x-2 transition-colors"
+          >
+            <span>Modo Avancado (Developer Token)</span>
+            {showAdvancedMode ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Status Card - Apenas no modo avancado */}
+      {showAdvancedMode && connectionStatus && (
         <Card className={`border-l-4 ${isConnected ? 'border-l-emerald-500' : 'border-l-red-500'}`}>
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-4">
@@ -418,114 +450,116 @@ export const GoogleAdminPage: React.FC = () => {
         </Card>
       )}
 
-      {/* Form de Conexao */}
-      <Card>
-        <div className="flex items-center space-x-2 mb-4">
-          <Link2 className="w-5 h-5 text-blue-600" />
-          <h3 className="font-semibold text-gray-900">
-            {isConnected ? 'Atualizar Conexao' : 'Nova Conexao'}
-          </h3>
-        </div>
+      {/* Form de Conexao - Modo Avancado */}
+      {showAdvancedMode && (
+        <Card>
+          <div className="flex items-center space-x-2 mb-4">
+            <Link2 className="w-5 h-5 text-blue-600" />
+            <h3 className="font-semibold text-gray-900">
+              {isConnected ? 'Atualizar Conexao (Developer Token)' : 'Nova Conexao (Developer Token)'}
+            </h3>
+          </div>
 
-        <div className="space-y-4">
-          {/* Developer Token */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Developer Token *
-            </label>
-            <div className="relative">
+          <div className="space-y-4">
+            {/* Developer Token */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Developer Token *
+              </label>
+              <div className="relative">
+                <input
+                  type={showToken ? 'text' : 'password'}
+                  value={developerToken}
+                  onChange={(e) => setDeveloperToken(e.target.value)}
+                  placeholder="Cole o Developer Token aqui..."
+                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Obtenha em: Google Ads API Center &rarr; Developer Token
+              </p>
+            </div>
+
+            {/* Customer ID */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Customer ID *
+              </label>
               <input
-                type={showToken ? 'text' : 'password'}
-                value={developerToken}
-                onChange={(e) => setDeveloperToken(e.target.value)}
-                placeholder="Cole o Developer Token aqui..."
-                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                type="text"
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+                placeholder="Ex: 123-456-7890"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
-              <button
-                type="button"
-                onClick={() => setShowToken(!showToken)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-              >
-                {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+              <p className="text-xs text-gray-500 mt-1">
+                ID da conta MCC ou conta individual (com ou sem hifens)
+              </p>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Obtenha em: Google Ads API Center &rarr; Developer Token
-            </p>
-          </div>
 
-          {/* Customer ID */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Customer ID *
-            </label>
-            <input
-              type="text"
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              placeholder="Ex: 123-456-7890"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              ID da conta MCC ou conta individual (com ou sem hifens)
-            </p>
-          </div>
-
-          {/* Login Customer ID (opcional) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Login Customer ID (opcional)
-            </label>
-            <input
-              type="text"
-              value={loginCustomerId}
-              onChange={(e) => setLoginCustomerId(e.target.value)}
-              placeholder="Ex: 123-456-7890"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              ID da conta MCC usada para acessar outras contas (necessario se o Customer ID for uma conta filha)
-            </p>
-          </div>
-
-          {/* Mensagens de erro e sucesso */}
-          {error && (
-            <div className="flex items-start space-x-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700">{error}</p>
+            {/* Login Customer ID (opcional) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Login Customer ID (opcional)
+              </label>
+              <input
+                type="text"
+                value={loginCustomerId}
+                onChange={(e) => setLoginCustomerId(e.target.value)}
+                placeholder="Ex: 123-456-7890"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                ID da conta MCC usada para acessar outras contas (necessario se o Customer ID for uma conta filha)
+              </p>
             </div>
-          )}
 
-          {success && (
-            <div className="flex items-start space-x-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-green-700">{success}</p>
-            </div>
-          )}
-
-          {/* Botao de validacao */}
-          <Button
-            onClick={handleValidateConnection}
-            disabled={validating || !developerToken.trim() || !customerId.trim()}
-            className="w-full"
-          >
-            {validating ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Validando...
-              </>
-            ) : (
-              <>
-                <Shield className="w-4 h-4 mr-2" />
-                Validar e Conectar
-              </>
+            {/* Mensagens de erro e sucesso */}
+            {error && (
+              <div className="flex items-start space-x-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
             )}
-          </Button>
-        </div>
-      </Card>
 
-      {/* Lista de Contas */}
-      {adAccounts.length > 0 && (
+            {success && (
+              <div className="flex items-start space-x-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-green-700">{success}</p>
+              </div>
+            )}
+
+            {/* Botao de validacao */}
+            <Button
+              onClick={handleValidateConnection}
+              disabled={validating || !developerToken.trim() || !customerId.trim()}
+              className="w-full"
+            >
+              {validating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Validando...
+                </>
+              ) : (
+                <>
+                  <Shield className="w-4 h-4 mr-2" />
+                  Validar e Conectar
+                </>
+              )}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Lista de Contas - Modo Avancado */}
+      {showAdvancedMode && adAccounts.length > 0 && (
         <Card>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-2">
@@ -644,45 +678,47 @@ export const GoogleAdminPage: React.FC = () => {
         </Card>
       )}
 
-      {/* Instrucoes */}
-      <Card className="bg-blue-50 border-blue-200">
-        <h3 className="font-semibold text-blue-900 mb-3">
-          Como obter as credenciais do Google Ads
-        </h3>
-        <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
-          <li>
-            Acesse o{' '}
-            <a
-              href="https://developers.google.com/google-ads/api/docs/first-call/overview"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-blue-600"
-            >
-              Google Ads API Center
-            </a>
-          </li>
-          <li>Solicite um Developer Token (pode demorar alguns dias para aprovacao)</li>
-          <li>
-            O Customer ID pode ser encontrado no canto superior direito do Google Ads
-            (formato: XXX-XXX-XXXX)
-          </li>
-          <li>
-            Se voce usa uma conta MCC para gerenciar varias contas, use o ID do MCC como
-            "Login Customer ID"
-          </li>
-          <li>Cole o Developer Token e o Customer ID nos campos acima</li>
-        </ol>
+      {/* Instrucoes - Modo Avancado */}
+      {showAdvancedMode && (
+        <Card className="bg-blue-50 border-blue-200">
+          <h3 className="font-semibold text-blue-900 mb-3">
+            Como obter as credenciais do Google Ads (Modo Avancado)
+          </h3>
+          <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
+            <li>
+              Acesse o{' '}
+              <a
+                href="https://developers.google.com/google-ads/api/docs/first-call/overview"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-blue-600"
+              >
+                Google Ads API Center
+              </a>
+            </li>
+            <li>Solicite um Developer Token (pode demorar alguns dias para aprovacao)</li>
+            <li>
+              O Customer ID pode ser encontrado no canto superior direito do Google Ads
+              (formato: XXX-XXX-XXXX)
+            </li>
+            <li>
+              Se voce usa uma conta MCC para gerenciar varias contas, use o ID do MCC como
+              "Login Customer ID"
+            </li>
+            <li>Cole o Developer Token e o Customer ID nos campos acima</li>
+          </ol>
 
-        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-          <div className="flex items-start space-x-2">
-            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-amber-700">
-              <strong>Importante:</strong> O Developer Token tem limite de 15.000 requisicoes
-              por dia. A sincronizacao foi otimizada para respeitar esse limite.
+          <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-start space-x-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-700">
+                <strong>Importante:</strong> O Developer Token tem limite de 15.000 requisicoes
+                por dia. A sincronizacao foi otimizada para respeitar esse limite.
+              </div>
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
     </div>
   );
 };
