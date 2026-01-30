@@ -2,11 +2,20 @@
  * Edge Function: google-list-adaccounts
  *
  * Lista todas as contas de anuncio do Google Ads vinculadas ao workspace.
- * Retorna contas do banco de dados e opcionalmente atualiza da API.
+ * Pode opcionalmente atualizar a lista buscando da API do Google Ads.
+ *
+ * Parametros:
+ * - refresh: boolean - Se true, busca contas atualizadas da API
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  listAccessibleAccounts,
+  isTokenExpired,
+  refreshGoogleAccessToken,
+  formatCustomerId,
+} from "../_shared/google-ads-api.ts";
 
 // Headers CORS padrao
 const corsHeaders = {
@@ -33,13 +42,17 @@ interface GoogleAdAccount {
   updated_at: string;
 }
 
-/**
- * Formata Customer ID para exibicao (XXX-XXX-XXXX)
- */
-function formatCustomerId(customerId: string): string {
-  const clean = customerId.replace(/\D/g, "");
-  if (clean.length !== 10) return customerId;
-  return `${clean.slice(0, 3)}-${clean.slice(3, 6)}-${clean.slice(6)}`;
+// Interface para conexao Google
+interface GoogleConnection {
+  id: string;
+  workspace_id: string;
+  developer_token: string;
+  customer_id: string;
+  login_customer_id: string | null;
+  access_token: string | null;
+  refresh_token: string | null;
+  token_expires_at: string | null;
+  status: string;
 }
 
 // Handler principal
@@ -74,6 +87,10 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
+    // Credenciais OAuth do Google
+    const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID");
+    const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+
     // Verifica usuario autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -98,12 +115,22 @@ Deno.serve(async (req: Request) => {
     // Cliente admin para bypass de RLS
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Verifica se deve atualizar da API
+    let refresh = false;
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        refresh = body.refresh === true;
+      } catch {
+        // Ignora erro de parse, usa refresh = false
+      }
+    }
+
     // =====================================================
     // 1. BUSCAR WORKSPACE DO USUARIO
     // =====================================================
     let workspaceId: string | null = null;
 
-    // Tenta buscar como owner
     const { data: ownedWorkspace } = await supabaseAdmin
       .from("workspaces")
       .select("id")
@@ -113,7 +140,6 @@ Deno.serve(async (req: Request) => {
     if (ownedWorkspace) {
       workspaceId = ownedWorkspace.id;
     } else {
-      // Busca como membro
       const { data: memberRecord } = await supabaseAdmin
         .from("workspace_members")
         .select("workspace_id")
@@ -146,9 +172,9 @@ Deno.serve(async (req: Request) => {
     // =====================================================
     const { data: connection } = await supabaseAdmin
       .from("google_connections")
-      .select("id, customer_id, status")
+      .select("*")
       .eq("workspace_id", workspaceId)
-      .maybeSingle();
+      .maybeSingle() as { data: GoogleConnection | null };
 
     if (!connection) {
       return new Response(
@@ -166,7 +192,101 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // 3. BUSCAR CONTAS DO BANCO
+    // 3. SE REFRESH, BUSCAR CONTAS DA API
+    // =====================================================
+    if (refresh && connection.access_token && connection.refresh_token) {
+      console.log("[google-list-adaccounts] Refreshing accounts from API...");
+
+      let accessToken = connection.access_token;
+      const tokenExpiresAt = connection.token_expires_at
+        ? new Date(connection.token_expires_at)
+        : null;
+
+      // Verifica se precisa renovar token
+      if (
+        isTokenExpired(tokenExpiresAt) &&
+        googleClientId &&
+        googleClientSecret
+      ) {
+        console.log("[google-list-adaccounts] Token expired, refreshing...");
+
+        const refreshResult = await refreshGoogleAccessToken(
+          connection.refresh_token,
+          googleClientId,
+          googleClientSecret
+        );
+
+        if (refreshResult) {
+          accessToken = refreshResult.accessToken;
+
+          // Atualiza token no banco
+          await supabaseAdmin
+            .from("google_connections")
+            .update({
+              access_token: refreshResult.accessToken,
+              token_expires_at: refreshResult.expiresAt.toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", connection.id);
+
+          console.log("[google-list-adaccounts] Token refreshed successfully");
+        } else {
+          console.error("[google-list-adaccounts] Failed to refresh token");
+        }
+      }
+
+      // Busca contas da API
+      const loginCustomerId =
+        connection.login_customer_id || connection.customer_id;
+
+      const accountsResult = await listAccessibleAccounts(
+        accessToken,
+        connection.developer_token,
+        loginCustomerId
+      );
+
+      if (accountsResult.data && accountsResult.data.length > 0) {
+        console.log(
+          `[google-list-adaccounts] Found ${accountsResult.data.length} accounts from API`
+        );
+
+        // Atualiza contas no banco
+        for (const apiAccount of accountsResult.data) {
+          const clientId =
+            apiAccount.id ||
+            apiAccount.clientCustomer.split("/").pop() ||
+            "";
+
+          await supabaseAdmin.from("google_ad_accounts").upsert(
+            {
+              workspace_id: workspaceId,
+              connection_id: connection.id,
+              customer_id: clientId,
+              name:
+                apiAccount.descriptiveName ||
+                `Account ${formatCustomerId(clientId)}`,
+              currency_code: apiAccount.currencyCode || "BRL",
+              timezone: apiAccount.timeZone || "America/Sao_Paulo",
+              status: "ENABLED",
+              is_manager: apiAccount.manager || false,
+              updated_at: new Date().toISOString(),
+            },
+            {
+              onConflict: "workspace_id,customer_id",
+              ignoreDuplicates: false,
+            }
+          );
+        }
+      } else if (accountsResult.error) {
+        console.error(
+          "[google-list-adaccounts] API error:",
+          accountsResult.error
+        );
+      }
+    }
+
+    // =====================================================
+    // 4. BUSCAR CONTAS DO BANCO
     // =====================================================
     const { data: accounts, error: accountsError } = await supabaseAdmin
       .from("google_ad_accounts")
@@ -193,7 +313,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // 4. FORMATAR E RETORNAR RESPOSTA
+    // 5. FORMATAR E RETORNAR RESPOSTA
     // =====================================================
     const formattedAccounts = (accounts || []).map((acc: GoogleAdAccount) => ({
       ...acc,
@@ -201,7 +321,8 @@ Deno.serve(async (req: Request) => {
     }));
 
     const selectedCount = formattedAccounts.filter(
-      (acc: any) => acc.is_selected
+      (acc: GoogleAdAccount & { customer_id_formatted: string }) =>
+        acc.is_selected
     ).length;
 
     console.log(
@@ -215,6 +336,7 @@ Deno.serve(async (req: Request) => {
         selected_count: selectedCount,
         connected: connection.status === "active",
         connection_customer_id: formatCustomerId(connection.customer_id),
+        has_oauth: Boolean(connection.access_token && connection.refresh_token),
       }),
       {
         status: 200,

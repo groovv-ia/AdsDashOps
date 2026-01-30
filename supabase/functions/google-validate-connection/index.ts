@@ -1,16 +1,26 @@
 /**
  * Edge Function: google-validate-connection
  *
- * Valida as credenciais do Google Ads (Developer Token + Customer ID) e salva a conexao.
- * Usa a API REST do Google Ads para validar e listar contas acessiveis.
+ * Valida as credenciais do Google Ads e salva a conexao.
+ * Usa a API REST do Google Ads para validar acesso e listar contas.
  *
- * Endpoints usados:
- * - GET /customers/{customer_id} - Valida acesso a conta
- * - GET /customers/{customer_id}/customerClients - Lista sub-contas (se MCC)
+ * Fluxo:
+ * 1. Recebe OAuth tokens + Developer Token + Customer ID
+ * 2. Valida acesso a conta usando API real
+ * 3. Se MCC, lista todas as sub-contas acessiveis
+ * 4. Salva conexao e contas no banco de dados
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  fetchCustomerInfo,
+  listAccessibleAccounts,
+  isTokenExpired,
+  refreshGoogleAccessToken,
+  formatCustomerId,
+  cleanCustomerId,
+} from "../_shared/google-ads-api.ts";
 
 // Headers CORS padrao
 const corsHeaders = {
@@ -25,177 +35,10 @@ interface ValidateConnectionPayload {
   developer_token: string;
   customer_id: string;
   login_customer_id?: string;
-}
-
-// Interface para resposta de cliente do Google Ads
-interface GoogleCustomerResponse {
-  resourceName: string;
-  id: string;
-  descriptiveName?: string;
-  currencyCode?: string;
-  timeZone?: string;
-  manager?: boolean;
-}
-
-// Interface para CustomerClient (sub-contas)
-interface GoogleCustomerClient {
-  resourceName: string;
-  clientCustomer: string;
-  hidden: boolean;
-  level: string;
-  descriptiveName?: string;
-  currencyCode?: string;
-  timeZone?: string;
-  manager?: boolean;
-  id?: string;
-}
-
-// URL base da API do Google Ads
-const GOOGLE_ADS_API_VERSION = "v18";
-const GOOGLE_ADS_API_BASE = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
-
-/**
- * Formata Customer ID para o formato sem hifens
- */
-function cleanCustomerId(customerId: string): string {
-  return customerId.replace(/\D/g, "");
-}
-
-/**
- * Formata Customer ID para exibicao (XXX-XXX-XXXX)
- */
-function formatCustomerId(customerId: string): string {
-  const clean = cleanCustomerId(customerId);
-  if (clean.length !== 10) return customerId;
-  return `${clean.slice(0, 3)}-${clean.slice(3, 6)}-${clean.slice(6)}`;
-}
-
-/**
- * Executa query GAQL (Google Ads Query Language) via API REST
- * Nota: Requer OAuth2 token em producao. Por enquanto, simula resposta.
- */
-async function executeGoogleAdsQuery(
-  developerToken: string,
-  customerId: string,
-  query: string,
-  _loginCustomerId?: string
-): Promise<{ data?: any[]; error?: string }> {
-  // Em producao, esta funcao fara a chamada real a API do Google Ads
-  // usando OAuth2 para autenticacao. Por enquanto, retorna simulacao
-  // para permitir testes do fluxo.
-
-  console.log(
-    `[google-validate-connection] Executing GAQL for customer ${customerId}`
-  );
-  console.log(`[google-validate-connection] Query: ${query}`);
-  console.log(
-    `[google-validate-connection] Developer Token (masked): ${developerToken.substring(0, 5)}...`
-  );
-
-  // TODO: Implementar chamada real quando OAuth2 estiver configurado
-  // const response = await fetch(`${GOOGLE_ADS_API_BASE}/customers/${customerId}/googleAds:searchStream`, {
-  //   method: 'POST',
-  //   headers: {
-  //     'Authorization': `Bearer ${oauthToken}`,
-  //     'developer-token': developerToken,
-  //     'login-customer-id': loginCustomerId || customerId,
-  //     'Content-Type': 'application/json',
-  //   },
-  //   body: JSON.stringify({ query }),
-  // });
-
-  return { data: [] };
-}
-
-/**
- * Valida a conexao com Google Ads
- * Por enquanto, valida formato e salva no banco. Em producao, fara validacao real.
- */
-async function validateGoogleConnection(
-  developerToken: string,
-  customerId: string,
-  loginCustomerId?: string
-): Promise<{
-  valid: boolean;
-  customerName?: string;
-  accounts?: Array<{
-    customer_id: string;
-    name: string;
-    currency_code: string;
-    timezone: string;
-    is_manager: boolean;
-  }>;
-  error?: string;
-}> {
-  const cleanId = cleanCustomerId(customerId);
-
-  // Valida formato do Customer ID (deve ter 10 digitos)
-  if (cleanId.length !== 10 || !/^\d{10}$/.test(cleanId)) {
-    return {
-      valid: false,
-      error: `Customer ID invalido. Esperado formato XXX-XXX-XXXX ou 10 digitos. Recebido: ${customerId}`,
-    };
-  }
-
-  // Valida formato do Developer Token (geralmente 22 caracteres alfanumericos)
-  if (!developerToken || developerToken.length < 10) {
-    return {
-      valid: false,
-      error: "Developer Token invalido. Verifique se copiou o token completo.",
-    };
-  }
-
-  // TODO: Em producao, fazer chamada real a API do Google Ads
-  // Por enquanto, simula validacao bem-sucedida e retorna conta principal
-
-  console.log(
-    `[google-validate-connection] Validating connection for customer: ${formatCustomerId(cleanId)}`
-  );
-
-  // Simula conta principal
-  const mainAccount = {
-    customer_id: cleanId,
-    name: `Conta Google Ads ${formatCustomerId(cleanId)}`,
-    currency_code: "BRL",
-    timezone: "America/Sao_Paulo",
-    is_manager: false,
-  };
-
-  // Se loginCustomerId foi fornecido, indica que e uma conta MCC
-  // Simula algumas sub-contas para demonstracao
-  const accounts = [mainAccount];
-
-  if (loginCustomerId) {
-    const cleanLoginId = cleanCustomerId(loginCustomerId);
-    console.log(
-      `[google-validate-connection] MCC mode - login customer: ${formatCustomerId(cleanLoginId)}`
-    );
-
-    // Simula sub-contas para conta MCC
-    // Em producao, estas viriam da query CustomerClient
-    accounts.push(
-      {
-        customer_id: `${cleanId.substring(0, 9)}1`,
-        name: "Sub-conta Demo 1",
-        currency_code: "BRL",
-        timezone: "America/Sao_Paulo",
-        is_manager: false,
-      },
-      {
-        customer_id: `${cleanId.substring(0, 9)}2`,
-        name: "Sub-conta Demo 2",
-        currency_code: "BRL",
-        timezone: "America/Sao_Paulo",
-        is_manager: false,
-      }
-    );
-  }
-
-  return {
-    valid: true,
-    customerName: mainAccount.name,
-    accounts,
-  };
+  access_token: string;
+  refresh_token: string;
+  token_expires_at?: string;
+  oauth_email?: string;
 }
 
 // Handler principal
@@ -229,6 +72,10 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
+    // Credenciais OAuth do Google (configuradas como secrets)
+    const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID");
+    const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
+
     // Verifica usuario autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -257,8 +104,17 @@ Deno.serve(async (req: Request) => {
 
     // Parse do body
     const body: ValidateConnectionPayload = await req.json();
-    const { developer_token, customer_id, login_customer_id } = body;
+    const {
+      developer_token,
+      customer_id,
+      login_customer_id,
+      access_token,
+      refresh_token,
+      token_expires_at,
+      oauth_email,
+    } = body;
 
+    // Validacao de campos obrigatorios
     if (!developer_token || !customer_id) {
       return new Response(
         JSON.stringify({
@@ -272,19 +128,43 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // =====================================================
-    // 1. VALIDAR CONEXAO COM GOOGLE ADS
-    // =====================================================
-    const validationResult = await validateGoogleConnection(
-      developer_token,
-      customer_id,
-      login_customer_id
-    );
-
-    if (!validationResult.valid) {
+    if (!access_token || !refresh_token) {
       return new Response(
         JSON.stringify({
-          error: validationResult.error,
+          error: "Missing OAuth tokens (access_token and refresh_token required)",
+          status: "invalid",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const cleanId = cleanCustomerId(customer_id);
+    const cleanLoginId = login_customer_id
+      ? cleanCustomerId(login_customer_id)
+      : null;
+
+    // Valida formato do Customer ID (deve ter 10 digitos)
+    if (cleanId.length !== 10 || !/^\d{10}$/.test(cleanId)) {
+      return new Response(
+        JSON.stringify({
+          error: `Customer ID invalido. Esperado formato XXX-XXX-XXXX ou 10 digitos. Recebido: ${customer_id}`,
+          status: "invalid",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Valida formato do Developer Token
+    if (developer_token.length < 10) {
+      return new Response(
+        JSON.stringify({
+          error: "Developer Token invalido. Verifique se copiou o token completo.",
           status: "invalid",
         }),
         {
@@ -295,11 +175,140 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // 2. BUSCAR OU CRIAR WORKSPACE DO USUARIO
+    // 1. VERIFICAR E RENOVAR TOKEN SE NECESSARIO
+    // =====================================================
+    let currentAccessToken = access_token;
+    let currentExpiresAt = token_expires_at ? new Date(token_expires_at) : null;
+
+    if (
+      isTokenExpired(currentExpiresAt) &&
+      googleClientId &&
+      googleClientSecret
+    ) {
+      console.log("[google-validate-connection] Token expired, refreshing...");
+
+      const refreshResult = await refreshGoogleAccessToken(
+        refresh_token,
+        googleClientId,
+        googleClientSecret
+      );
+
+      if (refreshResult) {
+        currentAccessToken = refreshResult.accessToken;
+        currentExpiresAt = refreshResult.expiresAt;
+        console.log("[google-validate-connection] Token refreshed successfully");
+      } else {
+        return new Response(
+          JSON.stringify({
+            error: "Failed to refresh OAuth token. Please reconnect.",
+            status: "invalid",
+          }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+    }
+
+    // =====================================================
+    // 2. VALIDAR CONEXAO COM GOOGLE ADS API
+    // =====================================================
+    console.log(
+      `[google-validate-connection] Validating connection for customer: ${formatCustomerId(cleanId)}`
+    );
+
+    // Busca informacoes da conta principal
+    const customerResult = await fetchCustomerInfo(
+      currentAccessToken,
+      developer_token,
+      cleanId,
+      cleanLoginId || undefined
+    );
+
+    if (customerResult.error) {
+      console.error(
+        "[google-validate-connection] API validation failed:",
+        customerResult.error
+      );
+      return new Response(
+        JSON.stringify({
+          error: `Falha na validacao: ${customerResult.error}`,
+          status: "invalid",
+          details: customerResult.error,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const customerInfo = customerResult.data!;
+    console.log(
+      `[google-validate-connection] Customer validated: ${customerInfo.descriptiveName} (Manager: ${customerInfo.manager})`
+    );
+
+    // =====================================================
+    // 3. SE FOR MCC, LISTAR SUB-CONTAS
+    // =====================================================
+    interface AccountInfo {
+      customer_id: string;
+      name: string;
+      currency_code: string;
+      timezone: string;
+      is_manager: boolean;
+    }
+
+    const accounts: AccountInfo[] = [];
+
+    // Adiciona a conta principal
+    accounts.push({
+      customer_id: cleanId,
+      name: customerInfo.descriptiveName,
+      currency_code: customerInfo.currencyCode,
+      timezone: customerInfo.timeZone,
+      is_manager: customerInfo.manager,
+    });
+
+    // Se for conta MCC, busca sub-contas
+    if (customerInfo.manager) {
+      console.log("[google-validate-connection] MCC detected, fetching client accounts...");
+
+      const clientsResult = await listAccessibleAccounts(
+        currentAccessToken,
+        developer_token,
+        cleanLoginId || cleanId
+      );
+
+      if (clientsResult.data && clientsResult.data.length > 0) {
+        for (const client of clientsResult.data) {
+          // Extrai customer ID do resourceName (formato: customers/XXXXXXXXXX)
+          const clientId = client.id || client.clientCustomer.split("/").pop() || "";
+
+          // Nao adiciona a conta MCC novamente
+          if (clientId !== cleanId && clientId !== cleanLoginId) {
+            accounts.push({
+              customer_id: clientId,
+              name: client.descriptiveName || `Account ${formatCustomerId(clientId)}`,
+              currency_code: client.currencyCode || "BRL",
+              timezone: client.timeZone || "America/Sao_Paulo",
+              is_manager: client.manager || false,
+            });
+          }
+        }
+
+        console.log(
+          `[google-validate-connection] Found ${accounts.length - 1} client accounts`
+        );
+      }
+    }
+
+    // =====================================================
+    // 4. BUSCAR OU CRIAR WORKSPACE DO USUARIO
     // =====================================================
     let workspaceId: string;
 
-    // Tenta buscar como owner direto
     const { data: ownedWorkspace } = await supabaseAdmin
       .from("workspaces")
       .select("id")
@@ -312,7 +321,6 @@ Deno.serve(async (req: Request) => {
         `[google-validate-connection] Found workspace as owner: ${workspaceId}`
       );
     } else {
-      // Se nao e owner, busca como membro
       const { data: memberRecord } = await supabaseAdmin
         .from("workspace_members")
         .select("workspace_id")
@@ -325,7 +333,6 @@ Deno.serve(async (req: Request) => {
           `[google-validate-connection] Found workspace as member: ${workspaceId}`
         );
       } else {
-        // Cria novo workspace
         console.log(`[google-validate-connection] Creating new workspace...`);
         const { data: newWorkspace, error: createError } = await supabaseAdmin
           .from("workspaces")
@@ -347,7 +354,6 @@ Deno.serve(async (req: Request) => {
         }
         workspaceId = newWorkspace.id;
 
-        // Adiciona o owner como membro
         await supabaseAdmin.from("workspace_members").insert({
           workspace_id: workspaceId,
           user_id: user.id,
@@ -357,13 +363,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // 3. SALVAR/ATUALIZAR CONEXAO GOOGLE
+    // 5. SALVAR/ATUALIZAR CONEXAO GOOGLE
     // =====================================================
-    const cleanId = cleanCustomerId(customer_id);
-    const cleanLoginId = login_customer_id
-      ? cleanCustomerId(login_customer_id)
-      : null;
-
     const { data: existingConnection } = await supabaseAdmin
       .from("google_connections")
       .select("id")
@@ -372,19 +373,26 @@ Deno.serve(async (req: Request) => {
 
     let connectionId: string;
 
+    const connectionData = {
+      developer_token,
+      customer_id: cleanId,
+      login_customer_id: cleanLoginId,
+      access_token: currentAccessToken,
+      refresh_token,
+      token_expires_at: currentExpiresAt?.toISOString() || null,
+      oauth_email: oauth_email || null,
+      oauth_client_id: googleClientId || null,
+      status: "active",
+      last_validated_at: new Date().toISOString(),
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    };
+
     if (existingConnection) {
       connectionId = existingConnection.id;
       const { error } = await supabaseAdmin
         .from("google_connections")
-        .update({
-          developer_token,
-          customer_id: cleanId,
-          login_customer_id: cleanLoginId,
-          status: "active",
-          last_validated_at: new Date().toISOString(),
-          error_message: null,
-          updated_at: new Date().toISOString(),
-        })
+        .update(connectionData)
         .eq("id", existingConnection.id);
 
       if (error) {
@@ -408,13 +416,8 @@ Deno.serve(async (req: Request) => {
         .from("google_connections")
         .insert({
           workspace_id: workspaceId,
-          developer_token,
-          customer_id: cleanId,
-          login_customer_id: cleanLoginId,
-          status: "active",
-          last_validated_at: new Date().toISOString(),
+          ...connectionData,
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
         })
         .select("id")
         .single();
@@ -443,9 +446,8 @@ Deno.serve(async (req: Request) => {
     );
 
     // =====================================================
-    // 4. SALVAR CONTAS NO BANCO
+    // 6. SALVAR CONTAS NO BANCO
     // =====================================================
-    const accounts = validationResult.accounts || [];
     let savedCount = 0;
 
     for (const account of accounts) {
@@ -485,14 +487,15 @@ Deno.serve(async (req: Request) => {
     );
 
     // =====================================================
-    // 5. RETORNAR SUCESSO
+    // 7. RETORNAR SUCESSO
     // =====================================================
     return new Response(
       JSON.stringify({
         status: "connected",
         workspace_id: workspaceId,
         customer_id: formatCustomerId(cleanId),
-        customer_name: validationResult.customerName,
+        customer_name: customerInfo.descriptiveName,
+        is_manager: customerInfo.manager,
         accounts_count: savedCount,
         accounts: accounts.map((acc) => ({
           ...acc,
