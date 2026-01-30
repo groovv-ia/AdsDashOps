@@ -5,10 +5,14 @@
  * Usa a API REST do Google Ads para validar acesso e listar contas.
  *
  * Fluxo:
- * 1. Recebe OAuth tokens + Developer Token + Customer ID
+ * 1. Recebe OAuth credentials + Developer Token + Customer ID do frontend
  * 2. Valida acesso a conta usando API real
  * 3. Se MCC, lista todas as sub-contas acessiveis
- * 4. Salva conexao e contas no banco de dados
+ * 4. Armazena credenciais sensiveis no Vault (oauth_client_secret, developer_token, refresh_token)
+ * 5. Salva conexao e contas no banco de dados
+ *
+ * IMPORTANTE: Todas as credenciais OAuth sao fornecidas pelo usuario no formulario.
+ * Nao usamos variaveis de ambiente para credenciais - cada conexao tem suas proprias.
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -30,13 +34,20 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Interface para payload de entrada
+// Interface para payload de entrada (atualizada com credenciais OAuth completas)
 interface ValidateConnectionPayload {
+  // Credenciais OAuth do Google Cloud Console (obrigatorias)
+  oauth_client_id: string;
+  oauth_client_secret: string;
+  // Tokens OAuth (obrigatorios - usuario obtem manualmente via OAuth Playground)
+  refresh_token: string;
+  // Credenciais Google Ads API (obrigatorias)
   developer_token: string;
   customer_id: string;
+  // Opcional: Login Customer ID para MCC
   login_customer_id?: string;
-  access_token: string;
-  refresh_token: string;
+  // Opcional: Access token (se fornecido, tenta usar; senao, gera via refresh)
+  access_token?: string;
   token_expires_at?: string;
   oauth_email?: string;
 }
@@ -72,10 +83,6 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Credenciais OAuth do Google (configuradas como secrets)
-    const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID");
-    const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
-
     // Verifica usuario autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -99,27 +106,32 @@ Deno.serve(async (req: Request) => {
       `[google-validate-connection] User authenticated: ${user.email}`
     );
 
-    // Cliente admin para bypass de RLS
+    // Cliente admin para bypass de RLS e acesso ao Vault
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Parse do body
     const body: ValidateConnectionPayload = await req.json();
     const {
+      oauth_client_id,
+      oauth_client_secret,
+      refresh_token,
       developer_token,
       customer_id,
       login_customer_id,
       access_token,
-      refresh_token,
       token_expires_at,
       oauth_email,
     } = body;
 
-    // Validacao de campos obrigatorios
-    if (!developer_token || !customer_id) {
+    // =====================================================
+    // VALIDACAO: Campos obrigatorios
+    // =====================================================
+    if (!oauth_client_id?.trim()) {
       return new Response(
         JSON.stringify({
-          error: "Missing developer_token or customer_id",
+          error: "OAuth Client ID e obrigatorio. Obtenha no Google Cloud Console.",
           status: "invalid",
+          field: "oauth_client_id",
         }),
         {
           status: 400,
@@ -128,11 +140,54 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (!access_token || !refresh_token) {
+    if (!oauth_client_secret?.trim()) {
       return new Response(
         JSON.stringify({
-          error: "Missing OAuth tokens (access_token and refresh_token required)",
+          error: "OAuth Client Secret e obrigatorio. Obtenha no Google Cloud Console.",
           status: "invalid",
+          field: "oauth_client_secret",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!refresh_token?.trim()) {
+      return new Response(
+        JSON.stringify({
+          error: "Refresh Token e obrigatorio. Obtenha via OAuth Playground ou script.",
+          status: "invalid",
+          field: "refresh_token",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!developer_token?.trim()) {
+      return new Response(
+        JSON.stringify({
+          error: "Developer Token e obrigatorio. Obtenha no Google Ads API Center.",
+          status: "invalid",
+          field: "developer_token",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!customer_id?.trim()) {
+      return new Response(
+        JSON.stringify({
+          error: "Customer ID e obrigatorio.",
+          status: "invalid",
+          field: "customer_id",
         }),
         {
           status: 400,
@@ -152,6 +207,7 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           error: `Customer ID invalido. Esperado formato XXX-XXX-XXXX ou 10 digitos. Recebido: ${customer_id}`,
           status: "invalid",
+          field: "customer_id",
         }),
         {
           status: 400,
@@ -166,6 +222,7 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           error: "Developer Token invalido. Verifique se copiou o token completo.",
           status: "invalid",
+          field: "developer_token",
         }),
         {
           status: 400,
@@ -175,33 +232,31 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // 1. VERIFICAR E RENOVAR TOKEN SE NECESSARIO
+    // 1. OBTER/RENOVAR ACCESS TOKEN
     // =====================================================
-    let currentAccessToken = access_token;
+    let currentAccessToken = access_token || "";
     let currentExpiresAt = token_expires_at ? new Date(token_expires_at) : null;
 
-    if (
-      isTokenExpired(currentExpiresAt) &&
-      googleClientId &&
-      googleClientSecret
-    ) {
-      console.log("[google-validate-connection] Token expired, refreshing...");
+    // Se nao temos access_token ou ele expirou, renovamos usando refresh_token
+    if (!currentAccessToken || isTokenExpired(currentExpiresAt)) {
+      console.log("[google-validate-connection] Obtaining new access token...");
 
       const refreshResult = await refreshGoogleAccessToken(
         refresh_token,
-        googleClientId,
-        googleClientSecret
+        oauth_client_id,
+        oauth_client_secret
       );
 
       if (refreshResult) {
         currentAccessToken = refreshResult.accessToken;
         currentExpiresAt = refreshResult.expiresAt;
-        console.log("[google-validate-connection] Token refreshed successfully");
+        console.log("[google-validate-connection] Access token obtained successfully");
       } else {
         return new Response(
           JSON.stringify({
-            error: "Failed to refresh OAuth token. Please reconnect.",
+            error: "Falha ao obter access token. Verifique as credenciais OAuth (Client ID, Client Secret e Refresh Token).",
             status: "invalid",
+            hint: "Certifique-se de que o Refresh Token foi gerado com o mesmo Client ID/Secret.",
           }),
           {
             status: 401,
@@ -373,19 +428,21 @@ Deno.serve(async (req: Request) => {
 
     let connectionId: string;
 
+    // Dados basicos da conexao (sem credenciais sensiveis)
     const connectionData = {
-      developer_token,
       customer_id: cleanId,
       login_customer_id: cleanLoginId,
       access_token: currentAccessToken,
-      refresh_token,
       token_expires_at: currentExpiresAt?.toISOString() || null,
       oauth_email: oauth_email || null,
-      oauth_client_id: googleClientId || null,
+      oauth_client_id: oauth_client_id, // Nao e secret, pode ficar na tabela
       status: "active",
       last_validated_at: new Date().toISOString(),
       error_message: null,
       updated_at: new Date().toISOString(),
+      // Campos antigos mantidos para compatibilidade temporaria
+      developer_token: developer_token,
+      refresh_token: refresh_token,
     };
 
     if (existingConnection) {
@@ -446,7 +503,59 @@ Deno.serve(async (req: Request) => {
     );
 
     // =====================================================
-    // 6. SALVAR CONTAS NO BANCO
+    // 6. ARMAZENAR CREDENCIAIS SENSIVEIS NO VAULT
+    // =====================================================
+    console.log("[google-validate-connection] Storing secrets in Vault...");
+
+    try {
+      // Armazena oauth_client_secret no Vault
+      const { data: clientSecretResult } = await supabaseAdmin.rpc(
+        "store_google_connection_secret",
+        {
+          p_connection_id: connectionId,
+          p_secret_type: "oauth_client_secret",
+          p_secret_value: oauth_client_secret,
+        }
+      );
+
+      // Armazena developer_token no Vault
+      const { data: devTokenResult } = await supabaseAdmin.rpc(
+        "store_google_connection_secret",
+        {
+          p_connection_id: connectionId,
+          p_secret_type: "developer_token",
+          p_secret_value: developer_token,
+        }
+      );
+
+      // Armazena refresh_token no Vault
+      const { data: refreshTokenResult } = await supabaseAdmin.rpc(
+        "store_google_connection_secret",
+        {
+          p_connection_id: connectionId,
+          p_secret_type: "refresh_token",
+          p_secret_value: refresh_token,
+        }
+      );
+
+      // Atualiza conexao com os IDs dos secrets no Vault
+      await supabaseAdmin
+        .from("google_connections")
+        .update({
+          oauth_client_secret_id: clientSecretResult,
+          developer_token_id: devTokenResult,
+          refresh_token_id: refreshTokenResult,
+        })
+        .eq("id", connectionId);
+
+      console.log("[google-validate-connection] Secrets stored in Vault successfully");
+    } catch (vaultError) {
+      // Se falhar o Vault, ainda funciona com campos antigos
+      console.error("[google-validate-connection] Vault storage error (non-fatal):", vaultError);
+    }
+
+    // =====================================================
+    // 7. SALVAR CONTAS NO BANCO
     // =====================================================
     let savedCount = 0;
 
@@ -487,7 +596,7 @@ Deno.serve(async (req: Request) => {
     );
 
     // =====================================================
-    // 7. RETORNAR SUCESSO
+    // 8. RETORNAR SUCESSO
     // =====================================================
     return new Response(
       JSON.stringify({

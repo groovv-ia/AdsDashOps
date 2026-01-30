@@ -6,13 +6,17 @@
  *
  * Fases da sincronizacao:
  * 1. Criar job de sincronizacao
- * 2. Buscar campanhas da API
- * 3. Buscar ad groups da API
- * 4. Buscar anuncios da API
- * 5. Buscar keywords da API
- * 6. Buscar metricas diarias da API
- * 7. Salvar tudo no banco
- * 8. Atualizar job como concluido
+ * 2. Buscar credenciais do Vault
+ * 3. Buscar campanhas da API
+ * 4. Buscar ad groups da API
+ * 5. Buscar anuncios da API
+ * 6. Buscar keywords da API
+ * 7. Buscar metricas diarias da API
+ * 8. Salvar tudo no banco
+ * 9. Atualizar job como concluido
+ *
+ * IMPORTANTE: Credenciais OAuth sao lidas do Vault por conexao.
+ * Nao usamos variaveis de ambiente para credenciais.
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -58,6 +62,10 @@ interface GoogleConnection {
   access_token: string | null;
   refresh_token: string | null;
   token_expires_at: string | null;
+  oauth_client_id: string | null;
+  oauth_client_secret_id: string | null;
+  developer_token_id: string | null;
+  refresh_token_id: string | null;
   status: string;
 }
 
@@ -70,6 +78,13 @@ interface GoogleAdAccount {
   is_manager: boolean;
 }
 
+// Interface para credenciais do Vault
+interface VaultCredentials {
+  oauth_client_secret: string;
+  developer_token: string;
+  refresh_token: string;
+}
+
 // Delay entre operacoes para evitar rate limiting
 const OPERATION_DELAY_MS = 100;
 
@@ -78,6 +93,58 @@ const OPERATION_DELAY_MS = 100;
  */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Busca credenciais do Vault para uma conexao
+ */
+async function getVaultCredentials(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  connectionId: string
+): Promise<VaultCredentials | null> {
+  try {
+    // Busca oauth_client_secret do Vault
+    const { data: clientSecret } = await supabaseAdmin.rpc(
+      "get_google_connection_secret",
+      {
+        p_connection_id: connectionId,
+        p_secret_type: "oauth_client_secret",
+      }
+    );
+
+    // Busca developer_token do Vault
+    const { data: devToken } = await supabaseAdmin.rpc(
+      "get_google_connection_secret",
+      {
+        p_connection_id: connectionId,
+        p_secret_type: "developer_token",
+      }
+    );
+
+    // Busca refresh_token do Vault
+    const { data: refreshToken } = await supabaseAdmin.rpc(
+      "get_google_connection_secret",
+      {
+        p_connection_id: connectionId,
+        p_secret_type: "refresh_token",
+      }
+    );
+
+    // Verifica se todos os secrets foram encontrados
+    if (!clientSecret || !devToken || !refreshToken) {
+      console.log("[google-run-sync] Vault credentials incomplete, will try fallback");
+      return null;
+    }
+
+    return {
+      oauth_client_secret: clientSecret,
+      developer_token: devToken,
+      refresh_token: refreshToken,
+    };
+  } catch (error) {
+    console.error("[google-run-sync] Error fetching Vault credentials:", error);
+    return null;
+  }
 }
 
 // Handler principal
@@ -111,10 +178,6 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Credenciais OAuth do Google
-    const googleClientId = Deno.env.get("GOOGLE_CLIENT_ID");
-    const googleClientSecret = Deno.env.get("GOOGLE_CLIENT_SECRET");
-
     // Verifica usuario autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -136,7 +199,7 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[google-run-sync] User authenticated: ${user.email}`);
 
-    // Cliente admin para bypass de RLS
+    // Cliente admin para bypass de RLS e acesso ao Vault
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Parse do body
@@ -194,7 +257,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // 2. VERIFICAR CONEXAO GOOGLE E TOKENS
+    // 2. VERIFICAR CONEXAO GOOGLE E BUSCAR CREDENCIAIS
     // =====================================================
     const { data: connection } = await supabaseAdmin
       .from("google_connections")
@@ -212,11 +275,44 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Verifica se tem tokens OAuth
-    if (!connection.access_token || !connection.refresh_token) {
+    // Busca credenciais do Vault
+    let vaultCredentials = await getVaultCredentials(supabaseAdmin, connection.id);
+
+    // Fallback: usa campos antigos da conexao se Vault nao disponivel
+    const oauthClientId = connection.oauth_client_id;
+    let oauthClientSecret: string | null = null;
+    let developerToken: string | null = null;
+    let refreshToken: string | null = null;
+
+    if (vaultCredentials) {
+      oauthClientSecret = vaultCredentials.oauth_client_secret;
+      developerToken = vaultCredentials.developer_token;
+      refreshToken = vaultCredentials.refresh_token;
+      console.log("[google-run-sync] Using credentials from Vault");
+    } else {
+      // Fallback para campos antigos
+      developerToken = connection.developer_token;
+      refreshToken = connection.refresh_token;
+      console.log("[google-run-sync] Using fallback credentials from connection table");
+    }
+
+    // Verifica se temos as credenciais necessarias
+    if (!developerToken) {
       return new Response(
         JSON.stringify({
-          error: "OAuth tokens not configured. Please reconnect Google Ads.",
+          error: "Developer Token not configured. Please reconnect Google Ads.",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!refreshToken) {
+      return new Response(
+        JSON.stringify({
+          error: "Refresh Token not configured. Please reconnect Google Ads.",
         }),
         {
           status: 400,
@@ -226,18 +322,31 @@ Deno.serve(async (req: Request) => {
     }
 
     // Verifica e renova token se necessario
-    let accessToken = connection.access_token;
+    let accessToken = connection.access_token || "";
     const tokenExpiresAt = connection.token_expires_at
       ? new Date(connection.token_expires_at)
       : null;
 
-    if (isTokenExpired(tokenExpiresAt) && googleClientId && googleClientSecret) {
+    // Para renovar, precisamos de oauth_client_id e oauth_client_secret
+    if (isTokenExpired(tokenExpiresAt)) {
+      if (!oauthClientId || !oauthClientSecret) {
+        return new Response(
+          JSON.stringify({
+            error: "OAuth credentials incomplete. Please reconnect Google Ads with full credentials.",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
       console.log("[google-run-sync] Token expired, refreshing...");
 
       const refreshResult = await refreshGoogleAccessToken(
-        connection.refresh_token,
-        googleClientId,
-        googleClientSecret
+        refreshToken,
+        oauthClientId,
+        oauthClientSecret
       );
 
       if (refreshResult) {
@@ -267,7 +376,6 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const developerToken = connection.developer_token;
     const loginCustomerId = connection.login_customer_id || connection.customer_id;
 
     // =====================================================
