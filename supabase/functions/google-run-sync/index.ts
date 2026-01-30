@@ -633,7 +633,7 @@ Deno.serve(async (req: Request) => {
         }
 
         // =====================================================
-        // 5.5. GERAR E SALVAR METRICAS DIARIAS (por campanha)
+        // 5.5. GERAR E SALVAR METRICAS DIARIAS (todos os niveis)
         // =====================================================
         // Primeiro, deleta metricas existentes do periodo para esta conta
         await supabaseAdmin
@@ -644,8 +644,66 @@ Deno.serve(async (req: Request) => {
           .gte("date", date_from)
           .lte("date", date_to);
 
-        // Gera e insere metricas para cada campanha
+        // Coleta todas as metricas para insert em batch
+        const allMetricsToInsert: Array<Record<string, unknown>> = [];
+
+        // Funcao auxiliar para calcular metricas derivadas e criar objeto
+        const createMetricRecord = (metric: {
+          date: string;
+          campaign_id: string;
+          campaign_name: string;
+          ad_group_id: string | null;
+          ad_group_name: string | null;
+          ad_id: string | null;
+          ad_name: string | null;
+          keyword_id: string | null;
+          keyword_text: string | null;
+          impressions: number;
+          clicks: number;
+          cost: number;
+          conversions: number;
+          conversion_value: number;
+        }) => {
+          const ctr =
+            metric.impressions > 0
+              ? (metric.clicks / metric.impressions) * 100
+              : 0;
+          const cpc = metric.clicks > 0 ? metric.cost / metric.clicks : 0;
+          const cpm =
+            metric.impressions > 0
+              ? (metric.cost / metric.impressions) * 1000
+              : 0;
+          const roas =
+            metric.cost > 0 ? metric.conversion_value / metric.cost : 0;
+
+          return {
+            workspace_id: workspaceId,
+            account_id: account.id,
+            customer_id: account.customer_id,
+            campaign_id: metric.campaign_id,
+            campaign_name: metric.campaign_name,
+            ad_group_id: metric.ad_group_id,
+            ad_group_name: metric.ad_group_name,
+            ad_id: metric.ad_id,
+            ad_name: metric.ad_name,
+            keyword_id: metric.keyword_id,
+            keyword_text: metric.keyword_text,
+            date: metric.date,
+            impressions: metric.impressions,
+            clicks: metric.clicks,
+            cost: metric.cost,
+            conversions: metric.conversions,
+            conversion_value: metric.conversion_value,
+            ctr,
+            cpc,
+            cpm,
+            roas,
+          };
+        };
+
+        // Gera metricas para cada nivel hierarquico
         for (const campaign of campaigns) {
+          // 1. Metricas no nivel de CAMPANHA (agregado)
           const campaignMetrics = generateDailyMetrics(
             account.customer_id,
             campaign.campaign_id,
@@ -659,60 +717,115 @@ Deno.serve(async (req: Request) => {
             date_from,
             date_to
           );
+          campaignMetrics.forEach((m) =>
+            allMetricsToInsert.push(createMetricRecord(m))
+          );
 
-          // Prepara batch de metricas para insert
-          const metricsToInsert = campaignMetrics.map((metric) => {
-            const ctr =
-              metric.impressions > 0
-                ? (metric.clicks / metric.impressions) * 100
-                : 0;
-            const cpc = metric.clicks > 0 ? metric.cost / metric.clicks : 0;
-            const cpm =
-              metric.impressions > 0
-                ? (metric.cost / metric.impressions) * 1000
-                : 0;
-            const roas =
-              metric.cost > 0 ? metric.conversion_value / metric.cost : 0;
+          // Gera ad groups da campanha para metricas granulares
+          const adGroups = generateAdGroups(
+            account.customer_id,
+            campaign.campaign_id,
+            2
+          );
 
-            return {
-              workspace_id: workspaceId,
-              account_id: account.id,
-              customer_id: account.customer_id,
-              campaign_id: metric.campaign_id,
-              campaign_name: metric.campaign_name,
-              ad_group_id: metric.ad_group_id,
-              ad_group_name: metric.ad_group_name,
-              ad_id: metric.ad_id,
-              ad_name: metric.ad_name,
-              keyword_id: metric.keyword_id,
-              keyword_text: metric.keyword_text,
-              date: metric.date,
-              impressions: metric.impressions,
-              clicks: metric.clicks,
-              cost: metric.cost,
-              conversions: metric.conversions,
-              conversion_value: metric.conversion_value,
-              ctr,
-              cpc,
-              cpm,
-              roas,
-            };
-          });
+          for (const adGroup of adGroups) {
+            // 2. Metricas no nivel de AD GROUP
+            const adGroupMetrics = generateDailyMetrics(
+              account.customer_id,
+              campaign.campaign_id,
+              campaign.name,
+              adGroup.ad_group_id,
+              adGroup.name,
+              null,
+              null,
+              null,
+              null,
+              date_from,
+              date_to
+            );
+            adGroupMetrics.forEach((m) =>
+              allMetricsToInsert.push(createMetricRecord(m))
+            );
 
-          // Insert em batch para melhor performance
+            // Gera anuncios para metricas
+            const ads = generateAds(
+              account.customer_id,
+              campaign.campaign_id,
+              adGroup.ad_group_id,
+              2
+            );
+
+            for (const ad of ads) {
+              // 3. Metricas no nivel de ANUNCIO
+              const adMetrics = generateDailyMetrics(
+                account.customer_id,
+                campaign.campaign_id,
+                campaign.name,
+                adGroup.ad_group_id,
+                adGroup.name,
+                ad.ad_id,
+                ad.name,
+                null,
+                null,
+                date_from,
+                date_to
+              );
+              adMetrics.forEach((m) =>
+                allMetricsToInsert.push(createMetricRecord(m))
+              );
+            }
+
+            // Gera keywords para metricas
+            const keywords = generateKeywords(
+              account.customer_id,
+              campaign.campaign_id,
+              adGroup.ad_group_id,
+              5
+            );
+
+            for (const keyword of keywords) {
+              // 4. Metricas no nivel de KEYWORD
+              const keywordMetrics = generateDailyMetrics(
+                account.customer_id,
+                campaign.campaign_id,
+                campaign.name,
+                adGroup.ad_group_id,
+                adGroup.name,
+                null,
+                null,
+                keyword.keyword_id,
+                keyword.text,
+                date_from,
+                date_to
+              );
+              keywordMetrics.forEach((m) =>
+                allMetricsToInsert.push(createMetricRecord(m))
+              );
+            }
+          }
+        }
+
+        // Insert em batch (dividido em chunks para evitar timeout)
+        const BATCH_SIZE = 100;
+        for (let b = 0; b < allMetricsToInsert.length; b += BATCH_SIZE) {
+          const batch = allMetricsToInsert.slice(b, b + BATCH_SIZE);
           const { error: insertError } = await supabaseAdmin
             .from("google_insights_daily")
-            .insert(metricsToInsert);
+            .insert(batch);
 
           if (insertError) {
             console.error(
-              `[google-run-sync] Error inserting metrics for campaign ${campaign.name}:`,
+              `[google-run-sync] Error inserting metrics batch ${b / BATCH_SIZE + 1}:`,
               insertError
             );
           } else {
-            totalMetrics += metricsToInsert.length;
+            totalMetrics += batch.length;
           }
         }
+
+        console.log(
+          `[google-run-sync] Inserted ${allMetricsToInsert.length} metrics for account ${account.name}`
+        );
 
         // Atualiza last_sync_at da conta
         await supabaseAdmin
