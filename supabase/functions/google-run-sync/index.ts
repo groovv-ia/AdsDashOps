@@ -510,11 +510,70 @@ Deno.serve(async (req: Request) => {
 
       try {
         // =====================================================
-        // 5.1. BUSCAR E SALVAR CAMPANHAS
+        // ESTRUTURAS PARA ARMAZENAR ENTIDADES GERADAS
+        // Isso garante que os mesmos IDs sejam usados para
+        // salvar entidades e gerar metricas
+        // =====================================================
+        interface StoredAdGroup {
+          data: ReturnType<typeof generateAdGroups>[0];
+          ads: ReturnType<typeof generateAds>;
+          keywords: ReturnType<typeof generateKeywords>;
+        }
+
+        interface StoredCampaign {
+          data: ReturnType<typeof generateCampaigns>[0];
+          adGroups: StoredAdGroup[];
+        }
+
+        const storedCampaigns: StoredCampaign[] = [];
+
+        // =====================================================
+        // 5.1. GERAR TODAS AS ENTIDADES PRIMEIRO
         // =====================================================
         const campaigns = generateCampaigns(account.customer_id, 3);
 
         for (const campaign of campaigns) {
+          const campaignStore: StoredCampaign = {
+            data: campaign,
+            adGroups: [],
+          };
+
+          const adGroups = generateAdGroups(
+            account.customer_id,
+            campaign.campaign_id,
+            2
+          );
+
+          for (const adGroup of adGroups) {
+            const ads = generateAds(
+              account.customer_id,
+              campaign.campaign_id,
+              adGroup.ad_group_id,
+              2
+            );
+
+            const keywords = generateKeywords(
+              account.customer_id,
+              campaign.campaign_id,
+              adGroup.ad_group_id,
+              5
+            );
+
+            campaignStore.adGroups.push({
+              data: adGroup,
+              ads,
+              keywords,
+            });
+          }
+
+          storedCampaigns.push(campaignStore);
+        }
+
+        // =====================================================
+        // 5.2. SALVAR CAMPANHAS
+        // =====================================================
+        for (const stored of storedCampaigns) {
+          const campaign = stored.data;
           await supabaseAdmin.from("google_campaigns").upsert(
             {
               workspace_id: workspaceId,
@@ -536,16 +595,12 @@ Deno.serve(async (req: Request) => {
         await delay(OPERATION_DELAY_MS);
 
         // =====================================================
-        // 5.2. BUSCAR E SALVAR AD GROUPS
+        // 5.3. SALVAR AD GROUPS, ADS E KEYWORDS
         // =====================================================
-        for (const campaign of campaigns) {
-          const adGroups = generateAdGroups(
-            account.customer_id,
-            campaign.campaign_id,
-            2
-          );
+        for (const stored of storedCampaigns) {
+          for (const adGroupStore of stored.adGroups) {
+            const adGroup = adGroupStore.data;
 
-          for (const adGroup of adGroups) {
             await supabaseAdmin.from("google_ad_groups").upsert(
               {
                 workspace_id: workspaceId,
@@ -563,17 +618,8 @@ Deno.serve(async (req: Request) => {
             );
             totalAdGroups++;
 
-            // =====================================================
-            // 5.3. BUSCAR E SALVAR ADS
-            // =====================================================
-            const ads = generateAds(
-              account.customer_id,
-              campaign.campaign_id,
-              adGroup.ad_group_id,
-              2
-            );
-
-            for (const ad of ads) {
+            // Salvar Ads
+            for (const ad of adGroupStore.ads) {
               await supabaseAdmin.from("google_ads").upsert(
                 {
                   workspace_id: workspaceId,
@@ -595,17 +641,8 @@ Deno.serve(async (req: Request) => {
               totalAds++;
             }
 
-            // =====================================================
-            // 5.4. BUSCAR E SALVAR KEYWORDS
-            // =====================================================
-            const keywords = generateKeywords(
-              account.customer_id,
-              campaign.campaign_id,
-              adGroup.ad_group_id,
-              5
-            );
-
-            for (const keyword of keywords) {
+            // Salvar Keywords
+            for (const keyword of adGroupStore.keywords) {
               await supabaseAdmin.from("google_keywords").upsert(
                 {
                   workspace_id: workspaceId,
@@ -627,13 +664,11 @@ Deno.serve(async (req: Request) => {
             }
 
             await delay(OPERATION_DELAY_MS);
-
-            await delay(OPERATION_DELAY_MS);
           }
         }
 
         // =====================================================
-        // 5.5. GERAR E SALVAR METRICAS DIARIAS (todos os niveis)
+        // 5.4. GERAR E SALVAR METRICAS DIARIAS (todos os niveis)
         // =====================================================
         // Primeiro, deleta metricas existentes do periodo para esta conta
         await supabaseAdmin
@@ -701,8 +736,10 @@ Deno.serve(async (req: Request) => {
           };
         };
 
-        // Gera metricas para cada nivel hierarquico
-        for (const campaign of campaigns) {
+        // Gera metricas usando as MESMAS entidades armazenadas
+        for (const stored of storedCampaigns) {
+          const campaign = stored.data;
+
           // 1. Metricas no nivel de CAMPANHA (agregado)
           const campaignMetrics = generateDailyMetrics(
             account.customer_id,
@@ -721,14 +758,10 @@ Deno.serve(async (req: Request) => {
             allMetricsToInsert.push(createMetricRecord(m))
           );
 
-          // Gera ad groups da campanha para metricas granulares
-          const adGroups = generateAdGroups(
-            account.customer_id,
-            campaign.campaign_id,
-            2
-          );
+          // Usa os ad groups JA ARMAZENADOS (mesmos IDs)
+          for (const adGroupStore of stored.adGroups) {
+            const adGroup = adGroupStore.data;
 
-          for (const adGroup of adGroups) {
             // 2. Metricas no nivel de AD GROUP
             const adGroupMetrics = generateDailyMetrics(
               account.customer_id,
@@ -747,15 +780,8 @@ Deno.serve(async (req: Request) => {
               allMetricsToInsert.push(createMetricRecord(m))
             );
 
-            // Gera anuncios para metricas
-            const ads = generateAds(
-              account.customer_id,
-              campaign.campaign_id,
-              adGroup.ad_group_id,
-              2
-            );
-
-            for (const ad of ads) {
+            // Usa os ads JA ARMAZENADOS (mesmos IDs)
+            for (const ad of adGroupStore.ads) {
               // 3. Metricas no nivel de ANUNCIO
               const adMetrics = generateDailyMetrics(
                 account.customer_id,
@@ -775,15 +801,8 @@ Deno.serve(async (req: Request) => {
               );
             }
 
-            // Gera keywords para metricas
-            const keywords = generateKeywords(
-              account.customer_id,
-              campaign.campaign_id,
-              adGroup.ad_group_id,
-              5
-            );
-
-            for (const keyword of keywords) {
+            // Usa as keywords JA ARMAZENADAS (mesmos IDs)
+            for (const keyword of adGroupStore.keywords) {
               // 4. Metricas no nivel de KEYWORD
               const keywordMetrics = generateDailyMetrics(
                 account.customer_id,
