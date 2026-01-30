@@ -2,11 +2,8 @@
  * GoogleAdminPage
  *
  * Pagina de administracao para configurar conexao com Google Ads.
- * Permite inserir credenciais OAuth completas (Client ID, Client Secret, Refresh Token),
- * Developer Token e Customer ID, validar conexao e listar contas disponiveis.
- *
- * IMPORTANTE: Cada conexao tem suas proprias credenciais OAuth.
- * Nao usamos credenciais compartilhadas via variaveis de ambiente.
+ * Permite inserir Developer Token e Customer ID, validar conexao
+ * e listar contas disponiveis para sincronizacao.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -23,8 +20,6 @@ import {
   Loader2,
   Unplug,
   Info,
-  ExternalLink,
-  Key,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -42,25 +37,17 @@ import type {
   GoogleAdAccount,
   GoogleSyncStatusResponse,
 } from '../../lib/connectors/google/types';
-
 // Componente para renderizar o icone do Google Ads
 const GoogleIcon: React.FC<{ className?: string }> = ({ className }) => (
   <img src="/google-ads-icon.svg" alt="Google Ads" className={className} />
 );
 
 export const GoogleAdminPage: React.FC = () => {
-  // Estado do formulario - Credenciais OAuth
-  const [oauthClientId, setOauthClientId] = useState('');
-  const [oauthClientSecret, setOauthClientSecret] = useState('');
-  const [refreshToken, setRefreshToken] = useState('');
+  // Estado do formulario
   const [developerToken, setDeveloperToken] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [loginCustomerId, setLoginCustomerId] = useState('');
-
-  // Estados de visibilidade dos campos sensiveis
-  const [showClientSecret, setShowClientSecret] = useState(false);
-  const [showRefreshToken, setShowRefreshToken] = useState(false);
-  const [showDevToken, setShowDevToken] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   // Estado da conexao
   const [connectionStatus, setConnectionStatus] = useState<GoogleConnection | null>(null);
@@ -137,28 +124,11 @@ export const GoogleAdminPage: React.FC = () => {
   };
 
   /**
-   * Valida e salva a conexao com todas as credenciais OAuth
+   * Valida e salva a conexao
    */
   const handleValidateConnection = async () => {
-    // Validacao dos campos obrigatorios
-    if (!oauthClientId.trim()) {
-      setError('OAuth Client ID e obrigatorio');
-      return;
-    }
-    if (!oauthClientSecret.trim()) {
-      setError('OAuth Client Secret e obrigatorio');
-      return;
-    }
-    if (!refreshToken.trim()) {
-      setError('Refresh Token e obrigatorio');
-      return;
-    }
-    if (!developerToken.trim()) {
-      setError('Developer Token e obrigatorio');
-      return;
-    }
-    if (!customerId.trim()) {
-      setError('Customer ID e obrigatorio');
+    if (!developerToken.trim() || !customerId.trim()) {
+      setError('Preencha o Developer Token e o Customer ID');
       return;
     }
 
@@ -167,22 +137,16 @@ export const GoogleAdminPage: React.FC = () => {
     setSuccess(null);
 
     try {
-      const result = await validateGoogleConnection({
-        oauth_client_id: oauthClientId,
-        oauth_client_secret: oauthClientSecret,
-        refresh_token: refreshToken,
-        developer_token: developerToken,
-        customer_id: customerId,
-        login_customer_id: loginCustomerId || undefined,
-      });
+      const result = await validateGoogleConnection(
+        developerToken,
+        customerId,
+        loginCustomerId || undefined
+      );
 
       if (result.status === 'connected') {
         setSuccess(
           `Conexao validada com sucesso! ${result.accounts_count || 0} conta(s) encontrada(s).`
         );
-        // Limpa campos sensiveis apos sucesso
-        setOauthClientSecret('');
-        setRefreshToken('');
         setDeveloperToken('');
 
         // Recarrega dados
@@ -216,7 +180,6 @@ export const GoogleAdminPage: React.FC = () => {
         setAdAccounts([]);
         setSyncStatus(null);
         setCustomerId('');
-        setOauthClientId('');
         setSuccess('Google Ads desconectado com sucesso');
       } else {
         setError(result.error || 'Erro ao desconectar');
@@ -234,6 +197,7 @@ export const GoogleAdminPage: React.FC = () => {
   const handleAccountSelection = async (accountId: string, selected: boolean) => {
     try {
       await updateAccountSelection(accountId, selected);
+      // Atualiza estado local
       setAdAccounts((prev) =>
         prev.map((acc) =>
           acc.id === accountId ? { ...acc, is_selected: selected } : acc
@@ -337,9 +301,8 @@ export const GoogleAdminPage: React.FC = () => {
 
   const isConnected = connectionStatus?.status === 'active';
 
-  // Verifica se todos os campos obrigatorios estao preenchidos
-  const canSubmit = oauthClientId.trim() && oauthClientSecret.trim() &&
-    refreshToken.trim() && developerToken.trim() && customerId.trim();
+  // Filtra contas selecionadas para exibicao
+  const selectedAccounts = adAccounts.filter(acc => acc.is_selected);
 
   return (
     <div className="space-y-6">
@@ -350,7 +313,7 @@ export const GoogleAdminPage: React.FC = () => {
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Conexao Google Ads</h2>
             <p className="text-gray-600">
-              Configure as credenciais OAuth para sincronizar dados do Google Ads
+              Configure as credenciais para sincronizar dados do Google Ads
             </p>
           </div>
         </div>
@@ -384,6 +347,7 @@ export const GoogleAdminPage: React.FC = () => {
         <Card className={`border-l-4 ${isConnected ? 'border-l-emerald-500' : 'border-l-red-500'}`}>
           <div className="flex items-start justify-between">
             <div className="flex items-start space-x-4">
+              {/* Icone de status */}
               <div
                 className={`relative p-2 rounded-xl ${isConnected ? 'bg-emerald-100' : 'bg-red-100'}`}
               >
@@ -435,6 +399,7 @@ export const GoogleAdminPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Badge de sincronizacao */}
             {syncStatus && isConnected && (
               <div className="flex flex-col items-end gap-2">
                 <span
@@ -456,150 +421,71 @@ export const GoogleAdminPage: React.FC = () => {
       {/* Form de Conexao */}
       <Card>
         <div className="flex items-center space-x-2 mb-4">
-          <Key className="w-5 h-5 text-blue-600" />
+          <Link2 className="w-5 h-5 text-blue-600" />
           <h3 className="font-semibold text-gray-900">
-            {isConnected ? 'Atualizar Credenciais' : 'Nova Conexao'}
+            {isConnected ? 'Atualizar Conexao' : 'Nova Conexao'}
           </h3>
         </div>
 
         <div className="space-y-4">
-          {/* Secao: Credenciais OAuth do Google Cloud */}
-          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-              <span className="w-6 h-6 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center mr-2">1</span>
-              Credenciais OAuth (Google Cloud Console)
-            </h4>
-
-            {/* OAuth Client ID */}
-            <div className="mb-3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                OAuth Client ID *
-              </label>
+          {/* Developer Token */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Developer Token *
+            </label>
+            <div className="relative">
               <input
-                type="text"
-                value={oauthClientId}
-                onChange={(e) => setOauthClientId(e.target.value)}
-                placeholder="Ex: 123456789012-abc123def456.apps.googleusercontent.com"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                type={showToken ? 'text' : 'password'}
+                value={developerToken}
+                onChange={(e) => setDeveloperToken(e.target.value)}
+                placeholder="Cole o Developer Token aqui..."
+                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+              >
+                {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
-
-            {/* OAuth Client Secret */}
-            <div className="mb-3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                OAuth Client Secret *
-              </label>
-              <div className="relative">
-                <input
-                  type={showClientSecret ? 'text' : 'password'}
-                  value={oauthClientSecret}
-                  onChange={(e) => setOauthClientSecret(e.target.value)}
-                  placeholder="Cole o Client Secret aqui..."
-                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowClientSecret(!showClientSecret)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                >
-                  {showClientSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Refresh Token */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Refresh Token *
-              </label>
-              <div className="relative">
-                <input
-                  type={showRefreshToken ? 'text' : 'password'}
-                  value={refreshToken}
-                  onChange={(e) => setRefreshToken(e.target.value)}
-                  placeholder="Cole o Refresh Token aqui..."
-                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowRefreshToken(!showRefreshToken)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                >
-                  {showRefreshToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Obtenha via OAuth Playground ou script de autorizacao
-              </p>
-            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Obtenha em: Google Ads API Center &rarr; Developer Token
+            </p>
           </div>
 
-          {/* Secao: Credenciais Google Ads API */}
-          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-              <span className="w-6 h-6 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center mr-2">2</span>
-              Credenciais Google Ads API
-            </h4>
+          {/* Customer ID */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Customer ID *
+            </label>
+            <input
+              type="text"
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+              placeholder="Ex: 123-456-7890"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              ID da conta MCC ou conta individual (com ou sem hifens)
+            </p>
+          </div>
 
-            {/* Developer Token */}
-            <div className="mb-3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Developer Token *
-              </label>
-              <div className="relative">
-                <input
-                  type={showDevToken ? 'text' : 'password'}
-                  value={developerToken}
-                  onChange={(e) => setDeveloperToken(e.target.value)}
-                  placeholder="Cole o Developer Token aqui..."
-                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowDevToken(!showDevToken)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                >
-                  {showDevToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Obtenha em: Google Ads API Center &rarr; Developer Token
-              </p>
-            </div>
-
-            {/* Customer ID */}
-            <div className="mb-3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Customer ID *
-              </label>
-              <input
-                type="text"
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                placeholder="Ex: 123-456-7890"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                ID da conta MCC ou conta individual (com ou sem hifens)
-              </p>
-            </div>
-
-            {/* Login Customer ID (opcional) */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Login Customer ID (opcional)
-              </label>
-              <input
-                type="text"
-                value={loginCustomerId}
-                onChange={(e) => setLoginCustomerId(e.target.value)}
-                placeholder="Ex: 123-456-7890"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                ID da conta MCC usada para acessar outras contas (necessario se o Customer ID for uma conta filha)
-              </p>
-            </div>
+          {/* Login Customer ID (opcional) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Login Customer ID (opcional)
+            </label>
+            <input
+              type="text"
+              value={loginCustomerId}
+              onChange={(e) => setLoginCustomerId(e.target.value)}
+              placeholder="Ex: 123-456-7890"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              ID da conta MCC usada para acessar outras contas (necessario se o Customer ID for uma conta filha)
+            </p>
           </div>
 
           {/* Mensagens de erro e sucesso */}
@@ -620,7 +506,7 @@ export const GoogleAdminPage: React.FC = () => {
           {/* Botao de validacao */}
           <Button
             onClick={handleValidateConnection}
-            disabled={validating || !canSubmit}
+            disabled={validating || !developerToken.trim() || !customerId.trim()}
             className="w-full"
           >
             {validating ? (
@@ -758,112 +644,41 @@ export const GoogleAdminPage: React.FC = () => {
         </Card>
       )}
 
-      {/* Instrucoes Completas */}
+      {/* Instrucoes */}
       <Card className="bg-blue-50 border-blue-200">
-        <h3 className="font-semibold text-blue-900 mb-4 flex items-center">
-          <Info className="w-5 h-5 mr-2" />
-          Como obter as credenciais
+        <h3 className="font-semibold text-blue-900 mb-3">
+          Como obter as credenciais do Google Ads
         </h3>
+        <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
+          <li>
+            Acesse o{' '}
+            <a
+              href="https://developers.google.com/google-ads/api/docs/first-call/overview"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-blue-600"
+            >
+              Google Ads API Center
+            </a>
+          </li>
+          <li>Solicite um Developer Token (pode demorar alguns dias para aprovacao)</li>
+          <li>
+            O Customer ID pode ser encontrado no canto superior direito do Google Ads
+            (formato: XXX-XXX-XXXX)
+          </li>
+          <li>
+            Se voce usa uma conta MCC para gerenciar varias contas, use o ID do MCC como
+            "Login Customer ID"
+          </li>
+          <li>Cole o Developer Token e o Customer ID nos campos acima</li>
+        </ol>
 
-        {/* Passo 1: Google Cloud Console */}
-        <div className="mb-6">
-          <h4 className="font-medium text-blue-800 mb-2 flex items-center">
-            <span className="w-5 h-5 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center mr-2">1</span>
-            Criar projeto no Google Cloud Console
-          </h4>
-          <ol className="list-decimal list-inside space-y-1 text-sm text-blue-700 ml-7">
-            <li>
-              Acesse o{' '}
-              <a
-                href="https://console.cloud.google.com/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-blue-600 inline-flex items-center"
-              >
-                Google Cloud Console <ExternalLink className="w-3 h-3 ml-1" />
-              </a>
-            </li>
-            <li>Crie um novo projeto ou selecione um existente</li>
-            <li>Ative a API do Google Ads (APIs e Servicos &rarr; Biblioteca)</li>
-            <li>Configure a Tela de Consentimento OAuth (APIs e Servicos &rarr; Tela de consentimento)</li>
-            <li>Crie credenciais OAuth 2.0 (APIs e Servicos &rarr; Credenciais &rarr; Criar credenciais &rarr; ID do cliente OAuth)</li>
-            <li>Copie o Client ID e Client Secret</li>
-          </ol>
-        </div>
-
-        {/* Passo 2: Obter Refresh Token */}
-        <div className="mb-6">
-          <h4 className="font-medium text-blue-800 mb-2 flex items-center">
-            <span className="w-5 h-5 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center mr-2">2</span>
-            Obter Refresh Token
-          </h4>
-          <ol className="list-decimal list-inside space-y-1 text-sm text-blue-700 ml-7">
-            <li>
-              Acesse o{' '}
-              <a
-                href="https://developers.google.com/oauthplayground/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-blue-600 inline-flex items-center"
-              >
-                OAuth 2.0 Playground <ExternalLink className="w-3 h-3 ml-1" />
-              </a>
-            </li>
-            <li>Clique no icone de engrenagem (configuracoes) no canto superior direito</li>
-            <li>Marque "Use your own OAuth credentials"</li>
-            <li>Insira seu Client ID e Client Secret</li>
-            <li>No painel esquerdo, selecione "Google Ads API v18" &rarr; "https://www.googleapis.com/auth/adwords"</li>
-            <li>Clique em "Authorize APIs" e faca login com a conta Google que tem acesso ao Google Ads</li>
-            <li>Clique em "Exchange authorization code for tokens"</li>
-            <li>Copie o "Refresh token"</li>
-          </ol>
-        </div>
-
-        {/* Passo 3: Developer Token */}
-        <div className="mb-4">
-          <h4 className="font-medium text-blue-800 mb-2 flex items-center">
-            <span className="w-5 h-5 bg-blue-600 text-white rounded-full text-xs flex items-center justify-center mr-2">3</span>
-            Obter Developer Token
-          </h4>
-          <ol className="list-decimal list-inside space-y-1 text-sm text-blue-700 ml-7">
-            <li>
-              Acesse o{' '}
-              <a
-                href="https://ads.google.com/aw/apicenter"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-blue-600 inline-flex items-center"
-              >
-                Google Ads API Center <ExternalLink className="w-3 h-3 ml-1" />
-              </a>
-            </li>
-            <li>Na secao "Developer Token", copie o token (ou solicite se ainda nao tiver)</li>
-            <li>
-              O Customer ID pode ser encontrado no canto superior direito do Google Ads
-              (formato: XXX-XXX-XXXX)
-            </li>
-          </ol>
-        </div>
-
-        {/* Avisos */}
-        <div className="space-y-3">
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="flex items-start space-x-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div className="text-xs text-amber-700">
-                <strong>Importante:</strong> O Developer Token tem limite de 15.000 requisicoes
-                por dia. A sincronizacao foi otimizada para respeitar esse limite.
-              </div>
-            </div>
-          </div>
-
-          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-            <div className="flex items-start space-x-2">
-              <Shield className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-              <div className="text-xs text-green-700">
-                <strong>Seguranca:</strong> Suas credenciais sao armazenadas de forma criptografada
-                no Supabase Vault e nunca sao expostas no frontend apos salvas.
-              </div>
+        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="flex items-start space-x-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-700">
+              <strong>Importante:</strong> O Developer Token tem limite de 15.000 requisicoes
+              por dia. A sincronizacao foi otimizada para respeitar esse limite.
             </div>
           </div>
         </div>

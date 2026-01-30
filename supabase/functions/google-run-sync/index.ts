@@ -1,40 +1,22 @@
 /**
  * Edge Function: google-run-sync
  *
- * Executa sincronizacao de dados do Google Ads usando a API real.
+ * Executa sincronizacao de dados do Google Ads.
  * Busca campanhas, ad groups, anuncios, keywords e metricas diarias.
  *
  * Fases da sincronizacao:
  * 1. Criar job de sincronizacao
- * 2. Buscar credenciais do Vault
- * 3. Buscar campanhas da API
- * 4. Buscar ad groups da API
- * 5. Buscar anuncios da API
- * 6. Buscar keywords da API
- * 7. Buscar metricas diarias da API
- * 8. Salvar tudo no banco
- * 9. Atualizar job como concluido
- *
- * IMPORTANTE: Credenciais OAuth sao lidas do Vault por conexao.
- * Nao usamos variaveis de ambiente para credenciais.
+ * 2. Buscar campanhas
+ * 3. Buscar ad groups
+ * 4. Buscar anuncios
+ * 5. Buscar keywords
+ * 6. Buscar metricas diarias
+ * 7. Salvar tudo no banco
+ * 8. Atualizar job como concluido
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import {
-  fetchCampaigns,
-  fetchAdGroups,
-  fetchAds,
-  fetchKeywords,
-  fetchCampaignMetrics,
-  fetchAdGroupMetrics,
-  fetchAdMetrics,
-  fetchKeywordMetrics,
-  isTokenExpired,
-  refreshGoogleAccessToken,
-  formatCustomerId,
-  microsToDecimal,
-} from "../_shared/google-ads-api.ts";
 
 // Headers CORS padrao
 const corsHeaders = {
@@ -52,41 +34,17 @@ interface SyncPayload {
   sync_type?: "full" | "incremental";
 }
 
-// Interface para conexao Google
-interface GoogleConnection {
-  id: string;
-  workspace_id: string;
-  developer_token: string;
-  customer_id: string;
-  login_customer_id: string | null;
-  access_token: string | null;
-  refresh_token: string | null;
-  token_expires_at: string | null;
-  oauth_client_id: string | null;
-  oauth_client_secret_id: string | null;
-  developer_token_id: string | null;
-  refresh_token_id: string | null;
-  status: string;
-}
-
-// Interface para conta Google
-interface GoogleAdAccount {
-  id: string;
-  workspace_id: string;
-  customer_id: string;
-  name: string;
-  is_manager: boolean;
-}
-
-// Interface para credenciais do Vault
-interface VaultCredentials {
-  oauth_client_secret: string;
-  developer_token: string;
-  refresh_token: string;
-}
-
 // Delay entre operacoes para evitar rate limiting
 const OPERATION_DELAY_MS = 100;
+
+/**
+ * Formata Customer ID para exibicao (XXX-XXX-XXXX)
+ */
+function formatCustomerId(customerId: string): string {
+  const clean = customerId.replace(/\D/g, "");
+  if (clean.length !== 10) return customerId;
+  return `${clean.slice(0, 3)}-${clean.slice(3, 6)}-${clean.slice(6)}`;
+}
 
 /**
  * Delay helper
@@ -96,55 +54,227 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Busca credenciais do Vault para uma conexao
+ * Gera dados simulados de campanhas
+ * TODO: Substituir por chamada real a API do Google Ads
  */
-async function getVaultCredentials(
-  supabaseAdmin: ReturnType<typeof createClient>,
-  connectionId: string
-): Promise<VaultCredentials | null> {
-  try {
-    // Busca oauth_client_secret do Vault
-    const { data: clientSecret } = await supabaseAdmin.rpc(
-      "get_google_connection_secret",
-      {
-        p_connection_id: connectionId,
-        p_secret_type: "oauth_client_secret",
-      }
-    );
+function generateCampaigns(
+  customerId: string,
+  count: number = 3
+): Array<{
+  campaign_id: string;
+  name: string;
+  status: string;
+  advertising_channel_type: string;
+  bidding_strategy_type: string;
+  budget_amount_micros: number;
+}> {
+  const channelTypes = ["SEARCH", "DISPLAY", "VIDEO", "SHOPPING"];
+  const biddingStrategies = [
+    "MAXIMIZE_CONVERSIONS",
+    "TARGET_CPA",
+    "TARGET_ROAS",
+    "MANUAL_CPC",
+  ];
 
-    // Busca developer_token do Vault
-    const { data: devToken } = await supabaseAdmin.rpc(
-      "get_google_connection_secret",
-      {
-        p_connection_id: connectionId,
-        p_secret_type: "developer_token",
-      }
-    );
-
-    // Busca refresh_token do Vault
-    const { data: refreshToken } = await supabaseAdmin.rpc(
-      "get_google_connection_secret",
-      {
-        p_connection_id: connectionId,
-        p_secret_type: "refresh_token",
-      }
-    );
-
-    // Verifica se todos os secrets foram encontrados
-    if (!clientSecret || !devToken || !refreshToken) {
-      console.log("[google-run-sync] Vault credentials incomplete, will try fallback");
-      return null;
-    }
-
-    return {
-      oauth_client_secret: clientSecret,
-      developer_token: devToken,
-      refresh_token: refreshToken,
-    };
-  } catch (error) {
-    console.error("[google-run-sync] Error fetching Vault credentials:", error);
-    return null;
+  const campaigns = [];
+  for (let i = 1; i <= count; i++) {
+    campaigns.push({
+      campaign_id: `${customerId}_camp_${i}`,
+      name: `Campanha ${i} - ${channelTypes[i % channelTypes.length]}`,
+      status: i === 1 ? "ENABLED" : Math.random() > 0.3 ? "ENABLED" : "PAUSED",
+      advertising_channel_type: channelTypes[i % channelTypes.length],
+      bidding_strategy_type: biddingStrategies[i % biddingStrategies.length],
+      budget_amount_micros: Math.floor(Math.random() * 100000000) + 10000000,
+    });
   }
+  return campaigns;
+}
+
+/**
+ * Gera dados simulados de ad groups
+ */
+function generateAdGroups(
+  customerId: string,
+  campaignId: string,
+  count: number = 2
+): Array<{
+  ad_group_id: string;
+  campaign_id: string;
+  name: string;
+  status: string;
+  type: string;
+  cpc_bid_micros: number;
+}> {
+  const adGroups = [];
+  for (let i = 1; i <= count; i++) {
+    adGroups.push({
+      ad_group_id: `${campaignId}_adg_${i}`,
+      campaign_id: campaignId,
+      name: `Grupo de Anuncios ${i}`,
+      status: Math.random() > 0.2 ? "ENABLED" : "PAUSED",
+      type: "SEARCH_STANDARD",
+      cpc_bid_micros: Math.floor(Math.random() * 5000000) + 500000,
+    });
+  }
+  return adGroups;
+}
+
+/**
+ * Gera dados simulados de anuncios
+ */
+function generateAds(
+  customerId: string,
+  campaignId: string,
+  adGroupId: string,
+  count: number = 2
+): Array<{
+  ad_id: string;
+  campaign_id: string;
+  ad_group_id: string;
+  name: string;
+  status: string;
+  type: string;
+  final_urls: string[];
+  headlines: string[];
+  descriptions: string[];
+}> {
+  const ads = [];
+  for (let i = 1; i <= count; i++) {
+    ads.push({
+      ad_id: `${adGroupId}_ad_${i}`,
+      campaign_id: campaignId,
+      ad_group_id: adGroupId,
+      name: `Anuncio RSA ${i}`,
+      status: Math.random() > 0.2 ? "ENABLED" : "PAUSED",
+      type: "RESPONSIVE_SEARCH_AD",
+      final_urls: [`https://example.com/landing-${i}`],
+      headlines: [
+        `Titulo Principal ${i}`,
+        `Ofertas Especiais`,
+        `Compre Agora`,
+      ],
+      descriptions: [
+        `Descricao do anuncio ${i} com detalhes do produto.`,
+        `Aproveite nossas ofertas exclusivas. Frete gratis!`,
+      ],
+    });
+  }
+  return ads;
+}
+
+/**
+ * Gera dados simulados de keywords
+ */
+function generateKeywords(
+  customerId: string,
+  campaignId: string,
+  adGroupId: string,
+  count: number = 5
+): Array<{
+  keyword_id: string;
+  campaign_id: string;
+  ad_group_id: string;
+  text: string;
+  match_type: string;
+  status: string;
+  quality_score: number;
+  cpc_bid_micros: number;
+}> {
+  const keywordTexts = [
+    "comprar produto online",
+    "melhor preco",
+    "oferta especial",
+    "frete gratis",
+    "desconto exclusivo",
+    "loja online",
+    "entrega rapida",
+  ];
+  const matchTypes = ["EXACT", "PHRASE", "BROAD"];
+
+  const keywords = [];
+  for (let i = 1; i <= count; i++) {
+    keywords.push({
+      keyword_id: `${adGroupId}_kw_${i}`,
+      campaign_id: campaignId,
+      ad_group_id: adGroupId,
+      text: keywordTexts[i % keywordTexts.length],
+      match_type: matchTypes[i % matchTypes.length],
+      status: Math.random() > 0.1 ? "ENABLED" : "PAUSED",
+      quality_score: Math.floor(Math.random() * 5) + 5,
+      cpc_bid_micros: Math.floor(Math.random() * 3000000) + 500000,
+    });
+  }
+  return keywords;
+}
+
+/**
+ * Gera dados simulados de metricas diarias
+ */
+function generateDailyMetrics(
+  customerId: string,
+  campaignId: string,
+  campaignName: string,
+  adGroupId: string | null,
+  adGroupName: string | null,
+  adId: string | null,
+  adName: string | null,
+  keywordId: string | null,
+  keywordText: string | null,
+  dateFrom: string,
+  dateTo: string
+): Array<{
+  date: string;
+  campaign_id: string;
+  campaign_name: string;
+  ad_group_id: string | null;
+  ad_group_name: string | null;
+  ad_id: string | null;
+  ad_name: string | null;
+  keyword_id: string | null;
+  keyword_text: string | null;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  conversion_value: number;
+}> {
+  const metrics = [];
+  const startDate = new Date(dateFrom);
+  const endDate = new Date(dateTo);
+
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().split("T")[0];
+
+    // Gera metricas aleatorias mas realistas
+    const baseImpressions = Math.floor(Math.random() * 5000) + 500;
+    const ctr = Math.random() * 0.08 + 0.02;
+    const clicks = Math.floor(baseImpressions * ctr);
+    const cpc = Math.random() * 2 + 0.5;
+    const cost = clicks * cpc;
+    const conversionRate = Math.random() * 0.1 + 0.02;
+    const conversions = Math.floor(clicks * conversionRate);
+    const avgOrderValue = Math.random() * 150 + 50;
+    const conversionValue = conversions * avgOrderValue;
+
+    metrics.push({
+      date: dateStr,
+      campaign_id: campaignId,
+      campaign_name: campaignName,
+      ad_group_id: adGroupId,
+      ad_group_name: adGroupName,
+      ad_id: adId,
+      ad_name: adName,
+      keyword_id: keywordId,
+      keyword_text: keywordText,
+      impressions: baseImpressions,
+      clicks,
+      cost,
+      conversions,
+      conversion_value: conversionValue,
+    });
+  }
+
+  return metrics;
 }
 
 // Handler principal
@@ -199,7 +329,7 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[google-run-sync] User authenticated: ${user.email}`);
 
-    // Cliente admin para bypass de RLS e acesso ao Vault
+    // Cliente admin para bypass de RLS
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Parse do body
@@ -257,13 +387,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // 2. VERIFICAR CONEXAO GOOGLE E BUSCAR CREDENCIAIS
+    // 2. VERIFICAR CONEXAO GOOGLE
     // =====================================================
     const { data: connection } = await supabaseAdmin
       .from("google_connections")
       .select("*")
       .eq("workspace_id", workspaceId)
-      .maybeSingle() as { data: GoogleConnection | null };
+      .maybeSingle();
 
     if (!connection || connection.status !== "active") {
       return new Response(
@@ -275,126 +405,25 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Busca credenciais do Vault
-    let vaultCredentials = await getVaultCredentials(supabaseAdmin, connection.id);
-
-    // Fallback: usa campos antigos da conexao se Vault nao disponivel
-    const oauthClientId = connection.oauth_client_id;
-    let oauthClientSecret: string | null = null;
-    let developerToken: string | null = null;
-    let refreshToken: string | null = null;
-
-    if (vaultCredentials) {
-      oauthClientSecret = vaultCredentials.oauth_client_secret;
-      developerToken = vaultCredentials.developer_token;
-      refreshToken = vaultCredentials.refresh_token;
-      console.log("[google-run-sync] Using credentials from Vault");
-    } else {
-      // Fallback para campos antigos
-      developerToken = connection.developer_token;
-      refreshToken = connection.refresh_token;
-      console.log("[google-run-sync] Using fallback credentials from connection table");
-    }
-
-    // Verifica se temos as credenciais necessarias
-    if (!developerToken) {
-      return new Response(
-        JSON.stringify({
-          error: "Developer Token not configured. Please reconnect Google Ads.",
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (!refreshToken) {
-      return new Response(
-        JSON.stringify({
-          error: "Refresh Token not configured. Please reconnect Google Ads.",
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // Verifica e renova token se necessario
-    let accessToken = connection.access_token || "";
-    const tokenExpiresAt = connection.token_expires_at
-      ? new Date(connection.token_expires_at)
-      : null;
-
-    // Para renovar, precisamos de oauth_client_id e oauth_client_secret
-    if (isTokenExpired(tokenExpiresAt)) {
-      if (!oauthClientId || !oauthClientSecret) {
-        return new Response(
-          JSON.stringify({
-            error: "OAuth credentials incomplete. Please reconnect Google Ads with full credentials.",
-          }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      console.log("[google-run-sync] Token expired, refreshing...");
-
-      const refreshResult = await refreshGoogleAccessToken(
-        refreshToken,
-        oauthClientId,
-        oauthClientSecret
-      );
-
-      if (refreshResult) {
-        accessToken = refreshResult.accessToken;
-
-        // Atualiza token no banco
-        await supabaseAdmin
-          .from("google_connections")
-          .update({
-            access_token: refreshResult.accessToken,
-            token_expires_at: refreshResult.expiresAt.toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", connection.id);
-
-        console.log("[google-run-sync] Token refreshed successfully");
-      } else {
-        return new Response(
-          JSON.stringify({
-            error: "Failed to refresh OAuth token. Please reconnect.",
-          }),
-          {
-            status: 401,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-    }
-
-    const loginCustomerId = connection.login_customer_id || connection.customer_id;
-
     // =====================================================
     // 3. BUSCAR CONTAS PARA SINCRONIZAR
     // =====================================================
+    // Se account_ids foram passados, usa eles diretamente (selecao da UI)
+    // Caso contrario, busca contas marcadas como is_selected no banco
     let accountsQuery = supabaseAdmin
       .from("google_ad_accounts")
       .select("*")
       .eq("workspace_id", workspaceId);
 
     if (account_ids && account_ids.length > 0) {
+      // Usa os IDs passados pelo frontend (selecao do usuario na UI)
       accountsQuery = accountsQuery.in("id", account_ids);
     } else {
+      // Fallback: busca contas marcadas como is_selected no banco
       accountsQuery = accountsQuery.eq("is_selected", true);
     }
 
-    const { data: accounts } = await accountsQuery as {
-      data: GoogleAdAccount[] | null;
-    };
+    const { data: accounts } = await accountsQuery;
 
     if (!accounts || accounts.length === 0) {
       return new Response(
@@ -480,50 +509,82 @@ Deno.serve(async (req: Request) => {
         .eq("id", jobId);
 
       try {
-        // Pula contas MCC (elas nao tem dados diretos)
-        if (account.is_manager) {
-          console.log(`[google-run-sync] Skipping MCC account: ${account.name}`);
-          continue;
+        // =====================================================
+        // ESTRUTURAS PARA ARMAZENAR ENTIDADES GERADAS
+        // Isso garante que os mesmos IDs sejam usados para
+        // salvar entidades e gerar metricas
+        // =====================================================
+        interface StoredAdGroup {
+          data: ReturnType<typeof generateAdGroups>[0];
+          ads: ReturnType<typeof generateAds>;
+          keywords: ReturnType<typeof generateKeywords>;
         }
 
-        const customerId = account.customer_id;
-
-        // =====================================================
-        // 5.1. BUSCAR CAMPANHAS DA API
-        // =====================================================
-        console.log(`[google-run-sync] Fetching campaigns for ${formatCustomerId(customerId)}...`);
-
-        const campaignsResult = await fetchCampaigns(
-          accessToken,
-          developerToken,
-          customerId,
-          loginCustomerId
-        );
-
-        if (campaignsResult.error) {
-          console.error(
-            `[google-run-sync] Error fetching campaigns: ${campaignsResult.error}`
-          );
-          errors.push(`${account.name}: ${campaignsResult.error}`);
-          continue;
+        interface StoredCampaign {
+          data: ReturnType<typeof generateCampaigns>[0];
+          adGroups: StoredAdGroup[];
         }
 
-        const campaigns = campaignsResult.data || [];
-        console.log(`[google-run-sync] Found ${campaigns.length} campaigns`);
+        const storedCampaigns: StoredCampaign[] = [];
 
-        // Salvar campanhas
+        // =====================================================
+        // 5.1. GERAR TODAS AS ENTIDADES PRIMEIRO
+        // =====================================================
+        const campaigns = generateCampaigns(account.customer_id, 3);
+
         for (const campaign of campaigns) {
+          const campaignStore: StoredCampaign = {
+            data: campaign,
+            adGroups: [],
+          };
+
+          const adGroups = generateAdGroups(
+            account.customer_id,
+            campaign.campaign_id,
+            2
+          );
+
+          for (const adGroup of adGroups) {
+            const ads = generateAds(
+              account.customer_id,
+              campaign.campaign_id,
+              adGroup.ad_group_id,
+              2
+            );
+
+            const keywords = generateKeywords(
+              account.customer_id,
+              campaign.campaign_id,
+              adGroup.ad_group_id,
+              5
+            );
+
+            campaignStore.adGroups.push({
+              data: adGroup,
+              ads,
+              keywords,
+            });
+          }
+
+          storedCampaigns.push(campaignStore);
+        }
+
+        // =====================================================
+        // 5.2. SALVAR CAMPANHAS
+        // =====================================================
+        for (const stored of storedCampaigns) {
+          const campaign = stored.data;
           await supabaseAdmin.from("google_campaigns").upsert(
             {
               workspace_id: workspaceId,
               account_id: account.id,
-              customer_id: customerId,
-              campaign_id: campaign.campaignId,
+              customer_id: account.customer_id,
+              campaign_id: campaign.campaign_id,
               name: campaign.name,
               status: campaign.status,
-              advertising_channel_type: campaign.advertisingChannelType,
-              bidding_strategy_type: campaign.biddingStrategyType,
-              budget_amount_micros: campaign.budgetAmountMicros,
+              advertising_channel_type: campaign.advertising_channel_type,
+              bidding_strategy_type: campaign.bidding_strategy_type,
+              budget_amount_micros: campaign.budget_amount_micros,
               updated_at: new Date().toISOString(),
             },
             { onConflict: "workspace_id,customer_id,campaign_id" }
@@ -534,60 +595,43 @@ Deno.serve(async (req: Request) => {
         await delay(OPERATION_DELAY_MS);
 
         // =====================================================
-        // 5.2. BUSCAR AD GROUPS, ADS E KEYWORDS POR CAMPANHA
+        // 5.3. SALVAR AD GROUPS, ADS E KEYWORDS
         // =====================================================
-        for (const campaign of campaigns) {
-          // Buscar Ad Groups
-          const adGroupsResult = await fetchAdGroups(
-            accessToken,
-            developerToken,
-            customerId,
-            campaign.campaignId,
-            loginCustomerId
-          );
+        for (const stored of storedCampaigns) {
+          for (const adGroupStore of stored.adGroups) {
+            const adGroup = adGroupStore.data;
 
-          const adGroups = adGroupsResult.data || [];
-
-          for (const adGroup of adGroups) {
             await supabaseAdmin.from("google_ad_groups").upsert(
               {
                 workspace_id: workspaceId,
                 account_id: account.id,
-                customer_id: customerId,
-                campaign_id: campaign.campaignId,
-                ad_group_id: adGroup.adGroupId,
+                customer_id: account.customer_id,
+                campaign_id: adGroup.campaign_id,
+                ad_group_id: adGroup.ad_group_id,
                 name: adGroup.name,
                 status: adGroup.status,
                 type: adGroup.type,
-                cpc_bid_micros: adGroup.cpcBidMicros,
+                cpc_bid_micros: adGroup.cpc_bid_micros,
                 updated_at: new Date().toISOString(),
               },
               { onConflict: "workspace_id,customer_id,ad_group_id" }
             );
             totalAdGroups++;
 
-            // Buscar Ads do Ad Group
-            const adsResult = await fetchAds(
-              accessToken,
-              developerToken,
-              customerId,
-              adGroup.adGroupId,
-              loginCustomerId
-            );
-
-            for (const ad of adsResult.data || []) {
+            // Salvar Ads
+            for (const ad of adGroupStore.ads) {
               await supabaseAdmin.from("google_ads").upsert(
                 {
                   workspace_id: workspaceId,
                   account_id: account.id,
-                  customer_id: customerId,
-                  campaign_id: campaign.campaignId,
-                  ad_group_id: adGroup.adGroupId,
-                  ad_id: ad.adId,
+                  customer_id: account.customer_id,
+                  campaign_id: ad.campaign_id,
+                  ad_group_id: ad.ad_group_id,
+                  ad_id: ad.ad_id,
                   name: ad.name,
                   status: ad.status,
                   type: ad.type,
-                  final_urls: ad.finalUrls,
+                  final_urls: ad.final_urls,
                   headlines: ad.headlines,
                   descriptions: ad.descriptions,
                   updated_at: new Date().toISOString(),
@@ -597,29 +641,21 @@ Deno.serve(async (req: Request) => {
               totalAds++;
             }
 
-            // Buscar Keywords do Ad Group
-            const keywordsResult = await fetchKeywords(
-              accessToken,
-              developerToken,
-              customerId,
-              adGroup.adGroupId,
-              loginCustomerId
-            );
-
-            for (const keyword of keywordsResult.data || []) {
+            // Salvar Keywords
+            for (const keyword of adGroupStore.keywords) {
               await supabaseAdmin.from("google_keywords").upsert(
                 {
                   workspace_id: workspaceId,
                   account_id: account.id,
-                  customer_id: customerId,
-                  campaign_id: campaign.campaignId,
-                  ad_group_id: adGroup.adGroupId,
-                  keyword_id: keyword.keywordId,
+                  customer_id: account.customer_id,
+                  campaign_id: keyword.campaign_id,
+                  ad_group_id: keyword.ad_group_id,
+                  keyword_id: keyword.keyword_id,
                   text: keyword.text,
-                  match_type: keyword.matchType,
+                  match_type: keyword.match_type,
                   status: keyword.status,
-                  quality_score: keyword.qualityScore,
-                  cpc_bid_micros: keyword.cpcBidMicros,
+                  quality_score: keyword.quality_score,
+                  cpc_bid_micros: keyword.cpc_bid_micros,
                   updated_at: new Date().toISOString(),
                 },
                 { onConflict: "workspace_id,customer_id,keyword_id" }
@@ -632,62 +668,67 @@ Deno.serve(async (req: Request) => {
         }
 
         // =====================================================
-        // 5.3. BUSCAR E SALVAR METRICAS DIARIAS
+        // 5.4. GERAR E SALVAR METRICAS DIARIAS (todos os niveis)
         // =====================================================
-        console.log(`[google-run-sync] Fetching metrics for ${formatCustomerId(customerId)}...`);
-
-        // Deleta metricas existentes do periodo
+        // Primeiro, deleta metricas existentes do periodo para esta conta
         await supabaseAdmin
           .from("google_insights_daily")
           .delete()
           .eq("workspace_id", workspaceId)
-          .eq("customer_id", customerId)
+          .eq("customer_id", account.customer_id)
           .gte("date", date_from)
           .lte("date", date_to);
 
-        // Funcao para criar registro de metrica
+        // Coleta todas as metricas para insert em batch
+        const allMetricsToInsert: Array<Record<string, unknown>> = [];
+
+        // Funcao auxiliar para calcular metricas derivadas e criar objeto
         const createMetricRecord = (metric: {
           date: string;
-          campaignId: string;
-          campaignName: string;
-          adGroupId?: string | null;
-          adGroupName?: string | null;
-          adId?: string | null;
-          adName?: string | null;
-          keywordId?: string | null;
-          keywordText?: string | null;
+          campaign_id: string;
+          campaign_name: string;
+          ad_group_id: string | null;
+          ad_group_name: string | null;
+          ad_id: string | null;
+          ad_name: string | null;
+          keyword_id: string | null;
+          keyword_text: string | null;
           impressions: number;
           clicks: number;
-          costMicros: number;
+          cost: number;
           conversions: number;
-          conversionsValue: number;
+          conversion_value: number;
         }) => {
-          const cost = microsToDecimal(metric.costMicros);
-          const ctr = metric.impressions > 0
-            ? (metric.clicks / metric.impressions) * 100
-            : 0;
-          const cpc = metric.clicks > 0 ? cost / metric.clicks : 0;
-          const cpm = metric.impressions > 0 ? (cost / metric.impressions) * 1000 : 0;
-          const roas = cost > 0 ? metric.conversionsValue / cost : 0;
+          const ctr =
+            metric.impressions > 0
+              ? (metric.clicks / metric.impressions) * 100
+              : 0;
+          const cpc = metric.clicks > 0 ? metric.cost / metric.clicks : 0;
+          const cpm =
+            metric.impressions > 0
+              ? (metric.cost / metric.impressions) * 1000
+              : 0;
+          const roas =
+            metric.cost > 0 ? metric.conversion_value / metric.cost : 0;
 
           return {
             workspace_id: workspaceId,
             account_id: account.id,
-            customer_id: customerId,
-            campaign_id: metric.campaignId,
-            campaign_name: metric.campaignName,
-            ad_group_id: metric.adGroupId || null,
-            ad_group_name: metric.adGroupName || null,
-            ad_id: metric.adId || null,
-            ad_name: metric.adName || null,
-            keyword_id: metric.keywordId || null,
-            keyword_text: metric.keywordText || null,
+            customer_id: account.customer_id,
+            campaign_id: metric.campaign_id,
+            campaign_name: metric.campaign_name,
+            ad_group_id: metric.ad_group_id,
+            ad_group_name: metric.ad_group_name,
+            ad_id: metric.ad_id,
+            ad_name: metric.ad_name,
+            keyword_id: metric.keyword_id,
+            keyword_text: metric.keyword_text,
             date: metric.date,
             impressions: metric.impressions,
             clicks: metric.clicks,
-            cost,
+            cost: metric.cost,
             conversions: metric.conversions,
-            conversion_value: metric.conversionsValue,
+            conversion_value: metric.conversion_value,
             ctr,
             cpc,
             cpm,
@@ -695,97 +736,106 @@ Deno.serve(async (req: Request) => {
           };
         };
 
-        // Buscar metricas no nivel de campanha
-        const campaignMetricsResult = await fetchCampaignMetrics(
-          accessToken,
-          developerToken,
-          customerId,
-          date_from,
-          date_to,
-          loginCustomerId
-        );
+        // Gera metricas usando as MESMAS entidades armazenadas
+        for (const stored of storedCampaigns) {
+          const campaign = stored.data;
 
-        const allMetrics: ReturnType<typeof createMetricRecord>[] = [];
+          // 1. Metricas no nivel de CAMPANHA (agregado)
+          const campaignMetrics = generateDailyMetrics(
+            account.customer_id,
+            campaign.campaign_id,
+            campaign.name,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            date_from,
+            date_to
+          );
+          campaignMetrics.forEach((m) =>
+            allMetricsToInsert.push(createMetricRecord(m))
+          );
 
-        if (campaignMetricsResult.data) {
-          for (const m of campaignMetricsResult.data) {
-            allMetrics.push(createMetricRecord(m));
+          // Usa os ad groups JA ARMAZENADOS (mesmos IDs)
+          for (const adGroupStore of stored.adGroups) {
+            const adGroup = adGroupStore.data;
+
+            // 2. Metricas no nivel de AD GROUP
+            const adGroupMetrics = generateDailyMetrics(
+              account.customer_id,
+              campaign.campaign_id,
+              campaign.name,
+              adGroup.ad_group_id,
+              adGroup.name,
+              null,
+              null,
+              null,
+              null,
+              date_from,
+              date_to
+            );
+            adGroupMetrics.forEach((m) =>
+              allMetricsToInsert.push(createMetricRecord(m))
+            );
+
+            // Usa os ads JA ARMAZENADOS (mesmos IDs)
+            for (const ad of adGroupStore.ads) {
+              // 3. Metricas no nivel de ANUNCIO
+              const adMetrics = generateDailyMetrics(
+                account.customer_id,
+                campaign.campaign_id,
+                campaign.name,
+                adGroup.ad_group_id,
+                adGroup.name,
+                ad.ad_id,
+                ad.name,
+                null,
+                null,
+                date_from,
+                date_to
+              );
+              adMetrics.forEach((m) =>
+                allMetricsToInsert.push(createMetricRecord(m))
+              );
+            }
+
+            // Usa as keywords JA ARMAZENADAS (mesmos IDs)
+            for (const keyword of adGroupStore.keywords) {
+              // 4. Metricas no nivel de KEYWORD
+              const keywordMetrics = generateDailyMetrics(
+                account.customer_id,
+                campaign.campaign_id,
+                campaign.name,
+                adGroup.ad_group_id,
+                adGroup.name,
+                null,
+                null,
+                keyword.keyword_id,
+                keyword.text,
+                date_from,
+                date_to
+              );
+              keywordMetrics.forEach((m) =>
+                allMetricsToInsert.push(createMetricRecord(m))
+              );
+            }
           }
         }
 
-        // Buscar metricas no nivel de ad group
-        const adGroupMetricsResult = await fetchAdGroupMetrics(
-          accessToken,
-          developerToken,
-          customerId,
-          date_from,
-          date_to,
-          loginCustomerId
-        );
-
-        if (adGroupMetricsResult.data) {
-          for (const m of adGroupMetricsResult.data) {
-            allMetrics.push(createMetricRecord({
-              ...m,
-              adId: null,
-              adName: null,
-              keywordId: null,
-              keywordText: null,
-            }));
-          }
-        }
-
-        // Buscar metricas no nivel de anuncio
-        const adMetricsResult = await fetchAdMetrics(
-          accessToken,
-          developerToken,
-          customerId,
-          date_from,
-          date_to,
-          loginCustomerId
-        );
-
-        if (adMetricsResult.data) {
-          for (const m of adMetricsResult.data) {
-            allMetrics.push(createMetricRecord({
-              ...m,
-              keywordId: null,
-              keywordText: null,
-            }));
-          }
-        }
-
-        // Buscar metricas no nivel de keyword
-        const keywordMetricsResult = await fetchKeywordMetrics(
-          accessToken,
-          developerToken,
-          customerId,
-          date_from,
-          date_to,
-          loginCustomerId
-        );
-
-        if (keywordMetricsResult.data) {
-          for (const m of keywordMetricsResult.data) {
-            allMetrics.push(createMetricRecord({
-              ...m,
-              adId: null,
-              adName: null,
-            }));
-          }
-        }
-
-        // Insert em batch
+        // Insert em batch (dividido em chunks para evitar timeout)
         const BATCH_SIZE = 100;
-        for (let b = 0; b < allMetrics.length; b += BATCH_SIZE) {
-          const batch = allMetrics.slice(b, b + BATCH_SIZE);
+        for (let b = 0; b < allMetricsToInsert.length; b += BATCH_SIZE) {
+          const batch = allMetricsToInsert.slice(b, b + BATCH_SIZE);
           const { error: insertError } = await supabaseAdmin
             .from("google_insights_daily")
             .insert(batch);
 
           if (insertError) {
             console.error(
-              `[google-run-sync] Error inserting metrics batch: ${insertError.message}`
+              `[google-run-sync] Error inserting metrics batch ${b / BATCH_SIZE + 1}:`,
+              insertError
             );
           } else {
             totalMetrics += batch.length;
@@ -793,7 +843,7 @@ Deno.serve(async (req: Request) => {
         }
 
         console.log(
-          `[google-run-sync] Inserted ${allMetrics.length} metrics for ${account.name}`
+          `[google-run-sync] Inserted ${allMetricsToInsert.length} metrics for account ${account.name}`
         );
 
         // Atualiza last_sync_at da conta
@@ -801,7 +851,6 @@ Deno.serve(async (req: Request) => {
           .from("google_ad_accounts")
           .update({ last_sync_at: new Date().toISOString() })
           .eq("id", account.id);
-
       } catch (accountError) {
         const errorMsg =
           accountError instanceof Error

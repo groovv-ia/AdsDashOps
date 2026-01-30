@@ -292,16 +292,6 @@ Deno.serve(async (req: Request) => {
       last_sync_at: acc.last_sync_at,
     }));
 
-    // Verifica se OAuth esta configurado
-    const hasOAuth = connection
-      ? Boolean(connection.access_token && connection.refresh_token)
-      : false;
-
-    // Verifica se token esta expirado
-    const tokenExpired = connection?.token_expires_at
-      ? new Date(connection.token_expires_at) < new Date()
-      : false;
-
     const response = {
       workspace: {
         id: workspaceId,
@@ -312,14 +302,8 @@ Deno.serve(async (req: Request) => {
             status: connection.status,
             customer_id: connection.customer_id,
             customer_id_formatted: formatCustomerId(connection.customer_id),
-            login_customer_id: connection.login_customer_id
-              ? formatCustomerId(connection.login_customer_id)
-              : null,
             last_validated_at: connection.last_validated_at,
             error_message: connection.error_message,
-            has_oauth: hasOAuth,
-            oauth_email: connection.oauth_email || null,
-            token_expired: tokenExpired,
           }
         : null,
       health_status: healthStatus,

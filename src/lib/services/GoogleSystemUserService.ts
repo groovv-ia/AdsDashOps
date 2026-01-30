@@ -74,29 +74,16 @@ async function callEdgeFunction<T>(
 // ============================================
 
 /**
- * Parametros para validacao de conexao Google Ads
- * Inclui todas as credenciais OAuth necessarias
- */
-export interface ValidateGoogleConnectionParams {
-  oauth_client_id: string;
-  oauth_client_secret: string;
-  refresh_token: string;
-  developer_token: string;
-  customer_id: string;
-  login_customer_id?: string;
-}
-
-/**
  * Valida as credenciais do Google Ads e salva a conexao
  * Chama a Edge Function google-validate-connection
- *
- * IMPORTANTE: Todas as credenciais OAuth sao fornecidas pelo usuario.
- * Nao usamos variaveis de ambiente para credenciais - cada conexao tem suas proprias.
- *
- * @param params - Objeto contendo todas as credenciais necessarias
+ * @param developerToken - Token de desenvolvedor do Google Ads
+ * @param customerId - ID do cliente (MCC ou conta individual)
+ * @param loginCustomerId - ID de login opcional para acesso MCC
  */
 export async function validateGoogleConnection(
-  params: ValidateGoogleConnectionParams
+  developerToken: string,
+  customerId: string,
+  loginCustomerId?: string
 ): Promise<ValidateGoogleConnectionResponse> {
   try {
     console.log('[GoogleSystemUserService] Validando conexao via Edge Function...');
@@ -115,14 +102,10 @@ export async function validateGoogleConnection(
         is_manager: boolean;
       }>;
       error?: string;
-      hint?: string;
     }>('google-validate-connection', 'POST', {
-      oauth_client_id: params.oauth_client_id,
-      oauth_client_secret: params.oauth_client_secret,
-      refresh_token: params.refresh_token,
-      developer_token: params.developer_token,
-      customer_id: params.customer_id,
-      login_customer_id: params.login_customer_id,
+      developer_token: developerToken,
+      customer_id: customerId,
+      login_customer_id: loginCustomerId,
     });
 
     if (result.status === 'connected') {
