@@ -4,3 +4,6 @@
 
 export { GoogleAdminPage } from './GoogleAdminPage';
 export { GoogleAdsSyncPage } from './GoogleAdsSyncPage';
+export { GoogleCampaignsPage } from './GoogleCampaignsPage';
+export { GoogleCampaignCard } from './GoogleCampaignCard';
+export { GoogleCampaignDetailPage } from './GoogleCampaignDetailPage';

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw } from 'lucide-react';
+import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3 } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 import { UpgradeBanner } from './UpgradeBanner';
 
@@ -56,6 +56,7 @@ const menuSections: MenuSection[] = [
     items: [
       { icon: Link, label: 'Conexao Google', page: 'google-admin' },
       { icon: RefreshCw, label: 'Google Ads Sync', page: 'google-sync' },
+      { icon: BarChart3, label: 'Ver Campanhas', page: 'google-campaigns' },
     ],
   },
 ];
@@ -101,8 +102,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   // Verifica se algum item da secao esta ativo
+  // Inclui paginas de detalhes que nao estao no menu mas pertencem a secao
   const isSectionActive = (section: MenuSection) => {
-    return section.items.some(item => item.page === currentPage);
+    const sectionPages = section.items.map(item => item.page);
+    // Adiciona paginas de detalhes para cada secao
+    if (section.id === 'google') {
+      sectionPages.push('google-campaign-detail');
+    }
+    return sectionPages.includes(currentPage);
   };
 
   return (
@@ -187,7 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {/* Itens da secao - com animacao */}
                     <div className={`
                       overflow-hidden transition-all duration-200 ease-in-out
-                      ${isExpanded ? 'max-h-40 opacity-100 mt-1' : 'max-h-0 opacity-0'}
+                      ${isExpanded ? 'max-h-48 opacity-100 mt-1' : 'max-h-0 opacity-0'}
                     `}>
                       <div className="pl-4 space-y-0.5">
                         {section.items.map((item, itemIndex) => {

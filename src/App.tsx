@@ -22,7 +22,7 @@ import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPag
 import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
 import { WorkspacesPage } from './components/workspaces/WorkspacesPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
-import { GoogleAdminPage, GoogleAdsSyncPage } from './components/google-admin';
+import { GoogleAdminPage, GoogleAdsSyncPage, GoogleCampaignsPage, GoogleCampaignDetailPage } from './components/google-admin';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -53,6 +53,7 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState('meta-admin');
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [selectedGoogleCampaignId, setSelectedGoogleCampaignId] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     platforms: [] as string[],
     campaigns: [] as string[],
@@ -363,6 +364,29 @@ function AppContent() {
         return <GoogleAdminPage />;
       case 'google-sync':
         return <GoogleAdsSyncPage onNavigate={setCurrentPage} />;
+      case 'google-campaigns':
+        return (
+          <GoogleCampaignsPage
+            onNavigateToCampaignDetail={(campaignId) => {
+              setSelectedGoogleCampaignId(campaignId);
+              setCurrentPage('google-campaign-detail');
+            }}
+          />
+        );
+      case 'google-campaign-detail':
+        if (!selectedGoogleCampaignId) {
+          setCurrentPage('google-campaigns');
+          return null;
+        }
+        return (
+          <GoogleCampaignDetailPage
+            campaignId={selectedGoogleCampaignId}
+            onBack={() => {
+              setSelectedGoogleCampaignId(null);
+              setCurrentPage('google-campaigns');
+            }}
+          />
+        );
       case 'ai-insights':
         return (
           <AIInsightsPanel
