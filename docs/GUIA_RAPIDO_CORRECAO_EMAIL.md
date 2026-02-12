@@ -1,24 +1,122 @@
-<!--
-  ╔══════════════════════════════════════════════════════════════════════════╗
-  ║  TEMPLATE SIMPLIFICADO - CONFIRMAÇÃO DE CADASTRO                          ║
-  ║  AdsOps Analytics                                                         ║
-  ╚══════════════════════════════════════════════════════════════════════════╝
+# Guia Rápido: Corrigir Template de Email no Supabase
 
-  📋 INSTRUÇÕES DE USO:
+## 🎯 Objetivo
 
-  1. Acesse: Supabase Dashboard > Authentication > Email Templates
-  2. Selecione: "Confirm signup"
-  3. Cole este código no campo de texto (CTRL+A para selecionar tudo)
-  4. Clique em "Save"
-  5. Teste criando uma nova conta
+Corrigir o erro **"Token de confirmação inválido ou ausente"** atualizando o template de email no Supabase Dashboard.
 
-  ⚠️ CRÍTICO:
-  - Use APENAS {{ .ConfirmationURL }} no link
-  - NÃO use {{ .Token }}, {{ .TokenHash }} ou construa URLs manualmente
-  - Configure Site URL: https://adsops.bolt.host
-  - Configure Redirect URL: https://adsops.bolt.host/auth/callback
--->
+---
 
+## ⚡ Passos Rápidos (3 minutos)
+
+### 1️⃣ Acesse o Supabase Dashboard
+
+- URL: https://app.supabase.com/
+- Selecione seu projeto: **AdsOps Analytics**
+- Vá em: **Authentication** → **Email Templates** → **Confirm signup**
+
+### 2️⃣ Copie o Template Correto
+
+Abra o arquivo do projeto:
+```
+docs/email-templates/confirmation-simple.html
+```
+
+Ou copie diretamente daqui: [Template no final deste documento](#template-corrigido)
+
+### 3️⃣ Cole no Supabase
+
+1. Selecione TODO o conteúdo do campo (CTRL+A)
+2. Delete o conteúdo antigo
+3. Cole o novo template
+4. Clique em **Save**
+
+### 4️⃣ Configure URLs
+
+Ainda no Supabase, vá em **Authentication** → **URL Configuration**:
+
+**Site URL:**
+```
+https://adsops.bolt.host
+```
+
+**Redirect URLs** (adicione estas 3 linhas):
+```
+https://adsops.bolt.host
+https://adsops.bolt.host/auth/callback
+https://adsops.bolt.host/**
+```
+
+Clique em **Save**
+
+### 5️⃣ Teste
+
+1. Limpe o cache do navegador (CTRL+SHIFT+DEL)
+2. Faça um novo cadastro
+3. Verifique o email
+4. Clique no link de confirmação
+5. Deve funcionar!
+
+---
+
+## 🔍 Como Saber se Está Correto?
+
+### ✅ Template CORRETO usa:
+
+```html
+<a href="{{ .ConfirmationURL }}">Confirmar Email</a>
+```
+
+### ❌ Template INCORRETO usa:
+
+```html
+<!-- NÃO use nada disso: -->
+<a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}">...</a>
+<a href="{{ .SiteURL }}/auth/callback?token={{ .Token }}">...</a>
+```
+
+**Regra de ouro:** Use APENAS `{{ .ConfirmationURL }}` no link!
+
+---
+
+## 🚨 Troubleshooting
+
+### Problema: "Email não chega"
+- Verifique spam
+- Aguarde até 2 minutos
+- Tente reenviar o email de confirmação
+
+### Problema: "Token ainda inválido"
+- Certifique-se que salvou o template
+- Limpe completamente o cache do navegador
+- Delete o usuário antigo no Supabase e cadastre novamente
+- Verifique se as URLs estão corretas
+
+### Problema: "Botão não funciona no email"
+- Use o link alternativo (texto) que aparece no email
+- Copie e cole no navegador manualmente
+
+---
+
+## 📝 Checklist Final
+
+Antes de testar, certifique-se:
+
+- [ ] Template atualizado com `{{ .ConfirmationURL }}`
+- [ ] Template salvo no Supabase (botão "Save" clicado)
+- [ ] Site URL: `https://adsops.bolt.host`
+- [ ] Redirect URLs adicionadas (3 URLs)
+- [ ] URLs salvas (botão "Save" clicado)
+- [ ] Cache do navegador limpo
+- [ ] Pronto para testar novo cadastro!
+
+---
+
+## 📄 Template Corrigido
+
+<details>
+<summary><strong>Clique aqui para ver o template completo (copie este código)</strong></summary>
+
+```html
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
 
   <!-- Header -->
@@ -93,3 +191,23 @@
   </div>
 
 </div>
+```
+
+</details>
+
+---
+
+## 📞 Suporte
+
+Se após seguir todos os passos ainda houver problemas:
+
+1. Verifique os logs do console (F12 no navegador)
+2. Confirme que as variáveis de ambiente estão corretas
+3. Tente usar outro email para testar
+4. Verifique se o email não está sendo bloqueado pelo provedor
+
+---
+
+**Última atualização:** 2026-02-12
+**Tempo estimado:** 3-5 minutos
+**Dificuldade:** Fácil

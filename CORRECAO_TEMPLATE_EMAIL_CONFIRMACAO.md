@@ -1,60 +1,130 @@
 # Correção do Template de Email de Confirmação
 
-## Problema Identificado
+## 🚨 Problema Identificado
 
-O erro "Token de confirmação inválido ou ausente" ocorre porque o template de email no Supabase está configurado incorretamente, gerando URLs com tokens truncados ou inválidos.
+O erro **"Token de confirmação inválido ou ausente"** ocorre porque o template de email no Supabase está gerando URLs com tokens truncados.
 
-**Exemplo de URL incorreta:**
+**Exemplo de URL INCORRETA que causa o erro:**
+```
+https://adsops.bolt.host/auth/callback?token_hash=f220b134df9...8&type=signup
+                                                             ↑
+                                                    Token truncado!
+```
+
+**Exemplo de URL CORRETA que deveria ser gerada:**
 ```
 https://adsops.bolt.host/auth/callback?token_hash=f220b134df9deb0a51ad28050d24ac319c515dc2ba06a7af634b36bf8&type=signup
+                                                  ↑
+                                        Token completo de 64 caracteres
 ```
 
-O `token_hash` está incompleto, causando falha na validação.
+## 🔍 Causa Raiz
 
-## Causa Raiz
+O template atual está usando **construção manual da URL** com variáveis separadas como:
+- `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup` ❌
 
-O template está usando **construção manual da URL** com variáveis como `{{ .TokenHash }}` ao invés de usar a variável pronta `{{ .ConfirmationURL }}` fornecida pelo Supabase.
+Ao invés de usar a variável pronta do Supabase:
+- `{{ .ConfirmationURL }}` ✅
 
 ---
 
-## Solução: Corrigir Template no Supabase Dashboard
+## ✅ Solução: Atualizar Template no Supabase
 
 ### Passo 1: Acessar Email Templates
 
-1. Acesse o [Supabase Dashboard](https://app.supabase.com/)
-2. Selecione seu projeto
-3. No menu lateral, vá em **Authentication** > **Email Templates**
-4. Clique na aba **Confirm signup**
+1. Acesse [Supabase Dashboard](https://app.supabase.com/)
+2. Selecione seu projeto AdsOps
+3. Menu lateral: **Authentication** > **Email Templates**
+4. Clique na aba: **Confirm signup**
 
 ### Passo 2: Substituir o Template
 
-**Substitua o template atual pelo código correto abaixo:**
+**Opção 1: Template Simples (Recomendado)**
+
+Abra o arquivo `docs/email-templates/confirmation-simple.html` e copie todo o conteúdo.
+
+Ou use este código abaixo:
 
 ```html
-<h2>Bem-vindo ao AdsOps Analytics!</h2>
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
 
-<p>Obrigado por se cadastrar na nossa plataforma.</p>
+  <!-- Header -->
+  <div style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 30px 20px; text-align: center; border-radius: 12px 12px 0 0;">
+    <h1 style="color: #ffffff; font-size: 28px; font-weight: 700; margin: 0;">
+      AdsOps Analytics
+    </h1>
+    <p style="color: #e0e7ff; font-size: 13px; margin: 8px 0 0 0;">
+      Plataforma de Análise de Campanhas
+    </p>
+  </div>
 
-<p>Para ativar sua conta e começar a usar, clique no botão abaixo para confirmar seu email:</p>
+  <!-- Conteúdo -->
+  <div style="padding: 30px 20px; background-color: #f9fafb;">
 
-<p>
-  <a href="{{ .ConfirmationURL }}"
-     style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
-    Confirmar Email
-  </a>
-</p>
+    <h2 style="color: #111827; font-size: 22px; font-weight: 600; margin: 0 0 16px 0; text-align: center;">
+      Bem-vindo ao AdsOps! 🎉
+    </h2>
 
-<p>Ou copie e cole este link no seu navegador:</p>
-<p style="word-break: break-all; color: #6b7280;">{{ .ConfirmationURL }}</p>
+    <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 12px 0;">
+      Obrigado por se cadastrar na nossa plataforma.
+    </p>
 
-<p style="margin-top: 32px; color: #6b7280; font-size: 14px;">
-  Se você não solicitou este cadastro, ignore este email.
-</p>
+    <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 24px 0;">
+      Para ativar sua conta e começar a usar todas as funcionalidades, clique no botão abaixo para confirmar seu email:
+    </p>
 
-<p style="color: #6b7280; font-size: 14px;">
-  Equipe AdsOps Analytics
-</p>
+    <!-- Botão CTA -->
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="{{ .ConfirmationURL }}"
+         style="display: inline-block; padding: 14px 32px; background-color: #3b82f6; color: #ffffff; font-size: 16px; font-weight: 700; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">
+        ✓ Confirmar Meu Email
+      </a>
+    </div>
+
+    <!-- Separador -->
+    <div style="border-top: 1px solid #e5e7eb; margin: 25px 0;"></div>
+
+    <!-- Link Alternativo -->
+    <p style="color: #9ca3af; font-size: 13px; line-height: 1.5; margin: 0 0 10px 0; text-align: center;">
+      Se o botão não funcionar, copie e cole este link no navegador:
+    </p>
+    <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; margin: 0 0 24px 0;">
+      <p style="color: #3b82f6; font-size: 12px; line-height: 1.5; margin: 0; word-break: break-all; text-align: center; font-family: monospace;">
+        {{ .ConfirmationURL }}
+      </p>
+    </div>
+
+    <!-- Avisos -->
+    <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 0 0 16px 0;">
+      <p style="color: #92400e; font-size: 13px; line-height: 1.5; margin: 0;">
+        <strong>⏱️ Importante:</strong> Este link expira em 24 horas.
+      </p>
+    </div>
+
+    <div style="background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 0;">
+      <p style="color: #065f46; font-size: 13px; line-height: 1.5; margin: 0;">
+        <strong>🔒 Segurança:</strong> Se você não criou esta conta, ignore este email.
+      </p>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div style="padding: 20px; text-align: center; background-color: #f3f4f6; border-radius: 0 0 12px 12px;">
+    <p style="color: #6b7280; font-size: 12px; line-height: 1.5; margin: 0 0 6px 0;">
+      <strong>AdsOps Analytics</strong> - Plataforma de Análise de Campanhas
+    </p>
+    <p style="color: #9ca3af; font-size: 11px; line-height: 1.4; margin: 0;">
+      Este é um email automático. Não responda a esta mensagem.
+    </p>
+  </div>
+
+</div>
 ```
+
+**Opção 2: Template Completo com Mais Recursos**
+
+Para um template mais elaborado, use o arquivo `docs/email-templates/confirmation.html`.
 
 ### Passo 3: Configurar URLs de Redirecionamento
 
