@@ -1,0 +1,36 @@
+<!--
+  TEMPLATE SIMPLIFICADO PARA SUPABASE
+
+  Este template é otimizado para ser copiado e colado diretamente
+  no campo "Confirm signup" do Supabase Email Templates.
+
+  INSTRUÇÕES:
+  1. Acesse Supabase Dashboard > Authentication > Email Templates
+  2. Selecione "Confirm signup"
+  3. Cole este código no campo de texto
+  4. Clique em "Save"
+-->
+
+<h2>Bem-vindo ao AdsOps Analytics!</h2>
+
+<p>Obrigado por se cadastrar na nossa plataforma.</p>
+
+<p>Para ativar sua conta e começar a usar, clique no botão abaixo para confirmar seu email:</p>
+
+<p>
+  <a href="{{ .ConfirmationURL }}"
+     style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
+    Confirmar Email
+  </a>
+</p>
+
+<p>Ou copie e cole este link no seu navegador:</p>
+<p style="word-break: break-all; color: #6b7280;">{{ .ConfirmationURL }}</p>
+
+<p style="margin-top: 32px; color: #6b7280; font-size: 14px;">
+  Se você não solicitou este cadastro, ignore este email.
+</p>
+
+<p style="color: #6b7280; font-size: 14px;">
+  Equipe AdsOps Analytics
+</p>
