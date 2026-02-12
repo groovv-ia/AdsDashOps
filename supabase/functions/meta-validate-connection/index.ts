@@ -1,10 +1,11 @@
 /**
  * Edge Function: meta-validate-connection
- * 
+ *
  * Valida um token de System User do Meta e salva a conexão no banco.
- * 
- * CORREÇÃO: O onConflict agora usa a constraint composta correta
- * (workspace_id, meta_ad_account_id) ao invés de só meta_ad_account_id.
+ *
+ * CORREÇÃO PRINCIPAL: Usa endpoints /{bm_id}/owned_ad_accounts e
+ * /{bm_id}/client_ad_accounts ao invés de me/adaccounts, para retornar
+ * SOMENTE as contas de anúncio do Business Manager específico.
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -32,14 +33,16 @@ interface MetaPermissionsResponse {
   error?: { message: string; code: number };
 }
 
+interface MetaAdAccount {
+  id: string;
+  name: string;
+  account_status: number;
+  currency: string;
+  timezone_name: string;
+}
+
 interface MetaAdAccountsResponse {
-  data: Array<{
-    id: string;
-    name: string;
-    account_status: number;
-    currency: string;
-    timezone_name: string;
-  }>;
+  data: MetaAdAccount[];
   paging?: { cursors: { after: string }; next: string };
   error?: { message: string; code: number };
 }
@@ -59,6 +62,45 @@ function mapAccountStatus(status: number): string {
     202: "ANY_CLOSED",
   };
   return statusMap[status] || "UNKNOWN";
+}
+
+/**
+ * Busca ad accounts paginadas de um endpoint específico da Meta API.
+ * Usado para buscar owned_ad_accounts e client_ad_accounts separadamente.
+ */
+async function fetchPaginatedAdAccounts(
+  baseUrl: string,
+  token: string,
+  label: string
+): Promise<{ accounts: MetaAdAccount[]; error?: string }> {
+  const accounts: MetaAdAccount[] = [];
+  let nextUrl: string | null =
+    `${baseUrl}?fields=id,name,account_status,currency,timezone_name&limit=100&access_token=${token}`;
+  let pageCount = 0;
+  const maxPages = 50;
+
+  while (nextUrl && pageCount < maxPages) {
+    pageCount++;
+    console.log(`[meta-validate-connection] ${label} - page ${pageCount}...`);
+
+    const response = await fetch(nextUrl);
+    const data: MetaAdAccountsResponse = await response.json();
+
+    if (data.error) {
+      console.error(`[meta-validate-connection] ${label} error:`, data.error);
+      // Retorna o que já foi coletado sem interromper (endpoint pode não existir para alguns BMs)
+      return { accounts };
+    }
+
+    if (data.data && data.data.length > 0) {
+      accounts.push(...data.data);
+      console.log(`[meta-validate-connection] ${label} page ${pageCount}: ${data.data.length} (total: ${accounts.length})`);
+    }
+
+    nextUrl = data.paging?.next || null;
+  }
+
+  return { accounts };
 }
 
 Deno.serve(async (req: Request) => {
@@ -165,71 +207,65 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // 3. BUSCAR TODAS AS AD ACCOUNTS COM PAGINAÇÃO
+    // 3. BUSCAR AD ACCOUNTS DO BUSINESS MANAGER ESPECÍFICO
+    //    Usa owned_ad_accounts + client_ad_accounts ao invés de me/adaccounts
+    //    para retornar SOMENTE contas deste BM
     // =====================================================
-    const allAdAccounts: Array<{
-      id: string;
-      name: string;
-      account_status: number;
-      currency: string;
-      timezone_name: string;
-    }> = [];
+    const bmBaseUrl = `https://graph.facebook.com/v21.0/${business_manager_id}`;
 
-    let nextUrl: string | null =
-      `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_status,currency,timezone_name&limit=100&access_token=${system_user_token}`;
+    // Busca contas próprias do BM (owned)
+    const { accounts: ownedAccounts } = await fetchPaginatedAdAccounts(
+      `${bmBaseUrl}/owned_ad_accounts`,
+      system_user_token,
+      "owned_ad_accounts"
+    );
 
-    let pageCount = 0;
-    const maxPages = 50;
+    // Busca contas de clientes gerenciados pelo BM (client)
+    const { accounts: clientAccounts } = await fetchPaginatedAdAccounts(
+      `${bmBaseUrl}/client_ad_accounts`,
+      system_user_token,
+      "client_ad_accounts"
+    );
 
-    while (nextUrl && pageCount < maxPages) {
-      pageCount++;
-      console.log(`[meta-validate-connection] Fetching page ${pageCount}...`);
-
-      const adAccountsResponse = await fetch(nextUrl);
-      const adAccountsData: MetaAdAccountsResponse = await adAccountsResponse.json();
-
-      if (adAccountsData.error) {
-        return new Response(
-          JSON.stringify({ error: "Meta API error", details: adAccountsData.error.message, status: "invalid" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    // Combina e remove duplicatas pelo ID da conta
+    const accountMap = new Map<string, MetaAdAccount>();
+    for (const acc of [...ownedAccounts, ...clientAccounts]) {
+      if (!accountMap.has(acc.id)) {
+        accountMap.set(acc.id, acc);
       }
-
-      if (adAccountsData.data && adAccountsData.data.length > 0) {
-        allAdAccounts.push(...adAccountsData.data);
-        console.log(`[meta-validate-connection] Page ${pageCount}: ${adAccountsData.data.length} accounts (total: ${allAdAccounts.length})`);
-      }
-
-      nextUrl = adAccountsData.paging?.next || null;
     }
+    const allAdAccounts = Array.from(accountMap.values());
 
-    console.log(`[meta-validate-connection] Total accounts discovered: ${allAdAccounts.length}`);
+    console.log(`[meta-validate-connection] BM ${business_manager_id}: ${ownedAccounts.length} owned + ${clientAccounts.length} client = ${allAdAccounts.length} unique accounts`);
 
     // =====================================================
     // 4. BUSCAR OU CRIAR WORKSPACE DO USUÁRIO
+    //    Usa .order().limit(1) para evitar erro quando usuário tem múltiplos workspaces
     // =====================================================
     let workspaceId: string;
 
-    // Tenta buscar como owner direto
-    const { data: ownedWorkspace } = await supabaseAdmin
+    // Tenta buscar como owner direto (pega o mais antigo se houver múltiplos)
+    const { data: ownedWorkspaces } = await supabaseAdmin
       .from("workspaces")
       .select("id")
       .eq("owner_id", user.id)
-      .maybeSingle();
+      .order("created_at", { ascending: true })
+      .limit(1);
 
-    if (ownedWorkspace) {
-      workspaceId = ownedWorkspace.id;
+    if (ownedWorkspaces && ownedWorkspaces.length > 0) {
+      workspaceId = ownedWorkspaces[0].id;
       console.log(`[meta-validate-connection] Found workspace as owner: ${workspaceId}`);
     } else {
-      // Se não é owner, busca como membro
-      const { data: memberRecord } = await supabaseAdmin
+      // Se não é owner, busca como membro (pega o mais antigo)
+      const { data: memberRecords } = await supabaseAdmin
         .from("workspace_members")
         .select("workspace_id")
         .eq("user_id", user.id)
-        .maybeSingle();
+        .order("created_at", { ascending: true })
+        .limit(1);
 
-      if (memberRecord) {
-        workspaceId = memberRecord.workspace_id;
+      if (memberRecords && memberRecords.length > 0) {
+        workspaceId = memberRecords[0].workspace_id;
         console.log(`[meta-validate-connection] Found workspace as member: ${workspaceId}`);
       } else {
         // Cria novo workspace
@@ -336,8 +372,26 @@ Deno.serve(async (req: Request) => {
     console.log(`[meta-validate-connection] Connection saved: ${connectionId}`);
 
     // =====================================================
-    // 7. SALVAR AD ACCOUNTS NO BANCO
-    // CORREÇÃO CRÍTICA: Usa constraint composta correta!
+    // 7. LIMPAR CONTAS ANTIGAS QUE NÃO PERTENCEM MAIS AO BM
+    //    Remove contas do workspace que não estão na lista retornada
+    // =====================================================
+    if (allAdAccounts.length > 0) {
+      const validAccountIds = allAdAccounts.map((acc) => acc.id);
+      const { error: deleteError, count: deletedCount } = await supabaseAdmin
+        .from("meta_ad_accounts")
+        .delete({ count: "exact" })
+        .eq("workspace_id", workspaceId)
+        .not("meta_ad_account_id", "in", `(${validAccountIds.join(",")})`);
+
+      if (deleteError) {
+        console.error("[meta-validate-connection] Error cleaning old accounts:", deleteError);
+      } else if (deletedCount && deletedCount > 0) {
+        console.log(`[meta-validate-connection] Cleaned ${deletedCount} old ad accounts from workspace`);
+      }
+    }
+
+    // =====================================================
+    // 8. SALVAR AD ACCOUNTS NO BANCO
     // =====================================================
     if (allAdAccounts.length > 0) {
       const adAccountsToUpsert = allAdAccounts.map((acc) => ({
@@ -358,8 +412,7 @@ Deno.serve(async (req: Request) => {
 
       for (let i = 0; i < adAccountsToUpsert.length; i += batchSize) {
         const batch = adAccountsToUpsert.slice(i, i + batchSize);
-        
-        // CORREÇÃO: onConflict deve usar a constraint composta
+
         const { error: upsertError } = await supabaseAdmin
           .from("meta_ad_accounts")
           .upsert(batch, {
@@ -368,11 +421,11 @@ Deno.serve(async (req: Request) => {
           });
 
         if (upsertError) {
-          console.error(`[meta-validate-connection] Upsert error batch ${Math.floor(i/batchSize) + 1}:`, upsertError);
+          console.error(`[meta-validate-connection] Upsert error batch ${Math.floor(i / batchSize) + 1}:`, upsertError);
           errorCount += batch.length;
         } else {
           savedCount += batch.length;
-          console.log(`[meta-validate-connection] Batch ${Math.floor(i/batchSize) + 1} saved: ${batch.length} accounts`);
+          console.log(`[meta-validate-connection] Batch ${Math.floor(i / batchSize) + 1} saved: ${batch.length} accounts`);
         }
       }
 
@@ -399,7 +452,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // 8. RETORNAR SUCESSO
+    // 9. RETORNAR SUCESSO
     // =====================================================
     return new Response(
       JSON.stringify({
@@ -407,6 +460,8 @@ Deno.serve(async (req: Request) => {
         workspace_id: workspaceId,
         business_manager_id,
         adaccounts_count: allAdAccounts.length,
+        owned_accounts: ownedAccounts.length,
+        client_accounts: clientAccounts.length,
         scopes: grantedScopes,
         meta_user_id: meData.id,
         meta_user_name: meData.name,
