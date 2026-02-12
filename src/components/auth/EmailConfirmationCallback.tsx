@@ -167,7 +167,18 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           return () => clearInterval(timer);
         }
 
-        // Nenhum formato reconhecido -- token ausente
+        // --- Fallback: verificação de sessão ativa ---
+        // Quando o Supabase processa a confirmação no servidor (via {{ .ConfirmationURL }}),
+        // a sessão já é criada antes do redirecionamento, porém sem passar parâmetros na URL.
+        // Nesse caso, verificamos se já existe uma sessão ativa e tratamos como sucesso.
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user) {
+          console.log('Session already established by server-side confirmation for:', sessionData.session.user.email);
+          const timer = handleSuccess();
+          return () => clearInterval(timer);
+        }
+
+        // Nenhum formato reconhecido e sem sessão ativa -- token ausente
         handleError({ message: 'Token de confirmação inválido ou ausente. Verifique se você copiou o link completo do email.' });
       } catch (err: any) {
         handleError(err);
