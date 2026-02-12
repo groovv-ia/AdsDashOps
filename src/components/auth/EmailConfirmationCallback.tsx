@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { supabase } from '../../lib/supabase';
@@ -15,15 +15,25 @@ interface EmailConfirmationCallbackProps {
 }
 
 /**
+ * Chave usada no sessionStorage para impedir que a confirmação seja processada
+ * múltiplas vezes na mesma aba (o App re-renderiza em cada mudança de auth,
+ * causando remontagens deste componente enquanto a URL ainda é /auth/callback).
+ */
+const CONFIRMATION_PROCESSED_KEY = 'email_confirmation_processed';
+
+/**
  * Componente EmailConfirmationCallback
  *
  * Página de callback que processa a confirmação de email do usuário.
  * É exibida quando o usuário clica no link de confirmação enviado por email.
  *
- * Suporta 3 formatos de callback do Supabase:
+ * Suporta 4 estratégias de detecção de sessão:
  * 1. PKCE com "code" (formato mais recente / padrão atual)
  * 2. PKCE com "token_hash" + "type" (formato alternativo)
  * 3. Hash fragment com "access_token" + "refresh_token" (formato legado)
+ * 4. Fallback: escuta o evento SIGNED_IN do Supabase JS client, que processa
+ *    automaticamente tokens do hash fragment quando o Supabase faz confirmação
+ *    server-side (via {{ .ConfirmationURL }})
  */
 export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps> = ({
   onSuccess,
@@ -34,36 +44,48 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [countdown, setCountdown] = useState(5);
+  // Ref para saber se o componente ainda está montado (evita setState em componente desmontado)
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
+
+    // Se já processamos a confirmação nesta sessão do navegador (ex: remontagem),
+    // redireciona direto sem reprocessar
+    if (sessionStorage.getItem(CONFIRMATION_PROCESSED_KEY) === 'success') {
+      window.location.replace('/');
+      return;
+    }
+
     /**
-     * Inicia countdown e redireciona ao dashboard após confirmação bem-sucedida
+     * Inicia countdown de 5 segundos e redireciona ao dashboard
      */
     const startRedirectCountdown = () => {
       let timeLeft = 5;
       const timer = setInterval(() => {
         timeLeft--;
-        setCountdown(timeLeft);
+        if (mountedRef.current) setCountdown(timeLeft);
 
         if (timeLeft <= 0) {
           clearInterval(timer);
-          // Usa replace para não voltar ao callback pelo botão "voltar" do navegador
           window.location.replace('/');
         }
       }, 1000);
-
       return timer;
     };
 
     /**
-     * Marca a confirmação como bem-sucedida e inicia o countdown
+     * Marca a confirmação como bem-sucedida, salva no sessionStorage
+     * para evitar reprocessamento em remontagens, e inicia o countdown
      */
     const handleSuccess = () => {
+      sessionStorage.setItem(CONFIRMATION_PROCESSED_KEY, 'success');
+      if (!mountedRef.current) return;
       setError('');
       setSuccess(true);
       setLoading(false);
       onSuccess?.();
-      return startRedirectCountdown();
+      startRedirectCountdown();
     };
 
     /**
@@ -87,6 +109,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
         errorMessage += msg || 'Tente novamente mais tarde.';
       }
 
+      if (!mountedRef.current) return;
       setSuccess(false);
       setError(errorMessage);
       setLoading(false);
@@ -94,13 +117,61 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
     };
 
     /**
+     * Aguarda o Supabase JS client estabelecer a sessão após confirmação server-side.
+     *
+     * Quando o Supabase confirma o email no servidor (via {{ .ConfirmationURL }}),
+     * ele redireciona com tokens no hash fragment. O JS client consome esses tokens
+     * automaticamente e emite o evento SIGNED_IN. Este método escuta esse evento
+     * com um timeout de segurança de 4 segundos.
+     *
+     * @returns true se uma sessão ativa for detectada, false após timeout
+     */
+    const waitForSession = (): Promise<boolean> => {
+      return new Promise((resolve) => {
+        let resolved = false;
+
+        const finish = (value: boolean) => {
+          if (resolved) return;
+          resolved = true;
+          resolve(value);
+        };
+
+        // Escuta eventos de auth — o SIGNED_IN é emitido quando o client processa tokens
+        // e o INITIAL_SESSION quando já existe uma sessão armazenada
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+            console.log('Session detected via auth listener:', event, session.user.email);
+            subscription.unsubscribe();
+            finish(true);
+          }
+        });
+
+        // Timeout de 4 segundos — se nenhuma sessão for detectada, considera falha
+        setTimeout(() => {
+          subscription.unsubscribe();
+          finish(false);
+        }, 4000);
+      });
+    };
+
+    /**
      * Função principal que processa a confirmação de email.
      * Detecta automaticamente o formato do callback e usa o método apropriado.
+     * Se nenhum parâmetro for encontrado na URL, aguarda o Supabase client
+     * processar os tokens automaticamente via auth state listener.
      */
     const confirmEmail = async () => {
       try {
         const queryParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
+
+        console.log('Callback params:', {
+          search: window.location.search,
+          hash: window.location.hash ? '(present)' : '(empty)',
+          code: queryParams.get('code') ? 'yes' : 'no',
+          token_hash: queryParams.get('token_hash') ? 'yes' : 'no',
+          access_token: hashParams.get('access_token') ? 'yes' : 'no',
+        });
 
         // Verifica se há erro explícito nos parâmetros
         const errorCode = queryParams.get('error_code') || hashParams.get('error_code');
@@ -121,16 +192,16 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           if (exchangeError) throw exchangeError;
           if (!data.user) throw new Error('Usuário não encontrado após confirmação');
 
-          console.log('Email confirmed successfully for user:', data.user.email);
-          const timer = handleSuccess();
-          return () => clearInterval(timer);
+          console.log('Email confirmed via PKCE code:', data.user.email);
+          handleSuccess();
+          return;
         }
 
         // --- Formato 2: PKCE com token_hash (formato alternativo) ---
         const tokenHash = queryParams.get('token_hash');
         const type = queryParams.get('type');
         if (tokenHash && type) {
-          console.log('Callback format: PKCE token_hash, type:', type);
+          console.log('Callback format: token_hash, type:', type);
 
           // Mapeia o type para o formato esperado pelo verifyOtp
           const otpType = type === 'signup' ? 'signup' : type === 'email' ? 'email' : type as any;
@@ -143,9 +214,9 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           if (verifyError) throw verifyError;
           if (!data.user) throw new Error('Usuário não encontrado após confirmação');
 
-          console.log('Email confirmed successfully for user:', data.user.email);
-          const timer = handleSuccess();
-          return () => clearInterval(timer);
+          console.log('Email confirmed via token_hash:', data.user.email);
+          handleSuccess();
+          return;
         }
 
         // --- Formato 3: Hash fragment com access_token (formato legado) ---
@@ -162,36 +233,43 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           if (sessionError) throw sessionError;
           if (!data.user) throw new Error('Usuário não encontrado após confirmação');
 
-          console.log('Email confirmed successfully for user:', data.user.email);
-          const timer = handleSuccess();
-          return () => clearInterval(timer);
+          console.log('Email confirmed via hash fragment:', data.user.email);
+          handleSuccess();
+          return;
         }
 
-        // --- Fallback: verificação de sessão ativa ---
-        // Quando o Supabase processa a confirmação no servidor (via {{ .ConfirmationURL }}),
-        // a sessão já é criada antes do redirecionamento, porém sem passar parâmetros na URL.
-        // Nesse caso, verificamos se já existe uma sessão ativa e tratamos como sucesso.
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (sessionData?.session?.user) {
-          console.log('Session already established by server-side confirmation for:', sessionData.session.user.email);
-          const timer = handleSuccess();
-          return () => clearInterval(timer);
+        // --- Formato 4: Fallback — aguarda o Supabase client processar tokens automaticamente ---
+        // Quando o Supabase faz a confirmação server-side, ele pode redirecionar com tokens
+        // no hash que são consumidos pelo JS client antes de nosso código executar.
+        // Nesse caso, aguardamos o evento SIGNED_IN do auth listener.
+        console.log('No explicit token params found, waiting for Supabase client to process session...');
+        const sessionEstablished = await waitForSession();
+
+        if (sessionEstablished) {
+          handleSuccess();
+          return;
         }
 
-        // Nenhum formato reconhecido e sem sessão ativa -- token ausente
-        handleError({ message: 'Token de confirmação inválido ou ausente. Verifique se você copiou o link completo do email.' });
+        // Nenhum formato reconhecido e sem sessão ativa após timeout
+        handleError({
+          message: 'Token de confirmação inválido ou ausente. Verifique se você copiou o link completo do email.',
+        });
       } catch (err: any) {
         handleError(err);
       }
     };
 
     confirmEmail();
-  }, [onSuccess, onError]);
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
-        {/* Estado de carregamento */}
+        {/* Estado de carregamento — exibido enquanto processa a confirmação */}
         {loading && !success && !error && (
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-blue-100 mb-4">
@@ -206,7 +284,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           </div>
         )}
 
-        {/* Estado de sucesso */}
+        {/* Estado de sucesso — email confirmado com countdown para redirecionamento */}
         {!loading && success && !error && (
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
@@ -228,7 +306,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           </div>
         )}
 
-        {/* Estado de erro */}
+        {/* Estado de erro — exibe mensagem de erro e opções de recuperação */}
         {!loading && !success && error && (
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
@@ -249,7 +327,11 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
                 Voltar para o Login
               </Button>
               <Button
-                onClick={() => window.location.reload()}
+                onClick={() => {
+                  // Limpa o flag para permitir reprocessamento
+                  sessionStorage.removeItem(CONFIRMATION_PROCESSED_KEY);
+                  window.location.reload();
+                }}
                 variant="outline"
                 className="w-full"
               >
