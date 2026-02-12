@@ -391,6 +391,27 @@ export const SUCCESS_MESSAGES = {
 } as const;
 
 /**
+ * URLs de redirecionamento para autenticação
+ *
+ * Centraliza todas as URLs usadas no fluxo de auth (confirmação de email,
+ * reset de senha, OAuth) para evitar strings hardcoded em vários arquivos.
+ * Usa variáveis de ambiente quando disponíveis, com fallback para produção.
+ */
+export const AUTH_REDIRECT_URLS = {
+  /** URL base do site em produção */
+  SITE_URL: import.meta.env.VITE_SITE_URL || 'https://adsops.bolt.host',
+
+  /** URL de callback para confirmação de email após cadastro */
+  EMAIL_CONFIRMATION: import.meta.env.VITE_AUTH_CALLBACK_URL || 'https://adsops.bolt.host/auth/callback',
+
+  /** URL de callback para redefinição de senha */
+  PASSWORD_RESET: import.meta.env.VITE_PASSWORD_RESET_URL || 'https://adsops.bolt.host/reset-password',
+
+  /** URL de callback para login social (Google, Facebook) */
+  OAUTH_CALLBACK: import.meta.env.VITE_OAUTH_REDIRECT_URL || 'https://adsops.bolt.host',
+} as const;
+
+/**
  * Feature flags (habilitar/desabilitar funcionalidades)
  */
 export const FEATURE_FLAGS = {

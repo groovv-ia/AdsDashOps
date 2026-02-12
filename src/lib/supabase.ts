@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { AUTH_REDIRECT_URLS } from '../constants';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -61,10 +62,8 @@ export const signUp = async (email: string, password: string, fullName?: string)
   try {
     console.log('Attempting sign up for:', email);
 
-    // URL de redirecionamento em produção
-    const redirectUrl = 'https://adsops.bolt.host/auth/callback';
-
-    console.log('Email redirect URL:', redirectUrl);
+    // URL de redirecionamento centralizada via constantes
+    const redirectUrl = AUTH_REDIRECT_URLS.EMAIL_CONFIRMATION;
 
     // Habilita confirmação de email com redirecionamento para página de callback
     const { data, error } = await supabase.auth.signUp({
@@ -210,9 +209,8 @@ export const signInWithProvider = async (provider: 'google' | 'facebook' | 'appl
       },
     };
 
-    // URL de redirecionamento após autenticação bem-sucedida
-    // Em produção: https://adsops.bolt.host
-    const redirectTo = 'https://adsops.bolt.host';
+    // URL de redirecionamento após autenticação bem-sucedida (centralizada)
+    const redirectTo = AUTH_REDIRECT_URLS.OAUTH_CALLBACK;
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
@@ -252,10 +250,8 @@ export const signInWithProvider = async (provider: 'google' | 'facebook' | 'appl
 
 export const resetPassword = async (email: string) => {
   try {
-    // URL de redirecionamento em produção
-    const redirectTo = 'https://adsops.bolt.host/reset-password';
-
-    console.log('Reset password redirect URL:', redirectTo);
+    // URL de redirecionamento centralizada via constantes
+    const redirectTo = AUTH_REDIRECT_URLS.PASSWORD_RESET;
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo,
@@ -287,10 +283,8 @@ export const resendConfirmationEmail = async (email: string) => {
   try {
     console.log('Resending confirmation email to:', email);
 
-    // URL de redirecionamento em produção
-    const redirectUrl = 'https://adsops.bolt.host/auth/callback';
-
-    console.log('Resend confirmation redirect URL:', redirectUrl);
+    // URL de redirecionamento centralizada via constantes
+    const redirectUrl = AUTH_REDIRECT_URLS.EMAIL_CONFIRMATION;
 
     const { data, error } = await supabase.auth.resend({
       type: 'signup',

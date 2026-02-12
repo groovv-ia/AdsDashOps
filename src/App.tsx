@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthForm } from './components/auth/AuthForm';
 import { EmailConfirmationCallback } from './components/auth/EmailConfirmationCallback';
+import { ResetPasswordPage } from './components/auth/ResetPasswordPage';
 import { OAuthCallback } from './components/dashboard/OAuthCallback';
 import { DashboardHeader } from './components/dashboard/DashboardHeader';
 import { Sidebar } from './components/dashboard/Sidebar';
@@ -251,6 +252,7 @@ function AppContent() {
   const isDataDeletionPage = currentPath === '/exclusao-de-dados';
   const isAuthCallbackPage = currentPath === '/auth/callback';
   const isOAuthCallbackPage = currentPath === '/oauth-callback';
+  const isResetPasswordPage = currentPath === '/reset-password';
 
   // Renderiza página de callback OAuth (Meta, Google, TikTok)
   if (isOAuthCallbackPage) {
@@ -269,6 +271,11 @@ function AppContent() {
         }}
       />
     );
+  }
+
+  // Renderiza página de redefinição de senha (pública, acessada via link do email)
+  if (isResetPasswordPage) {
+    return <ResetPasswordPage />;
   }
 
   // Renderiza páginas públicas sem necessidade de autenticação

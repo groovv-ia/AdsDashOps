@@ -6,6 +6,7 @@ import { CookieConsent } from '../legal/CookieConsent';
 import { CookiePreferencesModal } from '../legal/CookiePreferencesModal';
 import { CookieSettingsButton } from '../legal/CookieSettingsButton';
 import { EmailConfirmationModal } from './EmailConfirmationModal';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 import { useToast } from '../ui/Alert';
 
 interface AuthFormProps {
@@ -27,6 +28,9 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
   // Estado para controlar o modal de confirmação de email
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+
+  // Estado para controlar o modal de recuperação de senha
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   // Hook para exibir toasts
   const { showToast, ToastContainer } = useToast();
@@ -317,6 +321,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
                 </div>
                 <button
                   type="button"
+                  onClick={() => setShowForgotPassword(true)}
                   className="text-sm text-blue-600 hover:text-blue-500 font-medium"
                 >
                   Esqueceu a senha?
@@ -411,6 +416,13 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onSuccess }) => {
         onClose={handleCloseConfirmationModal}
         email={registeredEmail}
         onResendEmail={handleResendEmail}
+      />
+
+      {/* Modal de Recuperação de Senha */}
+      <ForgotPasswordModal
+        isOpen={showForgotPassword}
+        onClose={() => setShowForgotPassword(false)}
+        initialEmail={formData.email}
       />
 
       {/* Container de Toasts */}
