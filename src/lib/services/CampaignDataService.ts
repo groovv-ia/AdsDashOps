@@ -51,6 +51,11 @@ export interface CampaignWithMetrics {
 
   // Fonte dos dados
   data_source?: 'meta_insights' | 'ad_metrics' | 'legacy';
+
+  /** Indica que o periodo inclui o dia corrente com dados parciais */
+  is_partial_day?: boolean;
+  /** Indica que o reach e estimativa (maximo diario) para periodos multi-dia */
+  is_estimated_reach?: boolean;
 }
 
 /**
