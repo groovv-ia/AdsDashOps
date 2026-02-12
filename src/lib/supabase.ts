@@ -3,20 +3,21 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-// Check if we're in development and show helpful error
-const isDevelopment = import.meta.env.DEV;
-const hasSupabaseConfig = supabaseUrl && supabaseAnonKey;
+// Flag para indicar se o Supabase esta configurado
+const hasSupabaseConfig = !!(supabaseUrl && supabaseAnonKey);
 
-if (!hasSupabaseConfig && isDevelopment) {
-  console.warn('⚠️ Supabase não configurado. Usando modo demo.');
+if (!hasSupabaseConfig && import.meta.env.DEV) {
+  console.warn('Supabase nao configurado. Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no .env');
 }
 
-// Create client with fallback for demo mode
-export const supabase = hasSupabaseConfig 
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+// Client sempre criado (nunca null) para evitar null checks em toda a aplicacao
+// Se nao configurado, chamadas de API falharao com erro claro
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key'
+);
 
-// Demo mode flag
+// Flag de modo demo (sem Supabase configurado)
 export const isDemoMode = !hasSupabaseConfig;
 
 export const signIn = async (email: string, password: string) => {

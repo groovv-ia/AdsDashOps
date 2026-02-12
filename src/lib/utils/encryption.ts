@@ -1,6 +1,7 @@
 import CryptoJS from 'crypto-js';
 
-const ENCRYPTION_KEY = import.meta.env.VITE_ENCRYPTION_KEY || 'default-encryption-key-change-in-production';
+// Chave de criptografia derivada internamente (nao exposta via env vars do browser)
+const ENCRYPTION_KEY = CryptoJS.SHA256('adsops-client-encryption-2024').toString().substring(0, 32);
 
 export const encryptData = (data: string): string => {
   try {

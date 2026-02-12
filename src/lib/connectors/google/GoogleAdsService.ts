@@ -22,7 +22,7 @@ export class GoogleAdsService {
       windowMs: 24 * 60 * 60 * 1000,
       platform: 'Google',
     });
-    this.developerToken = import.meta.env.VITE_GOOGLE_DEVELOPER_TOKEN || '';
+    this.developerToken = '';
 
     this.httpClient = axios.create({
       baseURL: 'https://www.googleapis.com',
@@ -40,11 +40,15 @@ export class GoogleAdsService {
     });
   }
 
+  /**
+   * Inicializa o client do Google Ads API
+   * Secrets (client_id, client_secret) sao lidos do banco de dados da conexao
+   */
   private async initializeClient(accessToken: string, refreshToken: string): Promise<void> {
     try {
       this.client = new GoogleAdsApi({
-        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        client_secret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET,
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
+        client_secret: '',
         developer_token: this.developerToken,
       });
 
@@ -82,19 +86,40 @@ export class GoogleAdsService {
     };
   }
 
+  /**
+   * Renova o access token via Edge Function (server-side)
+   * O Client Secret nunca e exposto ao browser
+   */
   private async refreshAccessToken(connectionId: string): Promise<void> {
     await this.tokenManager.refreshToken(connectionId, async (refreshToken) => {
-      const response = await this.httpClient.post('/oauth2/v4/token', {
-        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        client_secret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      });
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/google-exchange-token`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            code: refreshToken,
+            redirect_uri: import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.error || !data.access_token) {
+        throw new Error(data.error || 'Falha ao renovar token Google');
+      }
 
       return {
-        accessToken: response.data.access_token,
-        expiresIn: response.data.expires_in,
-        refreshToken: response.data.refresh_token || refreshToken,
+        accessToken: data.access_token,
+        expiresIn: data.expires_in,
+        refreshToken: data.refresh_token || refreshToken,
       };
     });
   }

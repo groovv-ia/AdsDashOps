@@ -121,23 +121,42 @@ export const SimpleMetaConnect: React.FC = () => {
   };
 
   /**
-   * Conecta diretamente usando o token do ambiente (para desenvolvimento/teste)
+   * Conecta diretamente usando o token salvo no banco de dados
    */
   const handleDirectConnect = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const accessToken = import.meta.env.VITE_META_ACCESS_TOKEN;
+      // Busca token existente salvo no banco de dados
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuario nao autenticado');
+
+      const { data: workspace } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('owner_id', user.id)
+        .maybeSingle();
+
+      if (!workspace) throw new Error('Workspace nao encontrado');
+
+      const { data: tokenData } = await supabase
+        .from('oauth_tokens')
+        .select('access_token')
+        .eq('workspace_id', workspace.id)
+        .eq('platform', 'meta')
+        .maybeSingle();
+
+      const accessToken = tokenData?.access_token;
 
       if (!accessToken) {
-        throw new Error('Token de acesso não configurado no ambiente');
+        throw new Error('Nenhum token salvo encontrado. Use o fluxo OAuth para conectar.');
       }
 
-      console.log('Conectando diretamente com token do ambiente...');
+      console.log('[Meta Connect] Conectando com token do banco de dados...');
       await fetchAccounts(accessToken);
     } catch (err: any) {
-      console.error('Erro ao conectar:', err);
+      console.error('[Meta Connect] Erro ao conectar:', err);
       setError(err.message || 'Erro ao conectar');
       setLoading(false);
     }
@@ -235,87 +254,48 @@ export const SimpleMetaConnect: React.FC = () => {
   };
 
   /**
-   * Troca o código de autorização por um access token
+   * Troca o codigo de autorizacao por um access token via Edge Function (server-side)
+   * O App Secret nunca e exposto ao browser
    */
   const exchangeCodeForToken = async (code: string) => {
     try {
-      console.log('🔄 [Exchange Token] Iniciando troca de código por token');
+      console.log('[Exchange Token] Iniciando troca de codigo por token via Edge Function');
 
-      const clientId = import.meta.env.VITE_META_APP_ID;
-      const clientSecret = import.meta.env.VITE_META_APP_SECRET;
       const redirectUri = import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
 
-      console.log('🔄 [Exchange Token] Parâmetros:', {
-        clientId: clientId ? `${clientId.substring(0, 10)}...` : '❌ NÃO CONFIGURADO',
-        clientSecret: clientSecret ? `${clientSecret.substring(0, 10)}...` : '❌ NÃO CONFIGURADO',
-        redirectUri,
-        codeLength: code.length,
-      });
-
-      if (!clientId || !clientSecret) {
-        throw new Error('Client ID ou Client Secret não configurados no .env');
-      }
-
-      console.log('🔄 [Exchange Token] Fazendo requisição para Graph API...');
-
-      // Monta a URL completa para debug
-      const tokenUrl = 'https://graph.facebook.com/v19.0/oauth/access_token';
-      const params = new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        code: code,
-      });
-
-      console.log('🔄 [Exchange Token] URL completa:', `${tokenUrl}?${params.toString().replace(clientSecret, '***')}`);
-
-      const response = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params,
-      });
-
-      console.log('🔄 [Exchange Token] Status da resposta:', response.status, response.statusText);
+      // Chama Edge Function que faz a troca server-side (App Secret fica no servidor)
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meta-exchange-token`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            code,
+            redirect_uri: redirectUri,
+          }),
+        }
+      );
 
       const data = await response.json();
 
-      console.log('🔄 [Exchange Token] Resposta recebida:', {
-        hasAccessToken: !!data.access_token,
-        hasError: !!data.error,
-        tokenType: data.token_type,
-        responseStatus: response.status,
-      });
-
       if (data.error) {
-        console.error('❌ [Exchange Token] Erro na resposta do Facebook:', JSON.stringify(data.error, null, 2));
-
-        // Mapeia erros comuns para mensagens mais amigáveis
-        let errorMessage = data.error.message || 'Erro ao obter token';
-
-        if (data.error.code === 100) {
-          errorMessage = 'Parâmetros inválidos. Verifique as configurações do App no Facebook.';
-        } else if (data.error.message?.includes('redirect_uri')) {
-          errorMessage = 'URL de redirecionamento inválida. Configure no Facebook: Settings > Basic > Add Platform > Website.';
-        } else if (data.error.message?.includes('code')) {
-          errorMessage = 'Código de autorização inválido ou expirado. Tente conectar novamente.';
-        }
-
-        throw new Error(errorMessage);
+        console.error('[Exchange Token] Erro na resposta:', data.error);
+        throw new Error(data.error);
       }
 
       if (!data.access_token) {
-        console.error('❌ [Exchange Token] Token não recebido na resposta:', JSON.stringify(data, null, 2));
-        throw new Error('Token de acesso não recebido. Resposta inesperada do servidor.');
+        throw new Error('Token de acesso nao recebido. Resposta inesperada do servidor.');
       }
 
-      console.log('✅ [Exchange Token] Token obtido com sucesso!');
-      console.log('🔄 [Exchange Token] Buscando contas com o token...');
+      console.log('[Exchange Token] Token obtido com sucesso!');
 
       // Busca contas com o token obtido
       await fetchAccounts(data.access_token);
     } catch (err: any) {
-      console.error('❌ [Exchange Token] Erro ao trocar código por token:', err);
-      console.error('❌ [Exchange Token] Stack trace:', err.stack);
+      console.error('[Exchange Token] Erro ao trocar codigo por token:', err);
       setError(err.message || 'Erro ao obter token de acesso');
       setStatus('disconnected');
       setLoading(false);
@@ -505,10 +485,10 @@ export const SimpleMetaConnect: React.FC = () => {
         .eq('connection_id', connectionId)
         .maybeSingle();
 
-      const accessToken = tokenData?.access_token || import.meta.env.VITE_META_ACCESS_TOKEN;
+      const accessToken = tokenData?.access_token;
 
       if (!accessToken) {
-        throw new Error('Token de acesso não encontrado');
+        throw new Error('Token de acesso nao encontrado. Reconecte sua conta Meta.');
       }
 
       // Cria instância do serviço de sincronização com callback de progresso
@@ -665,7 +645,7 @@ export const SimpleMetaConnect: React.FC = () => {
             </Button>
           </div>
           <p className="text-xs text-gray-500 mt-3">
-            💡 Use "Token Configurado" se você já configurou o VITE_META_ACCESS_TOKEN no arquivo .env
+            Use "Token Configurado" se voce ja possui uma conexao salva anteriormente
           </p>
         </div>
       )}

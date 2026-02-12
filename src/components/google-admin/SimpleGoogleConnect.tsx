@@ -280,41 +280,38 @@ export const SimpleGoogleConnect: React.FC = () => {
   };
 
   /**
-   * Troca o codigo de autorizacao por tokens de acesso
+   * Troca o codigo de autorizacao por tokens de acesso via Edge Function (server-side)
+   * O Client Secret nunca e exposto ao browser
    */
   const exchangeCodeForToken = async (code: string) => {
     try {
-      console.log('[Exchange Token] Iniciando troca de codigo por token');
+      console.log('[Exchange Token] Iniciando troca de codigo por token via Edge Function');
 
-      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-      const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
       const redirectUri =
         import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
 
-      if (!clientId || !clientSecret) {
-        throw new Error('Client ID ou Client Secret do Google nao configurados no .env');
-      }
+      // Chama Edge Function que faz a troca server-side (Client Secret fica no servidor)
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/google-exchange-token`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            code,
+            redirect_uri: redirectUri,
+            include_user_info: true,
+          }),
+        }
+      );
 
-      console.log('[Exchange Token] Fazendo requisicao para Google OAuth...');
-
-      // Troca codigo por token
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          code,
-          client_id: clientId,
-          client_secret: clientSecret,
-          redirect_uri: redirectUri,
-          grant_type: 'authorization_code',
-        }),
-      });
-
-      const tokenData = await tokenResponse.json();
+      const tokenData = await response.json();
 
       if (tokenData.error) {
-        console.error('[Exchange Token] Erro na resposta do Google:', tokenData.error);
-        throw new Error(tokenData.error_description || tokenData.error);
+        console.error('[Exchange Token] Erro na resposta:', tokenData.error);
+        throw new Error(tokenData.error);
       }
 
       if (!tokenData.access_token) {
@@ -322,22 +319,12 @@ export const SimpleGoogleConnect: React.FC = () => {
       }
 
       console.log('[Exchange Token] Token obtido com sucesso!');
-
-      // Busca informacoes do usuario
-      const userInfoResponse = await fetch(
-        'https://www.googleapis.com/oauth2/v2/userinfo',
-        {
-          headers: { Authorization: `Bearer ${tokenData.access_token}` },
-        }
-      );
-
-      const userInfo = await userInfoResponse.json();
-      console.log('[Exchange Token] Email do usuario:', userInfo.email);
+      console.log('[Exchange Token] Email do usuario:', tokenData.user_email);
 
       // Salva tokens temporariamente
       sessionStorage.setItem('google_temp_access_token', tokenData.access_token);
       sessionStorage.setItem('google_temp_refresh_token', tokenData.refresh_token || '');
-      sessionStorage.setItem('google_temp_email', userInfo.email || '');
+      sessionStorage.setItem('google_temp_email', tokenData.user_email || '');
       sessionStorage.setItem(
         'google_temp_expires_at',
         String(Date.now() + (tokenData.expires_in || 3600) * 1000)
@@ -361,7 +348,7 @@ export const SimpleGoogleConnect: React.FC = () => {
     try {
       console.log('[Fetch Accounts] Buscando contas de anuncios do Google Ads');
 
-      // Chama Edge Function para listar contas
+      // Chama Edge Function para listar contas (developer_token lido server-side)
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/google-list-adaccounts`,
         {
@@ -372,7 +359,6 @@ export const SimpleGoogleConnect: React.FC = () => {
           },
           body: JSON.stringify({
             access_token: accessToken,
-            developer_token: import.meta.env.VITE_GOOGLE_DEVELOPER_TOKEN,
           }),
         }
       );
@@ -453,7 +439,7 @@ export const SimpleGoogleConnect: React.FC = () => {
           {
             workspace_id: workspace.id,
             customer_id: selectedAcc.customer_id,
-            developer_token: import.meta.env.VITE_GOOGLE_DEVELOPER_TOKEN || '',
+            developer_token: '',
             access_token: accessToken,
             refresh_token: refreshToken,
             token_expires_at: expiresAt ? new Date(parseInt(expiresAt)).toISOString() : null,

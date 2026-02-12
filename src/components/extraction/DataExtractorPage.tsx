@@ -392,10 +392,10 @@ export const DataExtractorPage: React.FC = () => {
         .eq('connection_id', selectedConnection)
         .maybeSingle();
 
-      const accessToken = tokenData?.access_token || import.meta.env.VITE_META_ACCESS_TOKEN;
+      const accessToken = tokenData?.access_token;
 
       if (!accessToken) {
-        throw new Error('Token de acesso nao encontrado');
+        throw new Error('Token de acesso nao encontrado. Reconecte sua conta Meta.');
       }
 
       // Criar configuracao de extracao

@@ -193,13 +193,16 @@ Deno.serve(async (req: Request) => {
     // =====================================================
     // MODO OAUTH: Busca contas direto da API do Google
     // =====================================================
-    if (body.access_token && body.developer_token) {
+    // developer_token e lido do ambiente do servidor (nunca do frontend)
+    const serverDeveloperToken = body.developer_token || Deno.env.get("GOOGLE_DEVELOPER_TOKEN") || "";
+
+    if (body.access_token && serverDeveloperToken) {
       console.log("[google-list-adaccounts] OAuth mode - fetching from Google API");
 
       try {
         const accounts = await fetchAccountsFromGoogleApi(
           body.access_token,
-          body.developer_token
+          serverDeveloperToken
         );
 
         return new Response(

@@ -105,7 +105,7 @@ export class GoogleAdsConnector {
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
-            'developer-token': process.env.VITE_GOOGLE_DEVELOPER_TOKEN || '',
+            'developer-token': '',
           }
         }
       );
@@ -134,7 +134,7 @@ export class GoogleAdsConnector {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
-            'developer-token': process.env.VITE_GOOGLE_DEVELOPER_TOKEN || '',
+            'developer-token': '',
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ query })

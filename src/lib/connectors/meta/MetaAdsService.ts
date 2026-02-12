@@ -64,20 +64,39 @@ export class MetaAdsService {
     return token.accessToken;
   }
 
+  /**
+   * Renova o access token via Edge Function (server-side)
+   * O App Secret nunca e exposto ao browser
+   */
   private async refreshAccessToken(connectionId: string): Promise<void> {
     await this.tokenManager.refreshToken(connectionId, async (refreshToken) => {
-      const response = await this.httpClient.get('/oauth/access_token', {
-        params: {
-          grant_type: 'fb_exchange_token',
-          client_id: import.meta.env.VITE_META_APP_ID,
-          client_secret: import.meta.env.VITE_META_APP_SECRET,
-          fb_exchange_token: refreshToken,
-        },
-      });
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/meta-exchange-token`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            code: refreshToken,
+            redirect_uri: import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.error || !data.access_token) {
+        throw new Error(data.error || 'Falha ao renovar token Meta');
+      }
 
       return {
-        accessToken: response.data.access_token,
-        expiresIn: response.data.expires_in || 5184000,
+        accessToken: data.access_token,
+        expiresIn: data.expires_in || 5184000,
       };
     });
   }
