@@ -11,7 +11,7 @@
  * - Indicador de status de sincronização
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Image, Play, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import type { MetaAdCreative } from '../../types/adAnalysis';
 
@@ -60,7 +60,10 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
   useHdWhenAvailable = true,
   className = '',
 }) => {
-  // Classes base do container (sem background padrão, será adicionado conforme necessário)
+  // Estado para controlar erro de carregamento de imagem (CDN expirado)
+  const [imgError, setImgError] = useState(false);
+
+  // Classes base do container (sem background padrao, sera adicionado conforme necessario)
   const baseContainerClasses = `
     ${sizeClasses[size]}
     relative rounded-lg overflow-hidden
@@ -108,10 +111,19 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     );
   }
 
-  // Seleciona URL da imagem (HD se disponível e solicitado)
-  const imageUrl = (useHdWhenAvailable && creative.image_url_hd)
+  // Seleciona URL da imagem (HD se disponivel e solicitado, com fallback para extra_data)
+  let imageUrl = (useHdWhenAvailable && creative.image_url_hd)
     ? creative.image_url_hd
     : (creative.thumbnail_url || creative.image_url);
+
+  // Fallback: tenta extrair do raw creative armazenado no extra_data
+  if (!imageUrl) {
+    const extraData = creative.extra_data as Record<string, unknown> | undefined;
+    const rawCreative = extraData?.raw_creative as Record<string, unknown> | undefined;
+    if (rawCreative?.thumbnail_url && typeof rawCreative.thumbnail_url === 'string') {
+      imageUrl = rawCreative.thumbnail_url;
+    }
+  }
 
   const isVideo = creative.creative_type === 'video';
   const quality = creative.thumbnail_quality || 'unknown';
@@ -125,14 +137,8 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     return 'bg-gray-400';
   };
 
-  // Sem imagem disponivel - mostra placeholder mais bonito
+  // Sem imagem disponivel - mostra placeholder
   if (!imageUrl) {
-    console.debug('[AdCreativeThumbnail] Sem URL de imagem:', {
-      ad_id: creative.ad_id,
-      creative_type: creative.creative_type,
-      has_title: !!creative.title,
-      fetch_status: creative.fetch_status,
-    });
     return (
       <div
         className={`${baseContainerClasses} bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200`}
@@ -152,7 +158,21 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     );
   }
 
-  // Renderiza thumbnail com imagem (sem background, a imagem cobre tudo)
+  // Se a imagem falhou ao carregar (URL expirada), mostra placeholder
+  if (imgError) {
+    return (
+      <div
+        className={`${baseContainerClasses} bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200`}
+        title="Imagem expirada - clique para atualizar"
+        onClick={onClick}
+      >
+        <Image className={`${iconSizes[size]} text-gray-400`} />
+        <div className="absolute bottom-0.5 right-0.5 w-2 h-2 bg-orange-400 rounded-full border border-white" />
+      </div>
+    );
+  }
+
+  // Renderiza thumbnail com imagem
   return (
     <div className={baseContainerClasses} onClick={onClick}>
       <img
@@ -160,24 +180,7 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
         alt={creative.title || 'Preview do anuncio'}
         className="w-full h-full object-cover"
         loading="lazy"
-        onError={(e) => {
-          console.error('[AdCreativeThumbnail] Erro ao carregar imagem:', {
-            ad_id: creative.ad_id,
-            imageUrl,
-          });
-          // Fallback para placeholder em caso de erro de carregamento
-          const target = e.target as HTMLImageElement;
-          target.style.display = 'none';
-          const container = target.parentElement;
-          if (container) {
-            container.classList.add('bg-red-50');
-            // Adiciona ícone de erro
-            const errorIcon = document.createElement('div');
-            errorIcon.className = 'flex items-center justify-center w-full h-full';
-            errorIcon.innerHTML = `<svg class="${iconSizes[size]} text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>`;
-            container.appendChild(errorIcon);
-          }
-        }}
+        onError={() => setImgError(true)}
       />
 
       {/* Indicador de video */}

@@ -299,13 +299,24 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     }
   };
 
-  // Tabs disponiveis
   // Funcao helper para obter a melhor URL de imagem disponivel (prioriza HD)
+  // Inclui fallback para extra_data.raw_creative.thumbnail_url
   const getBestImageUrl = (creative: MetaAdCreative | null): string | null => {
     if (!creative) return null;
 
-    // Prioridade: image_url_hd > image_url > thumbnail_url
-    return creative.image_url_hd || creative.image_url || creative.thumbnail_url || null;
+    // Prioridade: image_url_hd > image_url > thumbnail_url > extra_data fallback
+    if (creative.image_url_hd) return creative.image_url_hd;
+    if (creative.image_url) return creative.image_url;
+    if (creative.thumbnail_url) return creative.thumbnail_url;
+
+    // Fallback: tenta extrair do raw creative armazenado no extra_data
+    const extraData = creative.extra_data as Record<string, unknown> | undefined;
+    const rawCreative = extraData?.raw_creative as Record<string, unknown> | undefined;
+    if (rawCreative?.thumbnail_url && typeof rawCreative.thumbnail_url === 'string') {
+      return rawCreative.thumbnail_url;
+    }
+
+    return null;
   };
 
   // Funcao para determinar qualidade da imagem
@@ -505,8 +516,17 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   onAnalyzeClick,
   isAnalyzing,
 }) => {
-  // Usa a melhor URL disponivel (prioriza HD)
-  const imageUrl = creative?.image_url_hd || creative?.image_url || creative?.thumbnail_url;
+  // Usa a melhor URL disponivel (prioriza HD, com fallback para extra_data)
+  let imageUrl = creative?.image_url_hd || creative?.image_url || creative?.thumbnail_url || null;
+
+  // Fallback: tenta extrair do raw creative armazenado no extra_data
+  if (!imageUrl && creative) {
+    const extraData = creative.extra_data as Record<string, unknown> | undefined;
+    const rawCreative = extraData?.raw_creative as Record<string, unknown> | undefined;
+    if (rawCreative?.thumbnail_url && typeof rawCreative.thumbnail_url === 'string') {
+      imageUrl = rawCreative.thumbnail_url;
+    }
+  }
 
   // Funcoes de formatacao
   const formatCurrency = (n: number) =>
@@ -828,8 +848,18 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
     );
   }
 
-  // Usa a melhor URL disponivel (prioriza HD)
-  const imageUrl = creative.image_url_hd || creative.image_url || creative.thumbnail_url;
+  // Usa a melhor URL disponivel (prioriza HD, com fallback para extra_data)
+  let imageUrl = creative.image_url_hd || creative.image_url || creative.thumbnail_url;
+
+  // Fallback: tenta extrair do raw creative armazenado no extra_data
+  if (!imageUrl) {
+    const extraData = creative.extra_data as Record<string, unknown> | undefined;
+    const rawCreative = extraData?.raw_creative as Record<string, unknown> | undefined;
+    if (rawCreative?.thumbnail_url && typeof rawCreative.thumbnail_url === 'string') {
+      imageUrl = rawCreative.thumbnail_url;
+    }
+  }
+
   const videoUrl = creative.video_url;
   const isVideo = creative.creative_type === 'video' && videoUrl;
   const isCarousel = creative.creative_type === 'carousel';
@@ -963,9 +993,40 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
               </div>
             </div>
           </div>
+        ) : creative.preview_url ? (
+          /* Fallback: mostra preview via iframe quando nao tem imagem local */
+          <div className="rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+            <div className="p-3 bg-gray-100 border-b border-gray-200 flex items-center justify-between">
+              <span className="text-xs text-gray-500">Preview do anuncio via Meta</span>
+              <a
+                href={creative.preview_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Abrir no Meta
+              </a>
+            </div>
+            <iframe
+              src={creative.preview_url}
+              className="w-full h-[400px] border-0"
+              title="Preview do anuncio no Meta"
+              sandbox="allow-scripts allow-same-origin allow-popups"
+            />
+          </div>
         ) : (
-          <div className="h-48 flex items-center justify-center bg-gray-100 rounded-lg">
+          <div className="h-48 flex flex-col items-center justify-center bg-gray-100 rounded-lg gap-3">
             <Image className="w-12 h-12 text-gray-300" />
+            <p className="text-sm text-gray-500">Sem preview disponivel</p>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Buscando...' : 'Buscar criativo'}
+            </button>
           </div>
         )}
       </div>

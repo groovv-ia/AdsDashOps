@@ -461,23 +461,24 @@ async function extractImageUrl(
 
 /**
  * Determina tipo do criativo
+ * Classifica com base nos dados disponíveis do Meta API
  */
 function determineCreativeType(creative: MetaCreativeData): string {
   const videoData = creative.object_story_spec?.video_data;
   const linkData = creative.object_story_spec?.link_data;
   const assetFeed = creative.asset_feed_spec;
 
-  // Video
+  // Video: tem video_id direto ou em video_data
   if (creative.video_id || videoData?.video_id) {
     return "video";
   }
 
-  // Carrossel
+  // Carrossel: tem mais de 1 child_attachment
   if (linkData?.child_attachments && linkData.child_attachments.length > 1) {
     return "carousel";
   }
 
-  // Criativo dinamico
+  // Criativo dinamico via asset_feed_spec
   if (assetFeed && (assetFeed.images?.length || assetFeed.videos?.length || assetFeed.bodies?.length)) {
     if (assetFeed.videos && assetFeed.videos.length > 0) {
       return "video";
@@ -485,14 +486,29 @@ function determineCreativeType(creative: MetaCreativeData): string {
     return "dynamic";
   }
 
-  // Imagem
+  // Imagem: tem URL ou hash de imagem direto
   if (creative.image_url || creative.image_hash || linkData?.picture || linkData?.image_hash) {
     return "image";
   }
 
-  // Se tem effective_object_story_id mas nao outros dados, provavelmente e dinamico
+  // Dinamico: tem effective_object_story_id (catalogo, posts dinamicos)
   if (creative.effective_object_story_id) {
     return "dynamic";
+  }
+
+  // Dinamico: nome com templates de catalogo ({{product.name}}, etc)
+  if (creative.name && creative.name.includes('{{product.')) {
+    return "dynamic";
+  }
+
+  // Dinamico: tem effective_instagram_media_id
+  if (creative.effective_instagram_media_id) {
+    return "dynamic";
+  }
+
+  // Se tem thumbnail_url do Meta, e pelo menos uma imagem estatica
+  if (creative.thumbnail_url) {
+    return "image";
   }
 
   return "unknown";
@@ -644,34 +660,48 @@ async function processAdResponse(
   const creativeType = determineCreativeType(creative);
 
   // Extrai URL da imagem com qualidade e dimensoes (passa postData para fallback)
-  const imageResult = await extractImageUrl(creative, metaAdAccountId, accessToken, postData);
+  let imageResult = await extractImageUrl(creative, metaAdAccountId, accessToken, postData);
 
   // Video ID e URL
   const videoId = creative.video_id || videoData?.video_id || assetFeed?.videos?.[0]?.video_id || null;
   const videoUrl = videoId ? `https://www.facebook.com/ads/videos/${videoId}` : null;
 
   // Para videos, busca thumbnail em HD se nao tiver imagem
-  let finalImageResult = imageResult;
-  if (creativeType === "video" && videoId && !finalImageResult.url) {
-    finalImageResult = await fetchVideoThumbnailHD(videoId, accessToken);
+  if (creativeType === "video" && videoId && !imageResult.url) {
+    imageResult = await fetchVideoThumbnailHD(videoId, accessToken);
+  }
+
+  // Fallback final: se ainda nao tem imagem, usa thumbnail_url do raw creative
+  // Isso cobre criativos dinamicos/catalogo onde extractImageUrl nao encontrou nada
+  if (!imageResult.url && creative.thumbnail_url) {
+    console.log(`Fallback: usando thumbnail_url do creative raw para ad ${adData.id}`);
+    imageResult = {
+      url: creative.thumbnail_url,
+      url_hd: null,
+      width: null,
+      height: null,
+      quality: 'low',
+    };
   }
 
   // Extrai textos (inclui dados do post)
   const { title, body, description, callToAction, linkUrl } = extractTexts(creative, postData);
 
-  // Determina se o criativo está completo
-  const hasImage = !!finalImageResult.url;
+  // Determina se o criativo esta completo
+  const hasImage = !!imageResult.url;
   const hasTexts = !!(title || body || description);
   const isComplete = hasImage || hasTexts;
 
-  // Determina status do fetch
+  // Determina status do fetch com base na completude dos dados
   let fetchStatus: 'success' | 'partial' | 'failed' | 'pending';
   if (hasImage && hasTexts) {
     fetchStatus = 'success';
   } else if (hasImage || hasTexts) {
+    // Tem pelo menos imagem ou textos, marca como sucesso parcial
     fetchStatus = 'partial';
   } else {
-    fetchStatus = 'pending';
+    // Nao tem nada, marca como failed para nao ficar em loop infinito
+    fetchStatus = 'failed';
   }
 
   const record = {
@@ -680,12 +710,12 @@ async function processAdResponse(
     meta_ad_account_id: metaAdAccountId,
     meta_creative_id: creative.id || null,
     creative_type: creativeType,
-    image_url: finalImageResult.url,
-    image_url_hd: finalImageResult.url_hd,
-    thumbnail_url: finalImageResult.url,
-    thumbnail_quality: finalImageResult.quality,
-    image_width: finalImageResult.width,
-    image_height: finalImageResult.height,
+    image_url: imageResult.url,
+    image_url_hd: imageResult.url_hd,
+    thumbnail_url: imageResult.url,
+    thumbnail_quality: imageResult.quality,
+    image_width: imageResult.width,
+    image_height: imageResult.height,
     video_url: videoUrl,
     video_id: videoId,
     preview_url: adData.preview_shareable_link || null,
@@ -696,6 +726,7 @@ async function processAdResponse(
     link_url: linkUrl,
     is_complete: isComplete,
     fetch_status: fetchStatus,
+    // fetch_attempts sera incrementado via SQL na hora do upsert
     fetch_attempts: 1,
     last_validated_at: new Date().toISOString(),
     error_message: null,
@@ -811,12 +842,15 @@ Deno.serve(async (req: Request) => {
 
     if (cachedCreatives) {
       for (const creative of cachedCreatives) {
-        // Verifica se criativo em cache tem imagem E textos - se nao tiver, rebusca
         const hasImage = creative.thumbnail_url || creative.image_url;
         const hasTexts = creative.title || creative.body || creative.description;
-        
-        // So considera valido se tiver imagem ou textos
-        if (hasImage || hasTexts) {
+
+        // Aceita do cache se: tem dados uteis OU ja falhou apos muitas tentativas
+        const hasUsefulData = hasImage || hasTexts;
+        const maxAttemptsReached = (creative.fetch_attempts || 0) >= 3;
+        const isFailed = creative.fetch_status === 'failed';
+
+        if (hasUsefulData || (maxAttemptsReached && isFailed)) {
           cachedMap[creative.ad_id] = creative;
           cachedAdIds.add(creative.ad_id);
         }
@@ -944,7 +978,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Salva no banco
+    // Salva no banco com incremento de fetch_attempts
     if (recordsToUpsert.length > 0) {
       console.log(`Salvando ${recordsToUpsert.length} criativos no banco...`);
 
@@ -959,22 +993,49 @@ Deno.serve(async (req: Request) => {
       }, { types: {}, withTexts: 0 });
       console.log('Resumo:', { types: summary.types, com_textos: summary.withTexts, total: recordsToUpsert.length });
 
-      const { error: upsertError } = await supabaseAdmin
-        .from("meta_ad_creatives")
-        .upsert(recordsToUpsert, {
-          onConflict: "workspace_id,ad_id",
+      // Usa upsert com SQL raw para incrementar fetch_attempts corretamente
+      for (const record of recordsToUpsert) {
+        const { error: upsertError } = await supabaseAdmin.rpc('upsert_ad_creative_with_increment', {
+          p_workspace_id: record.workspace_id,
+          p_ad_id: record.ad_id,
+          p_meta_ad_account_id: record.meta_ad_account_id,
+          p_meta_creative_id: record.meta_creative_id || null,
+          p_creative_type: record.creative_type,
+          p_image_url: record.image_url || null,
+          p_image_url_hd: record.image_url_hd || null,
+          p_thumbnail_url: record.thumbnail_url || null,
+          p_thumbnail_quality: record.thumbnail_quality || 'unknown',
+          p_image_width: record.image_width || null,
+          p_image_height: record.image_height || null,
+          p_video_url: record.video_url || null,
+          p_video_id: record.video_id || null,
+          p_preview_url: record.preview_url || null,
+          p_title: record.title || null,
+          p_body: record.body || null,
+          p_description: record.description || null,
+          p_call_to_action: record.call_to_action || null,
+          p_link_url: record.link_url || null,
+          p_is_complete: record.is_complete,
+          p_fetch_status: record.fetch_status,
+          p_error_message: record.error_message || null,
+          p_extra_data: record.extra_data || {},
         });
 
-      if (upsertError) {
-        console.error("ERRO no batch upsert:", {
-          message: upsertError.message,
-          code: upsertError.code,
-          details: upsertError.details,
-          hint: upsertError.hint,
-        });
-      } else {
-        console.log(`${recordsToUpsert.length} criativos salvos com sucesso`);
+        if (upsertError) {
+          // Fallback: usa upsert normal se a funcao RPC nao existir
+          if (upsertError.message?.includes('function') || upsertError.code === '42883') {
+            const { error: fallbackError } = await supabaseAdmin
+              .from("meta_ad_creatives")
+              .upsert([record], { onConflict: "workspace_id,ad_id" });
+            if (fallbackError) {
+              console.error(`Erro no upsert fallback para ad ${record.ad_id}:`, fallbackError.message);
+            }
+          } else {
+            console.error(`Erro no upsert para ad ${record.ad_id}:`, upsertError.message);
+          }
+        }
       }
+      console.log(`${recordsToUpsert.length} criativos processados`);
     }
 
     return new Response(

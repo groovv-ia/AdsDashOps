@@ -414,7 +414,8 @@ export function getCreativeTypeLabel(type: CreativeType): string {
     image: 'Imagem',
     video: 'Vídeo',
     carousel: 'Carrossel',
+    dynamic: 'Dinâmico',
     unknown: 'Desconhecido',
   };
-  return labels[type];
+  return labels[type] || 'Desconhecido';
 }
