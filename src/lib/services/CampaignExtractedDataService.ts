@@ -362,7 +362,8 @@ export class CampaignExtractedDataService {
         return { success: false, error: 'Usuario nao autenticado' };
       }
 
-      // Query base para anuncios (inclui account_id da campanha pai via JOIN)
+      // Query para anuncios com JOINs para obter account_id e nome do adset
+      // Inclui connection_id para fallback caso campaigns.account_id esteja vazio
       let query = supabase
         .from('ads')
         .select(`
@@ -372,6 +373,7 @@ export class CampaignExtractedDataService {
           campaign_id,
           ad_set_id,
           thumbnail_url,
+          connection_id,
           ad_sets!ads_ad_set_id_fkey(name),
           campaigns!ads_campaign_id_fkey(account_id)
         `)
@@ -388,6 +390,24 @@ export class CampaignExtractedDataService {
       if (error) {
         logger.error('Erro ao buscar anuncios', { error, campaignId });
         return { success: false, error: error.message };
+      }
+
+      // Fallback: se account_id nao veio do JOIN com campaigns,
+      // busca da data_connections via connection_id do primeiro anuncio
+      let fallbackAccountId: string | undefined;
+      const firstAd = ads?.[0] as any;
+      const hasAccountFromCampaign = firstAd?.campaigns?.account_id;
+
+      if (!hasAccountFromCampaign && firstAd?.connection_id) {
+        const { data: conn } = await supabase
+          .from('data_connections')
+          .select('config')
+          .eq('id', firstAd.connection_id)
+          .maybeSingle();
+
+        if (conn?.config && typeof conn.config === 'object') {
+          fallbackAccountId = (conn.config as Record<string, unknown>).accountId as string;
+        }
       }
 
       // Buscar metricas agregadas por anuncio
@@ -452,7 +472,7 @@ export class CampaignExtractedDataService {
           campaign_id: ad.campaign_id,
           status: ad.status || 'UNKNOWN',
           thumbnail_url: ad.thumbnail_url,
-          meta_ad_account_id: ad.campaigns?.account_id || undefined,
+          meta_ad_account_id: ad.campaigns?.account_id || fallbackAccountId || undefined,
           ...derived,
         };
       });

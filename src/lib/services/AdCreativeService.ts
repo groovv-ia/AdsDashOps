@@ -57,25 +57,29 @@ function isCreativeExpired(creative: MetaAdCreative): boolean {
 
 /**
  * Verifica se um criativo deve ser rebuscado
- * Rebusca se: incompleto, expirado, ou com menos de 3 tentativas e status != success
+ * Rebusca se: incompleto com tentativas restantes, ou status partial/pending.
+ * Criativos completos e com sucesso NAO sao rebuscados mesmo se expirados,
+ * pois as URLs do Meta CDN sao temporarias e rebuscar apenas geraria
+ * novas URLs que expiram novamente -- ciclo infinito.
  */
 function shouldRefetchCreative(creative: MetaAdCreative): boolean {
-  // Se chegou ao limite de tentativas e falhou, não tenta mais
+  // Se chegou ao limite de tentativas e falhou, nao tenta mais
   if (creative.fetch_attempts >= MAX_FETCH_ATTEMPTS && creative.fetch_status === 'failed') {
     return false;
   }
 
-  // Se não está completo e ainda tem tentativas, rebusca
+  // Se esta completo e com sucesso, usa os dados do cache
+  // (nao rebusca mesmo se expirado, pois URLs Meta sao efemeras)
+  if (creative.is_complete && creative.fetch_status === 'success') {
+    return false;
+  }
+
+  // Se nao esta completo e ainda tem tentativas, rebusca
   if (!creative.is_complete && creative.fetch_attempts < MAX_FETCH_ATTEMPTS) {
     return true;
   }
 
-  // Se está expirado, rebusca
-  if (isCreativeExpired(creative)) {
-    return true;
-  }
-
-  // Se está marcado como partial ou pending, rebusca
+  // Se esta marcado como partial ou pending, rebusca
   if (creative.fetch_status === 'partial' || creative.fetch_status === 'pending') {
     return true;
   }

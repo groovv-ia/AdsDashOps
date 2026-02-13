@@ -8,15 +8,13 @@
  * Inclui botao secundario para abrir diretamente no Meta.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   ExternalLink,
   Image as ImageIcon,
   Play,
   Layers,
-  AlertTriangle,
-  Loader2,
 } from 'lucide-react';
 import type { MetaAdCreative } from '../../types/adAnalysis';
 import { CarouselViewer, type CarouselSlide } from './CarouselViewer';
@@ -89,55 +87,15 @@ export const CreativePreviewModal: React.FC<CreativePreviewModalProps> = ({
   creative,
   adName,
 }) => {
-  // Estado do iframe: tentando carregar, sucesso, ou falha
-  const [iframeState, setIframeState] = useState<'loading' | 'loaded' | 'failed'>('loading');
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Estado de erro de imagem para exibir placeholder quando URL expirada
+  const [imgError, setImgError] = useState(false);
 
-  // Reset do estado quando o modal abre
+  // Reset de erro quando modal abre ou creative muda
   useEffect(() => {
-    if (isOpen && previewUrl) {
-      setIframeState('loading');
+    if (isOpen) setImgError(false);
+  }, [isOpen, creative?.ad_id]);
 
-      // Timeout de 8 segundos: se o iframe nao carregou, assume que foi bloqueado
-      timeoutRef.current = setTimeout(() => {
-        setIframeState(prev => {
-          if (prev === 'loading') return 'failed';
-          return prev;
-        });
-      }, 8000);
-    }
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, [isOpen, previewUrl]);
-
-  /**
-   * Callback quando o iframe carrega com sucesso
-   */
-  const handleIframeLoad = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    setIframeState('loaded');
-  }, []);
-
-  /**
-   * Callback quando o iframe falha ao carregar
-   */
-  const handleIframeError = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    setIframeState('failed');
-  }, []);
-
-  /**
-   * Fecha o modal ao pressionar Escape
-   */
+  // Fecha o modal ao pressionar Escape
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
@@ -150,12 +108,10 @@ export const CreativePreviewModal: React.FC<CreativePreviewModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Determina se temos URL de preview valida para tentar o iframe
+  // Sempre exibe fallback local -- Meta bloqueia iframes via X-Frame-Options
   const hasPreviewUrl = !!previewUrl;
-  const showIframe = hasPreviewUrl && iframeState !== 'failed';
-  const showFallback = !hasPreviewUrl || iframeState === 'failed';
 
-  // Imagem em alta resolucao para fallback
+  // Melhor URL de imagem disponivel, priorizando HD
   const hdImageUrl = creative?.image_url_hd || creative?.image_url || creative?.thumbnail_url;
   const isCarousel = creative?.creative_type === 'carousel';
   const isVideo = creative?.creative_type === 'video';
@@ -211,51 +167,25 @@ export const CreativePreviewModal: React.FC<CreativePreviewModalProps> = ({
           </div>
         </div>
 
-        {/* Corpo do modal */}
+        {/* Corpo do modal -- exibe criativo com dados locais (iframe bloqueado pelo Meta) */}
         <div className="flex-1 overflow-y-auto">
-          {/* Tentativa com iframe (se URL disponivel e nao falhou) */}
-          {showIframe && (
-            <div className="relative w-full h-[70vh]">
-              {iframeState === 'loading' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50">
-                  <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
-                  <p className="text-sm text-gray-500">Carregando preview do Meta...</p>
-                </div>
-              )}
-              <iframe
-                ref={iframeRef}
-                src={previewUrl!}
-                className={`w-full h-full border-0 ${iframeState === 'loading' ? 'opacity-0' : 'opacity-100'}`}
-                title="Preview do anuncio no Meta"
-                sandbox="allow-scripts allow-same-origin allow-popups"
-                onLoad={handleIframeLoad}
-                onError={handleIframeError}
-              />
-            </div>
-          )}
-
-          {/* Fallback: exibe o criativo com dados locais */}
-          {showFallback && (
-            <div className="p-6">
-              {/* Aviso de fallback */}
-              {hasPreviewUrl && iframeState === 'failed' && (
-                <div className="flex items-start gap-3 p-4 mb-6 bg-amber-50 border border-amber-200 rounded-lg">
-                  <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="p-6">
+              {/* Link para abrir preview externo no Meta */}
+              {hasPreviewUrl && (
+                <div className="flex items-start gap-3 p-4 mb-6 bg-blue-50 border border-blue-200 rounded-lg">
+                  <ExternalLink className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium text-amber-800">
-                      Preview externo nao disponivel
-                    </p>
-                    <p className="text-sm text-amber-600 mt-1">
-                      O Meta bloqueou a exibicao embarcada. Exibindo o criativo a partir dos dados salvos.
+                    <p className="text-sm font-medium text-blue-800">
+                      Preview completo disponivel
                     </p>
                     <a
                       href={previewUrl!}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      className="inline-flex items-center gap-1.5 mt-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
                     >
-                      <ExternalLink className="w-4 h-4" />
                       Abrir preview diretamente no Meta
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </a>
                   </div>
                 </div>
@@ -285,18 +215,21 @@ export const CreativePreviewModal: React.FC<CreativePreviewModalProps> = ({
                         </div>
                       )}
                     </div>
-                  ) : hdImageUrl ? (
+                  ) : hdImageUrl && !imgError ? (
                     <div className="bg-gray-50 rounded-xl overflow-hidden">
                       <img
                         src={hdImageUrl}
                         alt={adName || 'Criativo do anuncio'}
                         className="w-full max-h-[480px] object-contain"
+                        onError={() => setImgError(true)}
                       />
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-xl text-gray-400">
                       <ImageIcon className="w-16 h-16 mb-3" />
-                      <p className="text-sm">Sem imagem disponivel</p>
+                      <p className="text-sm">
+                        {imgError ? 'Imagem expirada ou indisponivel' : 'Sem imagem disponivel'}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -410,7 +343,6 @@ export const CreativePreviewModal: React.FC<CreativePreviewModalProps> = ({
                 </div>
               </div>
             </div>
-          )}
         </div>
       </div>
     </div>

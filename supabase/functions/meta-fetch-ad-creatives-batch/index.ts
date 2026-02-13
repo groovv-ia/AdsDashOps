@@ -333,14 +333,35 @@ async function extractImageUrl(
   accessToken: string,
   postData?: PostData | null
 ): Promise<ImageResult> {
+  // Helper para tentar melhorar resolucao de URLs do Meta CDN
+  // URLs com parametros como p64x64 sao thumbnails minusculos
+  const upgradeUrlResolution = (url: string): string => {
+    try {
+      // Remove parametros de resize do Meta CDN (ex: stp=c0.5000x0.5000f_dst-emg0_p64x64_q75)
+      // Substitui p64x64 ou p128x128 por p720x720 para obter resolucao maior
+      if (url.includes('p64x64') || url.includes('p128x128')) {
+        return url
+          .replace(/p64x64/g, 'p720x720')
+          .replace(/p128x128/g, 'p720x720');
+      }
+      return url;
+    } catch {
+      return url;
+    }
+  };
+
   // Helper para processar URL simples
-  const processUrl = (url: string): ImageResult => ({
-    url,
-    url_hd: url,
-    width: null,
-    height: null,
-    quality: 'unknown'
-  });
+  // Tenta upgradar resolucao e separa thumbnail (original) de image (upgrade)
+  const processUrl = (url: string): ImageResult => {
+    const upgraded = upgradeUrlResolution(url);
+    return {
+      url: upgraded,
+      url_hd: upgraded,
+      width: null,
+      height: null,
+      quality: url.includes('p64x64') ? 'low' : 'unknown',
+    };
+  };
 
   // 1. URL direta do criativo
   if (creative.image_url) {
@@ -711,7 +732,7 @@ async function processAdResponse(
     meta_creative_id: creative.id || null,
     creative_type: creativeType,
     image_url: imageResult.url,
-    image_url_hd: imageResult.url_hd,
+    image_url_hd: imageResult.url_hd || imageResult.url,
     thumbnail_url: imageResult.url,
     thumbnail_quality: imageResult.quality,
     image_width: imageResult.width,

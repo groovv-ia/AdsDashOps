@@ -365,7 +365,7 @@ export class MetaSyncService {
         // Processa cada campanha do lote
         for (const campaign of batch) {
           try {
-            await this.saveCampaign(connectionId, campaign);
+            await this.saveCampaign(connectionId, campaign, accountId);
             processedCampaigns++;
 
             this.updateProgress(
@@ -983,7 +983,7 @@ export class MetaSyncService {
   /**
    * Salva uma campanha no banco de dados
    */
-  private async saveCampaign(connectionId: string, campaign: any): Promise<void> {
+  private async saveCampaign(connectionId: string, campaign: any, accountId?: string): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
 
@@ -1003,6 +1003,8 @@ export class MetaSyncService {
       daily_budget: campaign.daily_budget ? parseFloat(campaign.daily_budget) / 100 : null,
       lifetime_budget: campaign.lifetime_budget ? parseFloat(campaign.lifetime_budget) / 100 : null,
       budget_remaining: campaign.budget_remaining ? parseFloat(campaign.budget_remaining) / 100 : null,
+      // Salva o account_id da conta Meta para associar criativos
+      account_id: accountId || null,
     };
 
     if (existing) {
