@@ -53,7 +53,6 @@ import { AdDetailModal, AdCreativeThumbnail } from '../ad-analysis';
 import type { AdDetailModalState } from '../../types/adAnalysis';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
 import { ExportReportModal } from './ExportReportModal';
-import { DataHealthAlert } from './DataHealthAlert';
 import type { AnalysisLevel } from '../../types/metricsAnalysis';
 import type { PreloadedMetricsData } from '../../lib/services/MetricsAIAnalysisService';
 import {
@@ -890,15 +889,6 @@ export const MetaAdsSyncPage: React.FC = () => {
     setDateRange(newDateRange);
   };
 
-  // Handler para preencher lacunas (backfill) detectadas pelo DataHealthAlert
-  const handleGapBackfill = async (daysBack: number) => {
-    if (!navigationState.selectedAccountId) return;
-    const account = getAccountById(navigationState.selectedAccountId);
-    if (!account) return;
-
-    handleSyncAccount(navigationState.selectedAccountId, false);
-  };
-
   // ============================================================
   // FUNCOES DO MODAL DE DETALHES DO ANUNCIO
   // ============================================================
@@ -1579,18 +1569,6 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         )}
       </Card>
-
-      {/* Alerta de Saude dos Dados - detecta lacunas automaticamente */}
-      {syncStatus?.workspace?.id && navigationState.selectedAccountId && dateRange.dateFrom && dateRange.dateTo && (
-        <DataHealthAlert
-          workspaceId={syncStatus.workspace.id}
-          metaAdAccountId={navigationState.selectedAccountId}
-          dateFrom={dateRange.dateFrom}
-          dateTo={dateRange.dateTo}
-          onBackfill={handleGapBackfill}
-          isSyncing={syncingAccountId === navigationState.selectedAccountId}
-        />
-      )}
 
       {/* KPIs Principais */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">

@@ -167,8 +167,6 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
         last_sync: mc.last_date,
         days_active: mc.days_with_data,
         data_source: 'meta_insights',
-        is_partial_day: mc.is_partial_day,
-        is_estimated_reach: mc.is_estimated_reach,
       }));
 
       setCampaigns(mappedCampaigns);

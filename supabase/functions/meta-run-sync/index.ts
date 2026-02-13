@@ -52,62 +52,21 @@ interface MetaInsightsResponse {
   error?: { message: string; code: number };
 }
 
-/**
- * Formata uma data como YYYY-MM-DD (UTC)
- */
 function formatDate(date: Date): string {
   return date.toISOString().split("T")[0];
 }
 
-/**
- * Retorna a data atual no timezone da conta de anuncios.
- * Isso evita que sincronizacoes entre 00:00-02:59 UTC referenciem o dia errado
- * para contas em America/Sao_Paulo (UTC-3).
- */
-function getTodayInTimezone(timezone?: string): string {
+function getDateRange(mode: string, daysBack: number = 7): { dateFrom: string; dateTo: string } {
   const now = new Date();
-  if (!timezone) return formatDate(now);
-
-  try {
-    // Usa Intl.DateTimeFormat para obter a data local no timezone da conta
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(now);
-
-    const year = parts.find((p) => p.type === "year")?.value;
-    const month = parts.find((p) => p.type === "month")?.value;
-    const day = parts.find((p) => p.type === "day")?.value;
-
-    if (year && month && day) return `${year}-${month}-${day}`;
-  } catch {
-    // Se o timezone for invalido, usa UTC como fallback
-  }
-
-  return formatDate(now);
-}
-
-/**
- * Calcula o intervalo de datas para sincronizacao, usando o timezone da conta.
- * - daily: apenas o dia anterior (no timezone da conta)
- * - intraday: apenas o dia atual (no timezone da conta)
- * - backfill: de N dias atras ate hoje (no timezone da conta)
- */
-function getDateRange(mode: string, daysBack: number = 7, timezone?: string): { dateFrom: string; dateTo: string } {
-  const today = getTodayInTimezone(timezone);
-  // Cria um objeto Date a partir da string YYYY-MM-DD para fazer aritmetica de dias
-  const todayDate = new Date(today + "T12:00:00Z");
-
+  const today = formatDate(now);
   if (mode === "daily") {
-    const yesterday = new Date(todayDate);
+    const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     return { dateFrom: formatDate(yesterday), dateTo: formatDate(yesterday) };
   } else if (mode === "intraday") {
     return { dateFrom: today, dateTo: today };
   } else {
-    const fromDate = new Date(todayDate);
+    const fromDate = new Date(now);
     fromDate.setDate(fromDate.getDate() - daysBack);
     return { dateFrom: formatDate(fromDate), dateTo: today };
   }
@@ -209,16 +168,13 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "No ad accounts to sync" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Calcula date range inicial (sera recalculado por conta com timezone correto)
-    const initialDateRange = getDateRange(mode, days_back);
-    const syncResult = { mode, date_from: initialDateRange.dateFrom, date_to: initialDateRange.dateTo, accounts_synced: 0, insights_synced: 0, creatives_synced: 0, errors: [] as string[] };
+    const { dateFrom, dateTo } = getDateRange(mode, days_back);
+    const syncResult = { mode, date_from: dateFrom, date_to: dateTo, accounts_synced: 0, insights_synced: 0, creatives_synced: 0, errors: [] as string[] };
     const allAdIds: { adId: string; metaAdAccountId: string }[] = [];
     const insightFields = "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,date_start,date_stop,spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values";
 
     for (const adAccount of adAccounts) {
       try {
-        // Calcula intervalo de datas usando o timezone da conta para evitar erros de dia
-        const { dateFrom, dateTo } = getDateRange(mode, days_back, adAccount.timezone_name);
         const syncStartTime = new Date();
         const { data: syncJob } = await supabaseAdmin.from("meta_sync_jobs").insert({ workspace_id: workspace.id, client_id: client_id || null, meta_ad_account_id: adAccount.meta_ad_account_id, job_type: mode === "backfill" ? "backfill" : mode === "daily" ? "daily" : "fast", date_from: dateFrom, date_to: dateTo, status: "running", started_at: syncStartTime.toISOString() }).select("id").single();
         let totalRows = 0;

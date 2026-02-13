@@ -25,8 +25,6 @@ import {
   ExternalLink,
   Percent,
   Users,
-  Info,
-  RefreshCw,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
@@ -173,13 +171,6 @@ export const CampaignCard: React.FC<CampaignCardProps> = ({ campaign, onViewAnal
               {getStatusText(campaign.status)}
             </Badge>
             <span className="text-xs text-gray-500">{getObjectiveText(campaign.objective)}</span>
-            {/* Indicador de dados parciais do dia corrente */}
-            {campaign.is_partial_day && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                <RefreshCw className="h-3 w-3 animate-spin" style={{ animationDuration: '3s' }} />
-                Dados em atualizacao
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -219,25 +210,15 @@ export const CampaignCard: React.FC<CampaignCardProps> = ({ campaign, onViewAnal
           </p>
         </div>
 
-        {/* Alcance - com indicador de estimativa para periodos multi-dia */}
+        {/* Alcance */}
         <div className="bg-gradient-to-br from-teal-50 to-teal-100/50 rounded-lg p-3 border border-teal-200">
           <div className="flex items-center space-x-2 mb-1">
             <Users className="h-4 w-4 text-teal-600" />
             <span className="text-xs font-medium text-teal-700">Alcance</span>
-            {campaign.is_estimated_reach && (
-              <span title="Valor aproximado. Reach nao pode ser somado entre dias, pois a mesma pessoa pode ser contada multiplas vezes.">
-                <Info className="h-3 w-3 text-teal-400 cursor-help" />
-              </span>
-            )}
           </div>
-          <div className="flex items-baseline gap-1">
-            <p className="text-xl font-bold text-teal-900">
-              {formatCompactNumber(campaign.metrics.reach)}
-            </p>
-            {campaign.is_estimated_reach && (
-              <span className="text-[10px] text-teal-500">~aprox</span>
-            )}
-          </div>
+          <p className="text-xl font-bold text-teal-900">
+            {formatCompactNumber(campaign.metrics.reach)}
+          </p>
         </div>
       </div>
 

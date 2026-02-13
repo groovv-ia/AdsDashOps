@@ -27,7 +27,6 @@ import {
   Layers,
   Image,
   Loader2,
-  Info,
 } from 'lucide-react';
 import {
   BarChart,
@@ -346,16 +345,6 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
         </div>
       </div>
 
-      {/* Banner de dados parciais - exibido quando o periodo inclui o dia corrente */}
-      {campaign.is_partial_day && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg">
-          <RefreshCw className="h-4 w-4 text-amber-600 animate-spin flex-shrink-0" style={{ animationDuration: '3s' }} />
-          <p className="text-sm text-amber-700">
-            O periodo selecionado inclui dados do dia de hoje, que ainda estao sendo atualizados pelo Meta. Os valores finais podem variar.
-          </p>
-        </div>
-      )}
-
       {/* Cards de metricas principais */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
@@ -456,22 +445,10 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
       {/* Metricas calculadas */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card>
-          <div className="flex items-center gap-1.5 mb-1">
-            <p className="text-sm text-gray-600">Alcance</p>
-            {campaign.is_estimated_reach && (
-              <span title="Valor aproximado. Reach nao pode ser somado entre dias (metrica de unicos).">
-                <Info className="h-3.5 w-3.5 text-gray-400 cursor-help" />
-              </span>
-            )}
-          </div>
-          <div className="flex items-baseline gap-1">
-            <p className="text-2xl font-bold text-gray-900">
-              {formatCompactNumber(campaign.metrics.reach)}
-            </p>
-            {campaign.is_estimated_reach && (
-              <span className="text-xs text-gray-400">~aprox</span>
-            )}
-          </div>
+          <p className="text-sm text-gray-600 mb-1">Alcance</p>
+          <p className="text-2xl font-bold text-gray-900">
+            {formatCompactNumber(campaign.metrics.reach)}
+          </p>
         </Card>
         <Card>
           <p className="text-sm text-gray-600 mb-1">CTR</p>

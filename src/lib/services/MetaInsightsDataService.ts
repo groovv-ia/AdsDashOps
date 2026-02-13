@@ -36,6 +36,7 @@ export interface MetaCampaignData {
     conversion_value: number;
     roas: number;
     cost_per_result: number;
+    // Novas metricas de conversas e leads
     messaging_conversations_started: number;
     cost_per_messaging_conversation_started: number;
     leads: number;
@@ -48,10 +49,6 @@ export interface MetaCampaignData {
   campaign_name?: string;
   adset_id?: string;
   adset_name?: string;
-  /** Indica que o periodo inclui o dia corrente, cujos dados ainda podem mudar */
-  is_partial_day: boolean;
-  /** Indica que o reach e uma estimativa (maximo diario) pois nao pode ser somado entre dias */
-  is_estimated_reach: boolean;
 }
 
 /**
@@ -308,31 +305,6 @@ function extractConversionValue(actionValuesJson: Record<string, unknown> | stri
 }
 
 /**
- * Retorna a data de hoje no timezone America/Sao_Paulo (formato YYYY-MM-DD).
- * Usado para detectar se o periodo inclui dados parciais do dia corrente.
- */
-function getTodayDateBRT(): string {
-  const now = new Date();
-  try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Sao_Paulo',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).formatToParts(now);
-
-    const year = parts.find(p => p.type === 'year')?.value;
-    const month = parts.find(p => p.type === 'month')?.value;
-    const day = parts.find(p => p.type === 'day')?.value;
-
-    if (year && month && day) return `${year}-${month}-${day}`;
-  } catch {
-    // Fallback para UTC
-  }
-  return now.toISOString().split('T')[0];
-}
-
-/**
  * Classe principal do servico de dados do Meta Insights
  */
 export class MetaInsightsDataService {
@@ -418,12 +390,12 @@ export class MetaInsightsDataService {
 
       // Agrega metricas por campanha
       const campaignsMap = new Map<string, MetaCampaignData>();
-      const todayBRT = getTodayDateBRT();
 
       for (const insight of insights as RawInsight[]) {
         const existing = campaignsMap.get(insight.entity_id);
         const entity = entities.find(e => e.entity_id === insight.entity_id);
 
+        // Extrai conversoes e novas metricas do actions_json
         const conversions = extractConversions(insight.actions_json);
         const conversionValue = extractConversionValue(insight.action_values_json);
         const messagingConversationsStarted = extractMessagingConversationsStarted(insight.actions_json);
@@ -433,19 +405,12 @@ export class MetaInsightsDataService {
           existing.metrics.impressions += Number(insight.impressions) || 0;
           existing.metrics.clicks += Number(insight.clicks) || 0;
           existing.metrics.spend += Number(insight.spend) || 0;
-          // Reach e metrica de unicos: usa o MAIOR valor diario como estimativa conservadora
-          // Somar reach entre dias inflaria o valor, pois a mesma pessoa pode ser contada em dias diferentes
-          existing.metrics.reach = Math.max(existing.metrics.reach, Number(insight.reach) || 0);
+          existing.metrics.reach += Number(insight.reach) || 0;
           existing.metrics.conversions += conversions;
           existing.metrics.conversion_value += conversionValue;
           existing.metrics.messaging_conversations_started += messagingConversationsStarted;
           existing.metrics.leads += leads;
           existing.days_with_data += 1;
-
-          // Detecta se o periodo inclui o dia corrente (dados parciais)
-          if (insight.date === todayBRT) {
-            existing.is_partial_day = true;
-          }
 
           if (insight.date < existing.first_date) existing.first_date = insight.date;
           if (insight.date > existing.last_date) existing.last_date = insight.date;
@@ -480,17 +445,12 @@ export class MetaInsightsDataService {
             first_date: insight.date,
             last_date: insight.date,
             days_with_data: 1,
-            is_partial_day: insight.date === todayBRT,
-            is_estimated_reach: false,
           });
         }
       }
 
-      // Calcula metricas derivadas e marca reach como estimativa quando multi-dia
+      // Calcula metricas derivadas para cada campanha
       const campaigns = Array.from(campaignsMap.values()).map(campaign => {
-        if (campaign.days_with_data > 1) {
-          campaign.is_estimated_reach = true;
-        }
         this.calculateDerivedMetrics(campaign.metrics);
         return campaign;
       });
@@ -556,7 +516,6 @@ export class MetaInsightsDataService {
 
       // Agrega metricas por adset
       const adsetsMap = new Map<string, MetaCampaignData>();
-      const todayBRT = getTodayDateBRT();
 
       for (const insight of (insights || []) as RawInsight[]) {
         const entity = (adsetEntities || []).find((e: CachedEntity) => e.entity_id === insight.entity_id);
@@ -570,14 +529,12 @@ export class MetaInsightsDataService {
           existing.metrics.impressions += Number(insight.impressions) || 0;
           existing.metrics.clicks += Number(insight.clicks) || 0;
           existing.metrics.spend += Number(insight.spend) || 0;
-          // Reach: usa maximo diario (metrica de unicos nao pode ser somada)
-          existing.metrics.reach = Math.max(existing.metrics.reach, Number(insight.reach) || 0);
+          existing.metrics.reach += Number(insight.reach) || 0;
           existing.metrics.conversions += conversions;
           existing.metrics.conversion_value += conversionValue;
           existing.metrics.messaging_conversations_started += messagingConversationsStarted;
           existing.metrics.leads += leads;
           existing.days_with_data += 1;
-          if (insight.date === todayBRT) existing.is_partial_day = true;
         } else {
           adsetsMap.set(insight.entity_id, {
             entity_id: insight.entity_id,
@@ -609,14 +566,11 @@ export class MetaInsightsDataService {
             first_date: insight.date,
             last_date: insight.date,
             days_with_data: 1,
-            is_partial_day: insight.date === todayBRT,
-            is_estimated_reach: false,
           });
         }
       }
 
       const adsets = Array.from(adsetsMap.values()).map(adset => {
-        if (adset.days_with_data > 1) adset.is_estimated_reach = true;
         this.calculateDerivedMetrics(adset.metrics);
         return adset;
       });
@@ -680,7 +634,6 @@ export class MetaInsightsDataService {
 
       // Agrega metricas por ad
       const adsMap = new Map<string, MetaCampaignData>();
-      const todayBRT = getTodayDateBRT();
 
       for (const insight of (insights || []) as RawInsight[]) {
         const entity = (adEntities || []).find((e: CachedEntity) => e.entity_id === insight.entity_id);
@@ -694,14 +647,12 @@ export class MetaInsightsDataService {
           existing.metrics.impressions += Number(insight.impressions) || 0;
           existing.metrics.clicks += Number(insight.clicks) || 0;
           existing.metrics.spend += Number(insight.spend) || 0;
-          // Reach: usa maximo diario (metrica de unicos nao pode ser somada)
-          existing.metrics.reach = Math.max(existing.metrics.reach, Number(insight.reach) || 0);
+          existing.metrics.reach += Number(insight.reach) || 0;
           existing.metrics.conversions += conversions;
           existing.metrics.conversion_value += conversionValue;
           existing.metrics.messaging_conversations_started += messagingConversationsStarted;
           existing.metrics.leads += leads;
           existing.days_with_data += 1;
-          if (insight.date === todayBRT) existing.is_partial_day = true;
         } else {
           adsMap.set(insight.entity_id, {
             entity_id: insight.entity_id,
@@ -732,14 +683,11 @@ export class MetaInsightsDataService {
             first_date: insight.date,
             last_date: insight.date,
             days_with_data: 1,
-            is_partial_day: insight.date === todayBRT,
-            is_estimated_reach: false,
           });
         }
       }
 
       const ads = Array.from(adsMap.values()).map(ad => {
-        if (ad.days_with_data > 1) ad.is_estimated_reach = true;
         this.calculateDerivedMetrics(ad.metrics);
         return ad;
       });
