@@ -277,7 +277,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   const handleAnalyze = async () => {
     if (!creative) return;
 
-    const imageUrl = creative.thumbnail_url || creative.image_url;
+    const imageUrl = creative.cached_image_url || creative.image_url_hd || creative.image_url || creative.thumbnail_url;
     if (!imageUrl) {
       alert('Nenhuma imagem disponível para análise');
       return;
@@ -299,14 +299,15 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     }
   };
 
-  // Funcao helper para obter a melhor URL de imagem disponivel (prioriza HD)
-  // Inclui fallback para extra_data.raw_creative.thumbnail_url
+  // Funcao helper para obter a melhor URL de imagem disponivel
+  // Prioriza: cached (permanente) > HD (Meta CDN) > standard > thumbnail > extra_data
   const getBestImageUrl = (creative: MetaAdCreative | null): string | null => {
     if (!creative) return null;
 
-    // Prioridade: image_url_hd > image_url > thumbnail_url > extra_data fallback
+    if (creative.cached_image_url) return creative.cached_image_url;
     if (creative.image_url_hd) return creative.image_url_hd;
     if (creative.image_url) return creative.image_url;
+    if (creative.cached_thumbnail_url) return creative.cached_thumbnail_url;
     if (creative.thumbnail_url) return creative.thumbnail_url;
 
     // Fallback: tenta extrair do raw creative armazenado no extra_data
@@ -516,8 +517,13 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
   onAnalyzeClick,
   isAnalyzing,
 }) => {
-  // Usa a melhor URL disponivel (prioriza HD, com fallback para extra_data)
-  let imageUrl = creative?.image_url_hd || creative?.image_url || creative?.thumbnail_url || null;
+  // Usa a melhor URL disponivel: cached > HD > standard > thumbnail > extra_data
+  let imageUrl = creative?.cached_image_url
+    || creative?.image_url_hd
+    || creative?.image_url
+    || creative?.cached_thumbnail_url
+    || creative?.thumbnail_url
+    || null;
 
   // Fallback: tenta extrair do raw creative armazenado no extra_data
   if (!imageUrl && creative) {
@@ -657,7 +663,7 @@ const OverviewTab: React.FC<OverviewTabProps> = ({
               </p>
             </div>
           </div>
-          {!hasAnalysis && creative && (creative.thumbnail_url || creative.image_url) && (
+          {!hasAnalysis && creative && (creative.cached_image_url || creative.image_url_hd || creative.image_url || creative.thumbnail_url) && (
             <button
               onClick={onAnalyzeClick}
               disabled={isAnalyzing}
@@ -848,8 +854,13 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
     );
   }
 
-  // Usa a melhor URL disponivel (prioriza HD, com fallback para extra_data)
-  let imageUrl = creative.image_url_hd || creative.image_url || creative.thumbnail_url;
+  // Usa a melhor URL disponivel: cached > HD > standard > thumbnail > extra_data
+  let imageUrl: string | undefined = creative.cached_image_url
+    || creative.image_url_hd
+    || creative.image_url
+    || creative.cached_thumbnail_url
+    || creative.thumbnail_url
+    || undefined;
 
   // Fallback: tenta extrair do raw creative armazenado no extra_data
   if (!imageUrl) {

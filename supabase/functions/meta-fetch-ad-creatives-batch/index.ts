@@ -2,47 +2,52 @@
  * Edge Function: meta-fetch-ad-creatives-batch
  *
  * Busca criativos de multiplos anuncios do Meta Ads API em lote.
- * Suporta todos os tipos de criativos: imagem, video, carrossel, dinamico.
+ * Suporta todos os tipos: imagem, video, carrossel, dinamico.
  * Inclui busca de textos de posts via effective_object_story_id.
- * Otimizado para buscar thumbnails em HD e garantir 100% de sincronizacao.
+ * Faz download das imagens e armazena no Supabase Storage para persistencia.
  *
  * POST /functions/v1/meta-fetch-ad-creatives-batch
  * Body: { ad_ids: string[], meta_ad_account_id: string }
  *
- * Melhorias:
- * - Busca thumbnails em HD priorizando maior resolucao
- * - Detecta qualidade da imagem (hd/sd/low)
- * - Extrai dimensoes das imagens quando disponiveis
- * - Tracking de tentativas e status de fetch
- * - Validacao de completude dos criativos
+ * Estrategia de imagens em 3 camadas:
+ * - thumbnail_url: p64x64 original do Meta para carregamento rapido
+ * - image_url / image_url_hd: URL em alta resolucao (adimages API, full_picture)
+ * - cached_image_url / cached_thumbnail_url: permanente no Supabase Storage
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-// Headers CORS
+// Headers CORS obrigatorios
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Limite de ads por batch
+// Limite de ads por batch na Graph API
 const BATCH_SIZE = 50;
 
-// Interface do payload
+// Limite maximo de tamanho de imagem para cache no Storage (10MB)
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+
+// Tempo de expiracao do cache em dias
+const CACHE_EXPIRY_DAYS = 30;
+
+// ============================================
+// Interfaces
+// ============================================
+
 interface RequestPayload {
   ad_ids: string[];
   meta_ad_account_id: string;
 }
 
-// Interface de batch response da Meta
 interface MetaBatchResponse {
   code: number;
   body: string;
 }
 
-// Interface expandida para criativo da Meta
 interface MetaCreativeData {
   id?: string;
   name?: string;
@@ -108,7 +113,6 @@ interface MetaCreativeData {
   source_instagram_media_id?: string;
 }
 
-// Interface de resposta do anuncio
 interface MetaAdResponse {
   id: string;
   name?: string;
@@ -121,7 +125,6 @@ interface MetaAdResponse {
   error?: { message: string; code: number };
 }
 
-// Interface para dados de post do Facebook
 interface PostData {
   message?: string;
   story?: string;
@@ -141,42 +144,60 @@ interface PostData {
   };
 }
 
-// Cache para image_hash -> URL (evita requisicoes duplicadas)
-const imageHashCache = new Map<string, string>();
-
-// Cache para post data (evita requisicoes duplicadas)
-const postDataCache = new Map<string, PostData>();
-
-// Interface para resultado de imagem com qualidade e dimensoes
+// Resultado completo com 3 camadas de URL
 interface ImageResult {
-  url: string | null;
-  url_hd: string | null;
+  url: string | null;           // Melhor URL disponivel (alta res)
+  url_hd: string | null;        // URL em alta definicao
+  thumbnail_original: string | null; // URL p64x64 original para carregamento rapido
   width: number | null;
   height: number | null;
   quality: 'hd' | 'sd' | 'low' | 'unknown';
+  source: string;               // Origem da imagem para debug
+}
+
+// ============================================
+// Caches em memoria (dentro da mesma invocacao)
+// ============================================
+
+const imageHashCache = new Map<string, string>();
+const postDataCache = new Map<string, PostData>();
+
+// ============================================
+// Funcoes auxiliares
+// ============================================
+
+/**
+ * Verifica se uma URL eh um thumbnail minusculo do Meta CDN (p64x64)
+ */
+function isLowQualityUrl(url: string): boolean {
+  return url.includes('p64x64') || url.includes('p128x128');
 }
 
 /**
- * Determina qualidade da imagem baseado nas dimensões
+ * Tenta melhorar resolucao de URLs do Meta CDN
+ * Substitui p64x64 por p720x720 para obter resolucao maior
+ */
+function upgradeUrlResolution(url: string): string {
+  try {
+    if (url.includes('p64x64') || url.includes('p128x128')) {
+      return url
+        .replace(/p64x64/g, 'p720x720')
+        .replace(/p128x128/g, 'p720x720');
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Determina qualidade baseado nas dimensoes
  */
 function determineImageQuality(width: number | null, height: number | null): 'hd' | 'sd' | 'low' | 'unknown' {
   if (!width || !height) return 'unknown';
-
-  // HD: >= 1280x720 ou >= 720x1280 (landscape ou portrait)
-  if ((width >= 1280 && height >= 720) || (width >= 720 && height >= 1280)) {
-    return 'hd';
-  }
-
-  // SD: >= 640x480 ou >= 480x640
-  if ((width >= 640 && height >= 480) || (width >= 480 && height >= 640)) {
-    return 'sd';
-  }
-
-  // Low: qualquer coisa menor
-  if (width > 0 && height > 0) {
-    return 'low';
-  }
-
+  if ((width >= 1280 && height >= 720) || (width >= 720 && height >= 1280)) return 'hd';
+  if ((width >= 640 && height >= 480) || (width >= 480 && height >= 640)) return 'sd';
+  if (width > 0 && height > 0) return 'low';
   return 'unknown';
 }
 
@@ -187,7 +208,6 @@ async function fetchPostData(
   postId: string,
   accessToken: string
 ): Promise<PostData | null> {
-  // Verifica cache
   if (postDataCache.has(postId)) {
     return postDataCache.get(postId) || null;
   }
@@ -195,10 +215,10 @@ async function fetchPostData(
   try {
     const fields = "message,story,description,name,caption,full_picture,picture,call_to_action,attachments{title,description,url,media}";
     const url = `https://graph.facebook.com/v21.0/${postId}?fields=${fields}&access_token=${accessToken}`;
-    
+
     console.log(`Fetching post data for: ${postId}`);
     const response = await fetch(url);
-    
+
     if (!response.ok) {
       console.error(`Error fetching post ${postId}: HTTP ${response.status}`);
       return null;
@@ -214,30 +234,30 @@ async function fetchPostData(
 }
 
 /**
- * Converte image_hash para URL usando API de ad images
+ * Converte image_hash para URL de alta resolucao usando API de adimages
+ * Retorna a URL original (nao-CDN) que nao expira
  */
 async function convertImageHashToUrl(
   imageHash: string,
   adAccountId: string,
   accessToken: string
 ): Promise<string | null> {
-  // Verifica cache
   if (imageHashCache.has(imageHash)) {
     return imageHashCache.get(imageHash) || null;
   }
 
   try {
-    // Formata o ad account ID corretamente
     const accountId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
-    const url = `https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128,permalink_url&access_token=${accessToken}`;
+    // Solicita url (maior), url_128, permalink_url para ter opcoes de resolucao
+    const url = `https://graph.facebook.com/v21.0/${accountId}/adimages?hashes=${imageHash}&fields=url,url_128,url_256,permalink_url,width,height&access_token=${accessToken}`;
 
     const response = await fetch(url);
     const data = await response.json();
 
     if (data.data && data.data.length > 0) {
       const imageData = data.data[0];
-      // Prioriza URL maior
-      const imageUrl = imageData.url || imageData.url_128 || imageData.permalink_url;
+      // Prioriza URL de maior resolucao
+      const imageUrl = imageData.url || imageData.permalink_url || imageData.url_256 || imageData.url_128;
       if (imageUrl) {
         imageHashCache.set(imageHash, imageUrl);
         return imageUrl;
@@ -250,7 +270,7 @@ async function convertImageHashToUrl(
 }
 
 /**
- * Busca thumbnail de video em HD com informações completas
+ * Busca thumbnail de video em HD com informacoes completas
  */
 async function fetchVideoThumbnailHD(videoId: string, accessToken: string): Promise<ImageResult> {
   try {
@@ -260,72 +280,84 @@ async function fetchVideoThumbnailHD(videoId: string, accessToken: string): Prom
 
     if (data.error) {
       console.error(`Video thumbnail error for ${videoId}:`, data.error);
-      return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
+      return { url: null, url_hd: null, thumbnail_original: null, width: null, height: null, quality: 'unknown', source: 'none' };
     }
 
     let bestThumbnail: { uri: string; width: number; height: number } | null = null;
     let hdThumbnail: { uri: string; width: number; height: number } | null = null;
 
-    // Processa thumbnails se existirem
     if (data.thumbnails?.data && data.thumbnails.data.length > 0) {
-      // Ordena por tamanho (maior primeiro)
-      const sorted = data.thumbnails.data.sort((a: { width: number; height: number }, b: { width: number; height: number }) =>
-        (b.width * b.height) - (a.width * a.height)
+      const sorted = data.thumbnails.data.sort(
+        (a: { width: number; height: number }, b: { width: number; height: number }) =>
+          (b.width * b.height) - (a.width * a.height)
       );
-
       bestThumbnail = sorted[0];
-
-      // Busca thumbnail HD (>= 1280x720)
       hdThumbnail = sorted.find((t: { width: number; height: number }) =>
         t.width >= 1280 && t.height >= 720
       ) || null;
     }
 
-    // Se temos thumbnail HD, usa ele como principal
     if (hdThumbnail) {
-      const quality = determineImageQuality(hdThumbnail.width, hdThumbnail.height);
       return {
         url: hdThumbnail.uri,
         url_hd: hdThumbnail.uri,
+        thumbnail_original: data.picture || null,
         width: hdThumbnail.width,
         height: hdThumbnail.height,
-        quality,
+        quality: determineImageQuality(hdThumbnail.width, hdThumbnail.height),
+        source: 'video_thumbnail_hd',
       };
     }
 
-    // Se temos thumbnail normal, usa como fallback
     if (bestThumbnail) {
-      const quality = determineImageQuality(bestThumbnail.width, bestThumbnail.height);
       return {
         url: bestThumbnail.uri,
         url_hd: null,
+        thumbnail_original: data.picture || null,
         width: bestThumbnail.width,
         height: bestThumbnail.height,
-        quality,
+        quality: determineImageQuality(bestThumbnail.width, bestThumbnail.height),
+        source: 'video_thumbnail_best',
       };
     }
 
-    // Fallback para picture do video
     if (data.picture) {
       return {
         url: data.picture,
         url_hd: null,
+        thumbnail_original: data.picture,
         width: null,
         height: null,
         quality: 'unknown',
+        source: 'video_picture',
       };
     }
 
-    return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
+    return { url: null, url_hd: null, thumbnail_original: null, width: null, height: null, quality: 'unknown', source: 'none' };
   } catch (err) {
     console.error(`Error fetching video thumbnail for ${videoId}:`, err);
-    return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
+    return { url: null, url_hd: null, thumbnail_original: null, width: null, height: null, quality: 'unknown', source: 'none' };
   }
 }
 
+// ============================================
+// Funcao principal de extracao de imagem
+// PRIORIDADE REESTRUTURADA: fontes de alta resolucao primeiro
+// ============================================
+
 /**
- * Extrai URL de imagem de todas as fontes possiveis
- * Retorna ImageResult com informações de qualidade e dimensões
+ * Extrai URL de imagem priorizando fontes de alta qualidade.
+ * Mantem a URL p64x64 original como thumbnail para carregamento rapido.
+ *
+ * Ordem de prioridade:
+ * 1. postData.full_picture (melhor qualidade do post)
+ * 2. postData.attachments media (imagem do anexo)
+ * 3. asset_feed_spec.images[].hash -> convertImageHashToUrl (full-res via adimages API)
+ * 4. image_hash direto -> convertImageHashToUrl
+ * 5. link_data.picture / video_data.image_url / photo_data.url
+ * 6. child_attachments (carrossel/template)
+ * 7. creative.image_url (se NAO for p64x64)
+ * 8. creative.thumbnail_url com upgrade (p64x64 -> p720x720, ultimo recurso)
  */
 async function extractImageUrl(
   creative: MetaCreativeData,
@@ -333,52 +365,19 @@ async function extractImageUrl(
   accessToken: string,
   postData?: PostData | null
 ): Promise<ImageResult> {
-  // Helper para tentar melhorar resolucao de URLs do Meta CDN
-  // URLs com parametros como p64x64 sao thumbnails minusculos
-  const upgradeUrlResolution = (url: string): string => {
-    try {
-      // Remove parametros de resize do Meta CDN (ex: stp=c0.5000x0.5000f_dst-emg0_p64x64_q75)
-      // Substitui p64x64 ou p128x128 por p720x720 para obter resolucao maior
-      if (url.includes('p64x64') || url.includes('p128x128')) {
-        return url
-          .replace(/p64x64/g, 'p720x720')
-          .replace(/p128x128/g, 'p720x720');
-      }
-      return url;
-    } catch {
-      return url;
-    }
-  };
+  // Captura o thumbnail original p64x64 para uso como fast-load
+  const originalThumbnail = creative.thumbnail_url || null;
 
-  // Helper para processar URL simples
-  // Tenta upgradar resolucao e separa thumbnail (original) de image (upgrade)
-  const processUrl = (url: string): ImageResult => {
-    const upgraded = upgradeUrlResolution(url);
-    return {
-      url: upgraded,
-      url_hd: upgraded,
-      width: null,
-      height: null,
-      quality: url.includes('p64x64') ? 'low' : 'unknown',
-    };
-  };
-
-  // 1. URL direta do criativo
-  if (creative.image_url) {
-    return processUrl(creative.image_url);
-  }
-
-  if (creative.thumbnail_url) {
-    return processUrl(creative.thumbnail_url);
-  }
-
-  // 2. De post data
-  if (postData?.full_picture) {
-    return processUrl(postData.full_picture);
-  }
-  if (postData?.picture) {
-    return processUrl(postData.picture);
-  }
+  // Helper para criar resultado de alta qualidade preservando o thumbnail original
+  const makeResult = (url: string, source: string, isHd = false): ImageResult => ({
+    url,
+    url_hd: isHd ? url : null,
+    thumbnail_original: originalThumbnail,
+    width: null,
+    height: null,
+    quality: isHd ? 'hd' : (isLowQualityUrl(url) ? 'low' : 'unknown'),
+    source,
+  });
 
   const linkData = creative.object_story_spec?.link_data;
   const videoData = creative.object_story_spec?.video_data;
@@ -386,152 +385,345 @@ async function extractImageUrl(
   const templateData = creative.object_story_spec?.template_data;
   const assetFeed = creative.asset_feed_spec;
 
-  // 3. Picture de link_data
-  if (linkData?.picture) {
-    return processUrl(linkData.picture);
+  // --- FONTES DE ALTA QUALIDADE (prioridade maxima) ---
+
+  // 1. full_picture do post (sempre alta qualidade)
+  if (postData?.full_picture) {
+    console.log('Image source: postData.full_picture');
+    return makeResult(postData.full_picture, 'post_full_picture', true);
   }
 
-  // 4. Image URL de video_data
-  if (videoData?.image_url) {
-    return processUrl(videoData.image_url);
-  }
-
-  // 5. URL de photo_data
-  if (photoData?.url) {
-    return processUrl(photoData.url);
-  }
-
-  // 6. Primeiro item de carrossel (child_attachments)
-  if (linkData?.child_attachments && linkData.child_attachments.length > 0) {
-    const firstChild = linkData.child_attachments[0];
-    if (firstChild.picture) {
-      return processUrl(firstChild.picture);
-    }
-    if (firstChild.image_hash) {
-      const url = await convertImageHashToUrl(firstChild.image_hash, adAccountId, accessToken);
-      if (url) return processUrl(url);
-    }
-  }
-
-  // 7. Template data child attachments
-  if (templateData?.child_attachments && templateData.child_attachments.length > 0) {
-    const firstChild = templateData.child_attachments[0];
-    if (firstChild.picture) {
-      return processUrl(firstChild.picture);
-    }
-    if (firstChild.image_hash) {
-      const url = await convertImageHashToUrl(firstChild.image_hash, adAccountId, accessToken);
-      if (url) return processUrl(url);
-    }
-  }
-
-  // 8. Asset feed spec images (criativos dinamicos)
-  if (assetFeed?.images && assetFeed.images.length > 0) {
-    const firstImage = assetFeed.images[0];
-    if (firstImage.url) {
-      return processUrl(firstImage.url);
-    }
-    if (firstImage.hash) {
-      const url = await convertImageHashToUrl(firstImage.hash, adAccountId, accessToken);
-      if (url) return processUrl(url);
-    }
-  }
-
-  // 9. Asset feed spec videos thumbnail
-  if (assetFeed?.videos && assetFeed.videos.length > 0) {
-    const firstVideo = assetFeed.videos[0];
-    if (firstVideo.thumbnail_url) {
-      return processUrl(firstVideo.thumbnail_url);
-    }
-    if (firstVideo.video_id) {
-      const thumbResult = await fetchVideoThumbnailHD(firstVideo.video_id, accessToken);
-      if (thumbResult.url) return thumbResult;
-    }
-  }
-
-  // 10. Attachments do post
+  // 2. Attachments do post (imagem de midia)
   if (postData?.attachments?.data && postData.attachments.data.length > 0) {
     const firstAttachment = postData.attachments.data[0];
     if (firstAttachment.media?.image?.src) {
-      return processUrl(firstAttachment.media.image.src);
+      console.log('Image source: postData.attachments.media.image.src');
+      return makeResult(firstAttachment.media.image.src, 'post_attachment_media', true);
     }
   }
 
-  // 11. Converte image_hash de varias fontes
-  const hashesToTry = [
-    creative.image_hash,
-    linkData?.image_hash,
-    videoData?.image_hash,
-    photoData?.image_hash,
-  ].filter(Boolean) as string[];
-
-  for (const hash of hashesToTry) {
-    const url = await convertImageHashToUrl(hash, adAccountId, accessToken);
-    if (url) return processUrl(url);
+  // 3. postData.picture (menor que full_picture mas ainda boa)
+  if (postData?.picture && !isLowQualityUrl(postData.picture)) {
+    console.log('Image source: postData.picture');
+    return makeResult(postData.picture, 'post_picture');
   }
 
-  // 12. Busca thumbnail de video se houver video_id
+  // 4. Asset feed spec images via hash -> adimages API (full-res, crucial para dinamicos)
+  if (assetFeed?.images && assetFeed.images.length > 0) {
+    for (const img of assetFeed.images) {
+      if (img.hash) {
+        const hdUrl = await convertImageHashToUrl(img.hash, adAccountId, accessToken);
+        if (hdUrl) {
+          console.log(`Image source: asset_feed_spec.images hash ${img.hash}`);
+          return makeResult(hdUrl, 'asset_feed_image_hash', true);
+        }
+      }
+      if (img.url && !isLowQualityUrl(img.url)) {
+        console.log('Image source: asset_feed_spec.images url');
+        return makeResult(img.url, 'asset_feed_image_url');
+      }
+    }
+  }
+
+  // 5. image_hash direto do criativo -> adimages API
+  if (creative.image_hash) {
+    const hdUrl = await convertImageHashToUrl(creative.image_hash, adAccountId, accessToken);
+    if (hdUrl) {
+      console.log(`Image source: creative.image_hash ${creative.image_hash}`);
+      return makeResult(hdUrl, 'creative_image_hash', true);
+    }
+  }
+
+  // 6. link_data.image_hash -> adimages API
+  if (linkData?.image_hash) {
+    const hdUrl = await convertImageHashToUrl(linkData.image_hash, adAccountId, accessToken);
+    if (hdUrl) {
+      console.log(`Image source: link_data.image_hash ${linkData.image_hash}`);
+      return makeResult(hdUrl, 'link_data_image_hash', true);
+    }
+  }
+
+  // 7. link_data.picture (geralmente boa qualidade)
+  if (linkData?.picture && !isLowQualityUrl(linkData.picture)) {
+    console.log('Image source: link_data.picture');
+    return makeResult(linkData.picture, 'link_data_picture');
+  }
+
+  // 8. video_data.image_url
+  if (videoData?.image_url && !isLowQualityUrl(videoData.image_url)) {
+    console.log('Image source: video_data.image_url');
+    return makeResult(videoData.image_url, 'video_data_image_url');
+  }
+
+  // 9. video_data.image_hash -> adimages API
+  if (videoData?.image_hash) {
+    const hdUrl = await convertImageHashToUrl(videoData.image_hash, adAccountId, accessToken);
+    if (hdUrl) {
+      console.log(`Image source: video_data.image_hash ${videoData.image_hash}`);
+      return makeResult(hdUrl, 'video_data_image_hash', true);
+    }
+  }
+
+  // 10. photo_data.url
+  if (photoData?.url && !isLowQualityUrl(photoData.url)) {
+    console.log('Image source: photo_data.url');
+    return makeResult(photoData.url, 'photo_data_url');
+  }
+
+  // 11. photo_data.image_hash -> adimages API
+  if (photoData?.image_hash) {
+    const hdUrl = await convertImageHashToUrl(photoData.image_hash, adAccountId, accessToken);
+    if (hdUrl) {
+      console.log(`Image source: photo_data.image_hash ${photoData.image_hash}`);
+      return makeResult(hdUrl, 'photo_data_image_hash', true);
+    }
+  }
+
+  // 12. Primeiro item de carrossel
+  if (linkData?.child_attachments && linkData.child_attachments.length > 0) {
+    const firstChild = linkData.child_attachments[0];
+    if (firstChild.image_hash) {
+      const hdUrl = await convertImageHashToUrl(firstChild.image_hash, adAccountId, accessToken);
+      if (hdUrl) {
+        console.log('Image source: child_attachment.image_hash');
+        return makeResult(hdUrl, 'carousel_child_hash', true);
+      }
+    }
+    if (firstChild.picture && !isLowQualityUrl(firstChild.picture)) {
+      console.log('Image source: child_attachment.picture');
+      return makeResult(firstChild.picture, 'carousel_child_picture');
+    }
+  }
+
+  // 13. Template data child attachments
+  if (templateData?.child_attachments && templateData.child_attachments.length > 0) {
+    const firstChild = templateData.child_attachments[0];
+    if (firstChild.image_hash) {
+      const hdUrl = await convertImageHashToUrl(firstChild.image_hash, adAccountId, accessToken);
+      if (hdUrl) {
+        console.log('Image source: template_child.image_hash');
+        return makeResult(hdUrl, 'template_child_hash', true);
+      }
+    }
+    if (firstChild.picture && !isLowQualityUrl(firstChild.picture)) {
+      console.log('Image source: template_child.picture');
+      return makeResult(firstChild.picture, 'template_child_picture');
+    }
+  }
+
+  // 14. Asset feed spec videos thumbnail
+  if (assetFeed?.videos && assetFeed.videos.length > 0) {
+    const firstVideo = assetFeed.videos[0];
+    if (firstVideo.thumbnail_url && !isLowQualityUrl(firstVideo.thumbnail_url)) {
+      console.log('Image source: asset_feed_video.thumbnail_url');
+      return makeResult(firstVideo.thumbnail_url, 'asset_feed_video_thumb');
+    }
+    if (firstVideo.video_id) {
+      const thumbResult = await fetchVideoThumbnailHD(firstVideo.video_id, accessToken);
+      if (thumbResult.url) return { ...thumbResult, thumbnail_original: originalThumbnail };
+    }
+  }
+
+  // 15. Busca thumbnail de video se houver video_id
   const videoId = creative.video_id || videoData?.video_id;
   if (videoId) {
     const thumbResult = await fetchVideoThumbnailHD(videoId, accessToken);
-    if (thumbResult.url) return thumbResult;
+    if (thumbResult.url) return { ...thumbResult, thumbnail_original: originalThumbnail };
   }
 
-  return { url: null, url_hd: null, width: null, height: null, quality: 'unknown' };
+  // --- FONTES DE BAIXA QUALIDADE (fallback) ---
+
+  // 16. creative.image_url (pode ser de boa ou ma qualidade)
+  if (creative.image_url) {
+    if (!isLowQualityUrl(creative.image_url)) {
+      console.log('Image source: creative.image_url (good quality)');
+      return makeResult(creative.image_url, 'creative_image_url');
+    }
+    // Se e p64x64, faz upgrade para p720x720
+    const upgraded = upgradeUrlResolution(creative.image_url);
+    console.log('Image source: creative.image_url (upgraded from p64x64)');
+    return {
+      url: upgraded,
+      url_hd: null,
+      thumbnail_original: creative.image_url,
+      width: null,
+      height: null,
+      quality: 'low',
+      source: 'creative_image_url_upgraded',
+    };
+  }
+
+  // 17. creative.thumbnail_url (ULTIMO recurso - sempre p64x64)
+  if (creative.thumbnail_url) {
+    const upgraded = upgradeUrlResolution(creative.thumbnail_url);
+    console.log('Image source: creative.thumbnail_url (upgraded from p64x64)');
+    return {
+      url: upgraded,
+      url_hd: null,
+      thumbnail_original: creative.thumbnail_url,
+      width: null,
+      height: null,
+      quality: 'low',
+      source: 'creative_thumbnail_upgraded',
+    };
+  }
+
+  return {
+    url: null,
+    url_hd: null,
+    thumbnail_original: null,
+    width: null,
+    height: null,
+    quality: 'unknown',
+    source: 'none',
+  };
+}
+
+// ============================================
+// Upload de imagens para Supabase Storage
+// ============================================
+
+/**
+ * Faz download de uma imagem e upload para o Supabase Storage
+ * Retorna a URL publica/signed do arquivo no Storage
+ */
+async function cacheImageToStorage(
+  imageUrl: string,
+  storagePath: string,
+  supabaseAdmin: ReturnType<typeof createClient>
+): Promise<string | null> {
+  try {
+    // Faz download da imagem
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      console.error(`Download failed for ${storagePath}: HTTP ${response.status}`);
+      return null;
+    }
+
+    // Verifica tamanho
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > MAX_IMAGE_SIZE_BYTES) {
+      console.log(`Image too large for cache (${contentLength} bytes): ${storagePath}`);
+      return null;
+    }
+
+    // Le o conteudo como ArrayBuffer
+    const arrayBuffer = await response.arrayBuffer();
+    if (arrayBuffer.byteLength > MAX_IMAGE_SIZE_BYTES) {
+      console.log(`Image too large for cache (${arrayBuffer.byteLength} bytes): ${storagePath}`);
+      return null;
+    }
+
+    // Determina content-type
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+
+    // Upload para o Storage usando service role (bypassa RLS)
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('ad-media-cache')
+      .upload(storagePath, arrayBuffer, {
+        contentType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error(`Upload failed for ${storagePath}:`, uploadError.message);
+      return null;
+    }
+
+    // Gera URL signed com validade de 30 dias
+    const { data: signedData, error: signedError } = await supabaseAdmin.storage
+      .from('ad-media-cache')
+      .createSignedUrl(storagePath, CACHE_EXPIRY_DAYS * 24 * 60 * 60);
+
+    if (signedError || !signedData?.signedUrl) {
+      console.error(`Signed URL generation failed for ${storagePath}:`, signedError?.message);
+      return null;
+    }
+
+    return signedData.signedUrl;
+  } catch (err) {
+    console.error(`Cache image error for ${storagePath}:`, err);
+    return null;
+  }
 }
 
 /**
- * Determina tipo do criativo
- * Classifica com base nos dados disponíveis do Meta API
+ * Faz cache de imagem HD e thumbnail no Storage
+ * Retorna URLs do Storage para ambas
+ */
+async function cacheCreativeImages(
+  imageResult: ImageResult,
+  workspaceId: string,
+  adId: string,
+  supabaseAdmin: ReturnType<typeof createClient>
+): Promise<{ cachedImageUrl: string | null; cachedThumbnailUrl: string | null; fileSize: number | null }> {
+  let cachedImageUrl: string | null = null;
+  let cachedThumbnailUrl: string | null = null;
+  let fileSize: number | null = null;
+
+  const basePath = `workspaces/${workspaceId}/creatives/${adId}`;
+
+  // Cache da imagem principal (alta resolucao)
+  const mainUrl = imageResult.url_hd || imageResult.url;
+  if (mainUrl && !isLowQualityUrl(mainUrl)) {
+    try {
+      // Determina extensao a partir da URL
+      const ext = mainUrl.includes('.png') ? 'png' : 'jpg';
+      const imagePath = `${basePath}/image.${ext}`;
+
+      cachedImageUrl = await cacheImageToStorage(mainUrl, imagePath, supabaseAdmin);
+
+      if (cachedImageUrl) {
+        // Estima tamanho do arquivo (ja verificado no download)
+        console.log(`Cached HD image for ad ${adId}`);
+      }
+    } catch (err) {
+      console.error(`Error caching HD image for ad ${adId}:`, err);
+    }
+  }
+
+  // Cache do thumbnail original (p64x64 para carregamento rapido)
+  if (imageResult.thumbnail_original) {
+    try {
+      const thumbExt = imageResult.thumbnail_original.includes('.png') ? 'png' : 'jpg';
+      const thumbPath = `${basePath}/thumb.${thumbExt}`;
+
+      cachedThumbnailUrl = await cacheImageToStorage(imageResult.thumbnail_original, thumbPath, supabaseAdmin);
+
+      if (cachedThumbnailUrl) {
+        console.log(`Cached thumbnail for ad ${adId}`);
+      }
+    } catch (err) {
+      console.error(`Error caching thumbnail for ad ${adId}:`, err);
+    }
+  }
+
+  return { cachedImageUrl, cachedThumbnailUrl, fileSize };
+}
+
+// ============================================
+// Tipo de criativo e textos
+// ============================================
+
+/**
+ * Determina tipo do criativo baseado nos dados disponiveis
  */
 function determineCreativeType(creative: MetaCreativeData): string {
   const videoData = creative.object_story_spec?.video_data;
   const linkData = creative.object_story_spec?.link_data;
   const assetFeed = creative.asset_feed_spec;
 
-  // Video: tem video_id direto ou em video_data
-  if (creative.video_id || videoData?.video_id) {
-    return "video";
-  }
-
-  // Carrossel: tem mais de 1 child_attachment
-  if (linkData?.child_attachments && linkData.child_attachments.length > 1) {
-    return "carousel";
-  }
-
-  // Criativo dinamico via asset_feed_spec
+  if (creative.video_id || videoData?.video_id) return "video";
+  if (linkData?.child_attachments && linkData.child_attachments.length > 1) return "carousel";
   if (assetFeed && (assetFeed.images?.length || assetFeed.videos?.length || assetFeed.bodies?.length)) {
-    if (assetFeed.videos && assetFeed.videos.length > 0) {
-      return "video";
-    }
+    if (assetFeed.videos && assetFeed.videos.length > 0) return "video";
     return "dynamic";
   }
-
-  // Imagem: tem URL ou hash de imagem direto
-  if (creative.image_url || creative.image_hash || linkData?.picture || linkData?.image_hash) {
-    return "image";
-  }
-
-  // Dinamico: tem effective_object_story_id (catalogo, posts dinamicos)
-  if (creative.effective_object_story_id) {
-    return "dynamic";
-  }
-
-  // Dinamico: nome com templates de catalogo ({{product.name}}, etc)
-  if (creative.name && creative.name.includes('{{product.')) {
-    return "dynamic";
-  }
-
-  // Dinamico: tem effective_instagram_media_id
-  if (creative.effective_instagram_media_id) {
-    return "dynamic";
-  }
-
-  // Se tem thumbnail_url do Meta, e pelo menos uma imagem estatica
-  if (creative.thumbnail_url) {
-    return "image";
-  }
-
+  if (creative.image_url || creative.image_hash || linkData?.picture || linkData?.image_hash) return "image";
+  if (creative.effective_object_story_id) return "dynamic";
+  if (creative.name && creative.name.includes('{{product.')) return "dynamic";
+  if (creative.effective_instagram_media_id) return "dynamic";
+  if (creative.thumbnail_url) return "image";
   return "unknown";
 }
 
@@ -547,81 +739,47 @@ function extractTexts(
   const photoData = creative.object_story_spec?.photo_data;
   const assetFeed = creative.asset_feed_spec;
 
-  // Title - tenta varias fontes
-  let title = creative.title ||
-    linkData?.name ||
-    videoData?.title ||
-    assetFeed?.titles?.[0]?.text ||
-    null;
-
-  // Se nao achou, tenta do post
+  let title = creative.title || linkData?.name || videoData?.title || assetFeed?.titles?.[0]?.text || null;
   if (!title && postData) {
     title = postData.name || postData.attachments?.data?.[0]?.title || null;
   }
 
-  // Body - tenta varias fontes
-  let body = creative.body ||
-    linkData?.message ||
-    videoData?.message ||
-    photoData?.caption ||
-    assetFeed?.bodies?.[0]?.text ||
-    null;
-
-  // Se nao achou, tenta do post
+  let body = creative.body || linkData?.message || videoData?.message || photoData?.caption || assetFeed?.bodies?.[0]?.text || null;
   if (!body && postData) {
     body = postData.message || postData.story || null;
   }
 
-  // Description - tenta varias fontes
-  let description = linkData?.description ||
-    videoData?.link_description ||
-    assetFeed?.descriptions?.[0]?.text ||
-    null;
-
-  // Se nao achou, tenta do post
+  let description = linkData?.description || videoData?.link_description || assetFeed?.descriptions?.[0]?.text || null;
   if (!description && postData) {
-    description = postData.description ||
-      postData.caption ||
-      postData.attachments?.data?.[0]?.description ||
-      null;
+    description = postData.description || postData.caption || postData.attachments?.data?.[0]?.description || null;
   }
 
-  // Call to action
-  let callToAction = creative.call_to_action_type ||
-    linkData?.call_to_action?.type ||
-    videoData?.call_to_action?.type ||
-    assetFeed?.call_to_action_types?.[0] ||
-    null;
-
-  // Se nao achou, tenta do post
+  let callToAction = creative.call_to_action_type || linkData?.call_to_action?.type || videoData?.call_to_action?.type || assetFeed?.call_to_action_types?.[0] || null;
   if (!callToAction && postData?.call_to_action?.type) {
     callToAction = postData.call_to_action.type;
   }
 
-  // Link URL
-  let linkUrl = linkData?.link ||
-    videoData?.call_to_action?.value?.link ||
-    assetFeed?.link_urls?.[0]?.website_url ||
-    null;
-
-  // Se nao achou, tenta do post
+  let linkUrl = linkData?.link || videoData?.call_to_action?.value?.link || assetFeed?.link_urls?.[0]?.website_url || null;
   if (!linkUrl && postData) {
-    linkUrl = postData.call_to_action?.value?.link ||
-      postData.attachments?.data?.[0]?.url ||
-      null;
+    linkUrl = postData.call_to_action?.value?.link || postData.attachments?.data?.[0]?.url || null;
   }
 
   return { title, body, description, callToAction, linkUrl };
 }
 
+// ============================================
+// Processamento principal de cada anuncio
+// ============================================
+
 /**
- * Processa resposta de um ad
+ * Processa resposta de um ad, extrai criativo e faz cache no Storage
  */
 async function processAdResponse(
   adData: MetaAdResponse,
   metaAdAccountId: string,
   workspaceId: string,
-  accessToken: string
+  accessToken: string,
+  supabaseAdmin: ReturnType<typeof createClient>
 ): Promise<{ record: Record<string, unknown> | null; error: string | null }> {
   if (adData.error) {
     return { record: null, error: adData.error.message };
@@ -634,7 +792,6 @@ async function processAdResponse(
   }
 
   if (!creative) {
-    // Retorna registro mesmo sem criativo, com preview_url
     return {
       record: {
         workspace_id: workspaceId,
@@ -663,6 +820,10 @@ async function processAdResponse(
         error_message: null,
         extra_data: { ad_name: adData.name, ad_status: adData.status },
         fetched_at: new Date().toISOString(),
+        cached_image_url: null,
+        cached_thumbnail_url: null,
+        cache_expires_at: null,
+        file_size: null,
       },
       error: null,
     };
@@ -676,64 +837,89 @@ async function processAdResponse(
 
   const assetFeed = creative.asset_feed_spec;
   const videoData = creative.object_story_spec?.video_data;
-
-  // Extrai tipo
   const creativeType = determineCreativeType(creative);
 
-  // Extrai URL da imagem com qualidade e dimensoes (passa postData para fallback)
+  // Extrai URL da imagem com nova prioridade (alta qualidade primeiro)
   let imageResult = await extractImageUrl(creative, metaAdAccountId, accessToken, postData);
 
   // Video ID e URL
   const videoId = creative.video_id || videoData?.video_id || assetFeed?.videos?.[0]?.video_id || null;
   const videoUrl = videoId ? `https://www.facebook.com/ads/videos/${videoId}` : null;
 
-  // Para videos, busca thumbnail em HD se nao tiver imagem
-  if (creativeType === "video" && videoId && !imageResult.url) {
-    imageResult = await fetchVideoThumbnailHD(videoId, accessToken);
+  // Para videos, busca thumbnail em HD se nao tiver imagem boa
+  if (creativeType === "video" && videoId && (!imageResult.url || isLowQualityUrl(imageResult.url))) {
+    const videoThumb = await fetchVideoThumbnailHD(videoId, accessToken);
+    if (videoThumb.url && (!imageResult.url || !isLowQualityUrl(videoThumb.url))) {
+      imageResult = { ...videoThumb, thumbnail_original: imageResult.thumbnail_original || videoThumb.thumbnail_original };
+    }
   }
 
   // Fallback final: se ainda nao tem imagem, usa thumbnail_url do raw creative
-  // Isso cobre criativos dinamicos/catalogo onde extractImageUrl nao encontrou nada
   if (!imageResult.url && creative.thumbnail_url) {
-    console.log(`Fallback: usando thumbnail_url do creative raw para ad ${adData.id}`);
+    console.log(`Fallback final: usando thumbnail_url do creative raw para ad ${adData.id}`);
+    const upgraded = upgradeUrlResolution(creative.thumbnail_url);
     imageResult = {
-      url: creative.thumbnail_url,
+      url: upgraded,
       url_hd: null,
+      thumbnail_original: creative.thumbnail_url,
       width: null,
       height: null,
       quality: 'low',
+      source: 'final_fallback_thumbnail',
     };
   }
 
-  // Extrai textos (inclui dados do post)
+  // Extrai textos
   const { title, body, description, callToAction, linkUrl } = extractTexts(creative, postData);
 
-  // Determina se o criativo esta completo
+  // Faz cache das imagens no Supabase Storage (em background, nao bloqueia)
+  let cachedImageUrl: string | null = null;
+  let cachedThumbnailUrl: string | null = null;
+  let fileSize: number | null = null;
+
+  if (imageResult.url) {
+    try {
+      const cacheResult = await cacheCreativeImages(imageResult, workspaceId, adData.id, supabaseAdmin);
+      cachedImageUrl = cacheResult.cachedImageUrl;
+      cachedThumbnailUrl = cacheResult.cachedThumbnailUrl;
+      fileSize = cacheResult.fileSize;
+    } catch (err) {
+      console.error(`Storage cache error for ad ${adData.id}:`, err);
+      // Continua sem cache - nao bloqueia o resultado
+    }
+  }
+
+  // Calcula data de expiracao do cache
+  const cacheExpiresAt = (cachedImageUrl || cachedThumbnailUrl)
+    ? new Date(Date.now() + CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+
+  // Determina completude e status
   const hasImage = !!imageResult.url;
   const hasTexts = !!(title || body || description);
   const isComplete = hasImage || hasTexts;
 
-  // Determina status do fetch com base na completude dos dados
   let fetchStatus: 'success' | 'partial' | 'failed' | 'pending';
   if (hasImage && hasTexts) {
     fetchStatus = 'success';
   } else if (hasImage || hasTexts) {
-    // Tem pelo menos imagem ou textos, marca como sucesso parcial
     fetchStatus = 'partial';
   } else {
-    // Nao tem nada, marca como failed para nao ficar em loop infinito
     fetchStatus = 'failed';
   }
 
+  // Monta registro com 3 camadas de URL
   const record = {
     workspace_id: workspaceId,
     ad_id: adData.id,
     meta_ad_account_id: metaAdAccountId,
     meta_creative_id: creative.id || null,
     creative_type: creativeType,
+    // Camada 2: alta resolucao do Meta CDN
     image_url: imageResult.url,
     image_url_hd: imageResult.url_hd || imageResult.url,
-    thumbnail_url: imageResult.url,
+    // Camada 1: thumbnail rapido (p64x64 original OU pequeno para fast-load)
+    thumbnail_url: imageResult.thumbnail_original || imageResult.url,
     thumbnail_quality: imageResult.quality,
     image_width: imageResult.width,
     image_height: imageResult.height,
@@ -747,10 +933,14 @@ async function processAdResponse(
     link_url: linkUrl,
     is_complete: isComplete,
     fetch_status: fetchStatus,
-    // fetch_attempts sera incrementado via SQL na hora do upsert
     fetch_attempts: 1,
     last_validated_at: new Date().toISOString(),
     error_message: null,
+    // Camada 3: permanente no Supabase Storage
+    cached_image_url: cachedImageUrl,
+    cached_thumbnail_url: cachedThumbnailUrl,
+    cache_expires_at: cacheExpiresAt,
+    file_size: fileSize,
     extra_data: {
       ad_name: adData.name,
       ad_status: adData.status,
@@ -758,12 +948,17 @@ async function processAdResponse(
       post_data: postData || null,
       has_carousel: (creative.object_story_spec?.link_data?.child_attachments?.length || 0) > 1,
       carousel_count: creative.object_story_spec?.link_data?.child_attachments?.length || 0,
+      image_source: imageResult.source,
     },
     fetched_at: new Date().toISOString(),
   };
 
   return { record, error: null };
 }
+
+// ============================================
+// Handler principal
+// ============================================
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -807,6 +1002,7 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
+    // Cliente autenticado para verificar usuario
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -819,9 +1015,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Cliente admin para operacoes de banco e storage
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Busca workspace
+    // Busca workspace do usuario
     let workspaceId: string | null = null;
     const { data: ownedWorkspace } = await supabaseAdmin
       .from("workspaces")
@@ -851,7 +1048,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Verifica cache - ignora criativos sem textos para rebuscar
+    // ============================================
+    // Verifica cache - com logica melhorada
+    // Registros com p64x64 SEM cache no Storage sao considerados desatualizados
+    // ============================================
     const { data: cachedCreatives } = await supabaseAdmin
       .from("meta_ad_creatives")
       .select("*")
@@ -865,22 +1065,31 @@ Deno.serve(async (req: Request) => {
       for (const creative of cachedCreatives) {
         const hasImage = creative.thumbnail_url || creative.image_url;
         const hasTexts = creative.title || creative.body || creative.description;
-
-        // Aceita do cache se: tem dados uteis OU ja falhou apos muitas tentativas
         const hasUsefulData = hasImage || hasTexts;
         const maxAttemptsReached = (creative.fetch_attempts || 0) >= 3;
         const isFailed = creative.fetch_status === 'failed';
 
-        if (hasUsefulData || (maxAttemptsReached && isFailed)) {
+        // NOVO: verifica se imagem eh de baixa qualidade sem cache no Storage
+        const imageIsLowQuality = creative.image_url && isLowQualityUrl(creative.image_url);
+        const hasCachedStorage = !!creative.cached_image_url;
+        const needsUpgrade = imageIsLowQuality && !hasCachedStorage;
+
+        // Aceita do cache se:
+        // - Tem dados uteis E nao precisa de upgrade de qualidade
+        // - OU ja falhou apos muitas tentativas
+        if ((hasUsefulData && !needsUpgrade) || (maxAttemptsReached && isFailed)) {
           cachedMap[creative.ad_id] = creative;
           cachedAdIds.add(creative.ad_id);
+        } else if (needsUpgrade) {
+          console.log(`Ad ${creative.ad_id}: imagem p64x64 sem cache Storage, sera rebuscado`);
         }
       }
     }
 
     const adsToFetch = ad_ids.filter(id => !cachedAdIds.has(id));
-    console.log(`Batch creative fetch: ${ad_ids.length} requested, ${cachedAdIds.size} cached with data, ${adsToFetch.length} to fetch`);
+    console.log(`Batch creative fetch: ${ad_ids.length} requested, ${cachedAdIds.size} cached OK, ${adsToFetch.length} to fetch/upgrade`);
 
+    // Se todos estao em cache com boa qualidade, retorna
     if (adsToFetch.length === 0) {
       return new Response(
         JSON.stringify({
@@ -966,11 +1175,13 @@ Deno.serve(async (req: Request) => {
               continue;
             }
 
+            // Passa supabaseAdmin para permitir upload ao Storage
             const { record, error } = await processAdResponse(
               adData,
               meta_ad_account_id,
               workspaceId,
-              accessToken
+              accessToken,
+              supabaseAdmin
             );
 
             if (error) {
@@ -999,23 +1210,20 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Salva no banco com incremento de fetch_attempts
+    // Salva no banco
     if (recordsToUpsert.length > 0) {
       console.log(`Salvando ${recordsToUpsert.length} criativos no banco...`);
 
-      // Log dos tipos de criativos e textos encontrados
-      const summary = recordsToUpsert.reduce((acc: { types: Record<string, number>; withTexts: number }, record) => {
+      const summary = recordsToUpsert.reduce((acc: { types: Record<string, number>; withCache: number }, record) => {
         const type = (record.creative_type as string) || 'unknown';
         acc.types[type] = (acc.types[type] || 0) + 1;
-        if (record.title || record.body || record.description) {
-          acc.withTexts++;
-        }
+        if (record.cached_image_url) acc.withCache++;
         return acc;
-      }, { types: {}, withTexts: 0 });
-      console.log('Resumo:', { types: summary.types, com_textos: summary.withTexts, total: recordsToUpsert.length });
+      }, { types: {}, withCache: 0 });
+      console.log('Resumo:', { types: summary.types, com_cache_storage: summary.withCache, total: recordsToUpsert.length });
 
-      // Usa upsert com SQL raw para incrementar fetch_attempts corretamente
       for (const record of recordsToUpsert) {
+        // Tenta usar RPC com incremento de fetch_attempts
         const { error: upsertError } = await supabaseAdmin.rpc('upsert_ad_creative_with_increment', {
           p_workspace_id: record.workspace_id,
           p_ad_id: record.ad_id,
@@ -1043,7 +1251,7 @@ Deno.serve(async (req: Request) => {
         });
 
         if (upsertError) {
-          // Fallback: usa upsert normal se a funcao RPC nao existir
+          // Fallback: usa upsert direto se RPC nao existir
           if (upsertError.message?.includes('function') || upsertError.code === '42883') {
             const { error: fallbackError } = await supabaseAdmin
               .from("meta_ad_creatives")
@@ -1056,7 +1264,7 @@ Deno.serve(async (req: Request) => {
           }
         }
       }
-      console.log(`${recordsToUpsert.length} criativos processados`);
+      console.log(`${recordsToUpsert.length} criativos processados com sucesso`);
     }
 
     return new Response(

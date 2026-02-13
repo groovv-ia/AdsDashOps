@@ -11,7 +11,7 @@
  * - Indicador de status de sincronização
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Image, Play, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import type { MetaAdCreative } from '../../types/adAnalysis';
 
@@ -62,6 +62,14 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
 }) => {
   // Estado para controlar erro de carregamento de imagem (CDN expirado)
   const [imgError, setImgError] = useState(false);
+  // Estado para carregamento progressivo: mostra thumbnail rapido, troca para HD quando carrega
+  const [hdLoaded, setHdLoaded] = useState(false);
+
+  // Reseta estados quando o criativo muda
+  useEffect(() => {
+    setImgError(false);
+    setHdLoaded(false);
+  }, [creative?.ad_id]);
 
   // Classes base do container (sem background padrao, sera adicionado conforme necessario)
   const baseContainerClasses = `
@@ -99,7 +107,6 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
 
   // Sem criativo
   if (!creative) {
-    console.warn('[AdCreativeThumbnail] Criativo nao fornecido (null/undefined)');
     return (
       <div
         className={`${baseContainerClasses} bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200`}
@@ -111,10 +118,25 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     );
   }
 
-  // Seleciona URL da imagem (HD se disponivel e solicitado, com fallback para extra_data)
-  let imageUrl = (useHdWhenAvailable && creative.image_url_hd)
-    ? creative.image_url_hd
-    : (creative.thumbnail_url || creative.image_url);
+  // Seleciona URLs com estrategia de 3 camadas:
+  // 1. cached_image_url (Supabase Storage - permanente, mais confiavel)
+  // 2. image_url_hd / image_url (Meta CDN - alta resolucao, pode expirar)
+  // 3. thumbnail_url (Meta CDN - p64x64 rapido, pode expirar)
+  // 4. extra_data fallback
+
+  // URL HD: prioriza cached (permanente), depois Meta CDN HD
+  const hdUrl = creative.cached_image_url
+    || (useHdWhenAvailable ? creative.image_url_hd : null)
+    || creative.image_url
+    || null;
+
+  // URL thumbnail rapida: prioriza cached, depois Meta CDN
+  const thumbnailUrl = creative.cached_thumbnail_url
+    || creative.thumbnail_url
+    || null;
+
+  // URL final para exibicao (melhor disponivel)
+  let imageUrl = hdUrl || thumbnailUrl;
 
   // Fallback: tenta extrair do raw creative armazenado no extra_data
   if (!imageUrl) {
@@ -124,6 +146,11 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
       imageUrl = rawCreative.thumbnail_url;
     }
   }
+
+  // Determina se temos uma versao HD separada para carregamento progressivo
+  const hasProgressiveHd = !!(hdUrl && thumbnailUrl && hdUrl !== thumbnailUrl);
+  // URL exibida: mostra thumbnail ate HD carregar (se progressivo)
+  const displayUrl = hasProgressiveHd && !hdLoaded ? thumbnailUrl : imageUrl;
 
   const isVideo = creative.creative_type === 'video';
   const quality = creative.thumbnail_quality || 'unknown';
@@ -172,16 +199,26 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     );
   }
 
-  // Renderiza thumbnail com imagem
+  // Renderiza thumbnail com imagem (carregamento progressivo)
   return (
     <div className={baseContainerClasses} onClick={onClick}>
       <img
-        src={imageUrl}
+        src={displayUrl || imageUrl || ''}
         alt={creative.title || 'Preview do anuncio'}
         className="w-full h-full object-cover"
         loading="lazy"
         onError={() => setImgError(true)}
       />
+
+      {/* Pre-carrega imagem HD em background para troca progressiva */}
+      {hasProgressiveHd && !hdLoaded && hdUrl && (
+        <img
+          src={hdUrl}
+          alt=""
+          className="hidden"
+          onLoad={() => setHdLoaded(true)}
+        />
+      )}
 
       {/* Indicador de video */}
       {isVideo && showTypeIndicator && (

@@ -74,6 +74,8 @@ export function useAdCreativesBatch(
 
   /**
    * Busca criativos em lote
+   * Quando metaAdAccountId nao esta disponivel, carrega apenas do cache local (Supabase)
+   * sem chamar a edge function. Isso garante que thumbnails aparecem na listagem.
    */
   const fetchCreatives = useCallback(async () => {
     // Recalcula adIds dentro do callback para garantir que sempre está atualizado
@@ -81,12 +83,43 @@ export function useAdCreativesBatch(
       .filter(ad => ad && typeof ad === 'object' && ad.entity_id)
       .map(ad => ad.entity_id);
 
-    if (currentAdIds.length === 0 || !metaAdAccountId) {
+    if (currentAdIds.length === 0) {
       setState(prev => ({
         ...prev,
         globalLoading: false,
         globalError: null,
       }));
+      return;
+    }
+
+    // Sem metaAdAccountId: carrega apenas do cache local (nao chama edge function)
+    if (!metaAdAccountId) {
+      if (fetchingRef.current) return;
+      fetchingRef.current = true;
+
+      setState(prev => ({ ...prev, globalLoading: true, globalError: null }));
+
+      try {
+        const cached = await getCreativesFromCacheBatch(currentAdIds);
+        const newLoadingStates: Record<string, LoadingState> = {};
+        for (const adId of currentAdIds) {
+          newLoadingStates[adId] = { isLoading: false, hasError: false };
+        }
+
+        setState(prev => ({
+          creatives: { ...prev.creatives, ...cached },
+          loadingStates: { ...prev.loadingStates, ...newLoadingStates },
+          globalLoading: false,
+          globalError: null,
+          fetchedCount: 0,
+          cachedCount: Object.keys(cached).length,
+        }));
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+        setState(prev => ({ ...prev, globalLoading: false, globalError: errorMessage }));
+      } finally {
+        fetchingRef.current = false;
+      }
       return;
     }
 

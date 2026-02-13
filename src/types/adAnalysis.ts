@@ -50,7 +50,16 @@ export interface MetaAdCreative {
   extra_data: Record<string, unknown>;
   fetched_at: string;
   created_at: string;
-  updated_at?: string; // Última atualização
+  updated_at?: string;
+  // Campos de cache no Supabase Storage
+  cached_image_url: string | null;
+  cached_thumbnail_url: string | null;
+  cached_video_url: string | null;
+  cache_expires_at: string | null;
+  video_source_url: string | null;
+  video_duration: number | null;
+  video_format: string | null;
+  file_size: number | null;
 }
 
 // Interface para análise detalhada de elementos visuais específicos
