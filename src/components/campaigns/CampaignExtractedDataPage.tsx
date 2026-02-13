@@ -3,9 +3,10 @@
  *
  * Pagina principal que integra a visualizacao de dados de campanhas sincronizadas,
  * incluindo conjuntos de anuncios, anuncios individuais e graficos de tendencia.
+ * Permite clicar em um anuncio para abrir seus detalhes com criativo completo.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   Layers,
@@ -25,6 +26,8 @@ import { ExtractedCampaignSelector } from './ExtractedCampaignSelector';
 import { CampaignAdSetsTable } from './CampaignAdSetsTable';
 import { CampaignAdsTable } from './CampaignAdsTable';
 import { CampaignTrendCharts } from './CampaignTrendCharts';
+import { AdDetailModal } from '../ad-analysis';
+import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
 import { Loading } from '../ui/Loading';
 import { Card } from '../ui/Card';
 
@@ -119,6 +122,27 @@ export function CampaignExtractedDataPage({
   const [loadingData, setLoadingData] = useState(false);
   const [selectedAdSetId, setSelectedAdSetId] = useState<string | undefined>(undefined);
 
+  // Estados do modal de detalhes do anuncio
+  const [selectedAd, setSelectedAd] = useState<AdData | null>(null);
+  const [isAdModalOpen, setIsAdModalOpen] = useState(false);
+
+  // Monta lista de ads para busca de criativos em lote (somente na aba de anuncios)
+  const adsForCreatives = useMemo(() => {
+    if (activeTab !== 'ads' || ads.length === 0) return undefined;
+
+    // Filtra apenas ads que possuem meta_ad_account_id (necessario para busca)
+    const adsWithAccount = ads.filter(ad => ad.meta_ad_account_id);
+    if (adsWithAccount.length === 0) return undefined;
+
+    return adsWithAccount.map(ad => ({
+      entity_id: ad.ad_id,
+      meta_ad_account_id: ad.meta_ad_account_id!,
+    }));
+  }, [activeTab, ads]);
+
+  // Hook para buscar criativos em lote automaticamente
+  const { getCreative, getLoadingState } = useAdCreativesBatch(adsForCreatives);
+
   // Carregar dados quando campanha mudar
   useEffect(() => {
     if (selectedCampaign) {
@@ -166,6 +190,22 @@ export function CampaignExtractedDataPage({
       setSelectedAdSetId(adSetId);
       setActiveTab('ads');
     }
+  }
+
+  /**
+   * Handler para selecao de anuncio (abrir modal de detalhes)
+   */
+  function handleSelectAd(ad: AdData) {
+    setSelectedAd(ad);
+    setIsAdModalOpen(true);
+  }
+
+  /**
+   * Fecha o modal de detalhes do anuncio
+   */
+  function handleCloseAdModal() {
+    setIsAdModalOpen(false);
+    setSelectedAd(null);
   }
 
   // Filtrar anuncios pelo adset selecionado
@@ -401,7 +441,7 @@ export function CampaignExtractedDataPage({
               </Card>
             )}
 
-            {/* Tab: Anuncios */}
+            {/* Tab: Anuncios (com suporte a clique para detalhes) */}
             {activeTab === 'ads' && (
               <Card className="p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -425,6 +465,9 @@ export function CampaignExtractedDataPage({
                 <CampaignAdsTable
                   ads={filteredAds}
                   showAdSetColumn={!selectedAdSetId}
+                  onSelectAd={handleSelectAd}
+                  getCreative={getCreative}
+                  getLoadingState={getLoadingState}
                 />
               </Card>
             )}
@@ -440,6 +483,23 @@ export function CampaignExtractedDataPage({
           </>
         )}
       </div>
+
+      {/* Modal de detalhes do anuncio */}
+      {selectedAd && (
+        <AdDetailModal
+          isOpen={isAdModalOpen}
+          onClose={handleCloseAdModal}
+          adData={{
+            ad_id: selectedAd.ad_id,
+            entity_name: selectedAd.ad_name,
+            meta_ad_account_id: selectedAd.meta_ad_account_id || '',
+            status: selectedAd.status,
+            campaign_name: selectedCampaign.campaign_name,
+            adset_name: selectedAd.adset_name,
+          }}
+          preloadedCreative={getCreative(selectedAd.ad_id)}
+        />
+      )}
     </div>
   );
 }

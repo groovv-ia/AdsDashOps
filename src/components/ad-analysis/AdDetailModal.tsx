@@ -48,6 +48,8 @@ import {
 import { useAdDetailData, type PreloadedMetricsData } from '../../hooks/useAdDetails';
 import { ScoreCircle } from './ScoreCircle';
 import { ImageZoomModal } from './ImageZoomModal';
+import { CarouselViewer, type CarouselSlide } from './CarouselViewer';
+import { CreativePreviewModal } from './CreativePreviewModal';
 import { AdDetailTab, getCreativeTypeLabel } from '../../types/adAnalysis';
 import type { AdDetailModalState, PreloadedInsightRow, MetaAdCreative } from '../../types/adAnalysis';
 import type { MetricsAIAnalysis } from '../../types/metricsAnalysis';
@@ -429,6 +431,7 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
                 error={creativeError}
                 onRefresh={refreshCreative}
                 onImageClick={() => setImageZoomOpen(true)}
+                adName={adData?.entity_name || ''}
               />
             )}
 
@@ -697,6 +700,32 @@ interface CreativeTabProps {
   error: string | null;
   onRefresh: () => void;
   onImageClick: () => void;
+  /** Nome do anuncio para exibicao no modal de preview */
+  adName?: string;
+}
+
+/**
+ * Extrai slides do carrossel a partir do extra_data do criativo
+ */
+function extractCarouselSlidesFromCreative(creative: MetaAdCreative): CarouselSlide[] {
+  const extraData = creative.extra_data as Record<string, unknown>;
+  const rawCreative = extraData?.raw_creative as Record<string, unknown> | undefined;
+  const objectStorySpec = rawCreative?.object_story_spec as Record<string, unknown> | undefined;
+  const linkData = objectStorySpec?.link_data as Record<string, unknown> | undefined;
+  const childAttachments = linkData?.child_attachments as Array<Record<string, unknown>> | undefined;
+
+  if (!childAttachments || !Array.isArray(childAttachments)) {
+    return [];
+  }
+
+  return childAttachments.map(attachment => ({
+    imageUrl: (attachment.picture as string) || null,
+    imageHash: (attachment.image_hash as string) || null,
+    name: (attachment.name as string) || null,
+    description: (attachment.description as string) || null,
+    link: (attachment.link as string) || null,
+    callToAction: ((attachment.call_to_action as Record<string, unknown>)?.type as string) || null,
+  }));
 }
 
 const CreativeTab: React.FC<CreativeTabProps> = ({
@@ -705,12 +734,15 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
   error,
   onRefresh,
   onImageClick,
+  adName,
 }) => {
   // Estados para controle do video
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Estado para o modal de preview completo
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
   // Handlers do video
   const togglePlay = () => {
@@ -778,9 +810,9 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
       <div className="flex items-center justify-center py-20">
         <div className="text-center max-w-md">
           <Image className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-900 font-medium mb-2">Criativo não encontrado</p>
+          <p className="text-gray-900 font-medium mb-2">Criativo nao encontrado</p>
           <p className="text-sm text-gray-500 mb-4">
-            O criativo deste anúncio ainda não foi sincronizado. Isso pode acontecer com anúncios
+            O criativo deste anuncio ainda nao foi sincronizado. Isso pode acontecer com anuncios
             mais antigos ou que foram criados recentemente.
           </p>
           <button
@@ -800,6 +832,11 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
   const imageUrl = creative.image_url_hd || creative.image_url || creative.thumbnail_url;
   const videoUrl = creative.video_url;
   const isVideo = creative.creative_type === 'video' && videoUrl;
+  const isCarousel = creative.creative_type === 'carousel';
+
+  // Extrai slides do carrossel se aplicavel
+  const carouselSlides = isCarousel ? extractCarouselSlidesFromCreative(creative) : [];
+  const hasCarouselSlides = carouselSlides.length > 1;
 
   // Determina qualidade da imagem
   const imageQuality = creative.thumbnail_quality || 'unknown';
@@ -812,7 +849,7 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Preview da midia (imagem ou video) */}
+      {/* Preview da midia (imagem, video ou carrossel) */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-medium text-gray-900">Visual</h3>
@@ -820,6 +857,11 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
             <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">
               {getCreativeTypeLabel(creative.creative_type)}
             </span>
+            {isCarousel && hasCarouselSlides && (
+              <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">
+                {carouselSlides.length} slides
+              </span>
+            )}
             {imageQuality !== 'unknown' && qualityConfig[imageQuality as keyof typeof qualityConfig].label && (
               <span className={`text-xs font-medium px-2 py-1 rounded ${qualityConfig[imageQuality as keyof typeof qualityConfig].color}`}>
                 {qualityConfig[imageQuality as keyof typeof qualityConfig].label}
@@ -827,7 +869,7 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
             )}
             {creative.image_width && creative.image_height && (
               <span className="text-xs text-gray-400 px-2 py-1 bg-gray-50 rounded font-mono">
-                {creative.image_width}×{creative.image_height}
+                {creative.image_width}x{creative.image_height}
               </span>
             )}
             <button
@@ -849,8 +891,14 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
           </div>
         )}
 
-        {/* Player de video se for video */}
-        {isVideo ? (
+        {/* Carrossel completo com navegacao entre slides */}
+        {isCarousel && hasCarouselSlides ? (
+          <CarouselViewer
+            slides={carouselSlides}
+            onImageClick={() => onImageClick()}
+          />
+        ) : isVideo ? (
+          /* Player de video */
           <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-black">
             <video
               ref={videoRef}
@@ -896,13 +944,14 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
             </div>
           </div>
         ) : imageUrl ? (
+          /* Imagem unica com clique para expandir */
           <div
             className="relative cursor-pointer group rounded-lg overflow-hidden border border-gray-200 bg-gray-50"
             onClick={onImageClick}
           >
             <img
               src={imageUrl}
-              alt="Criativo do anúncio"
+              alt="Criativo do anuncio"
               className="w-full max-h-[600px] object-contain"
             />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -923,11 +972,11 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
 
       {/* Textos do anuncio */}
       <div className="space-y-4">
-        <h3 className="font-medium text-gray-900">Textos do Anúncio</h3>
+        <h3 className="font-medium text-gray-900">Textos do Anuncio</h3>
 
         {creative.title && (
           <div>
-            <label className="text-xs text-gray-500 uppercase tracking-wide">Título</label>
+            <label className="text-xs text-gray-500 uppercase tracking-wide">Titulo</label>
             <p className="mt-1 text-gray-900">{creative.title}</p>
           </div>
         )}
@@ -941,7 +990,7 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
 
         {creative.description && (
           <div>
-            <label className="text-xs text-gray-500 uppercase tracking-wide">Descrição</label>
+            <label className="text-xs text-gray-500 uppercase tracking-wide">Descricao</label>
             <p className="mt-1 text-gray-900">{creative.description}</p>
           </div>
         )}
@@ -971,24 +1020,40 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
         )}
 
         {!creative.title && !creative.body && !creative.description && (
-          <p className="text-gray-500 text-sm">Nenhum texto disponível</p>
+          <p className="text-gray-500 text-sm">Nenhum texto disponivel</p>
         )}
       </div>
 
-      {/* Link preview Meta */}
-      {creative.preview_url && (
-        <div className="pt-4 border-t border-gray-200">
+      {/* Botao de preview completo (abre modal interno ao inves de link externo) */}
+      <div className="pt-4 border-t border-gray-200">
+        <button
+          onClick={() => setIsPreviewModalOpen(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+        >
+          <Eye className="w-4 h-4" />
+          Ver preview completo do anuncio
+        </button>
+        {creative.preview_url && (
           <a
             href={creative.preview_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm"
+            className="flex items-center gap-1.5 mt-2 text-xs text-gray-500 hover:text-gray-700"
           >
-            <ExternalLink className="w-4 h-4" />
-            Ver preview completo no Meta
+            <ExternalLink className="w-3.5 h-3.5" />
+            Abrir diretamente no Meta
           </a>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Modal de preview completo interno */}
+      <CreativePreviewModal
+        isOpen={isPreviewModalOpen}
+        onClose={() => setIsPreviewModalOpen(false)}
+        previewUrl={creative.preview_url}
+        creative={creative}
+        adName={adName}
+      />
     </div>
   );
 };

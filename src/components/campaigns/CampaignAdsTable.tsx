@@ -2,12 +2,15 @@
  * CampaignAdsTable - Tabela de Anuncios Individuais
  *
  * Exibe os anuncios de uma campanha com suas metricas,
- * permitindo ordenacao, filtragem e visualizacao de thumbnails.
+ * permitindo ordenacao, filtragem, visualizacao de thumbnails
+ * e clique para abrir detalhes do anuncio.
  */
 
 import { useState, useMemo } from 'react';
 import { ArrowUpDown, ArrowUp, ArrowDown, Filter, ChevronDown, Image, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import type { AdData } from '../../lib/services/CampaignExtractedDataService';
+import type { MetaAdCreative } from '../../types/adAnalysis';
+import { AdCreativeThumbnail } from '../ad-analysis/AdCreativeThumbnail';
 
 // ============================================
 // Tipos e Interfaces
@@ -17,6 +20,12 @@ interface CampaignAdsTableProps {
   ads: AdData[];
   loading?: boolean;
   showAdSetColumn?: boolean;
+  /** Callback ao clicar em um anuncio para abrir detalhes */
+  onSelectAd?: (ad: AdData) => void;
+  /** Funcao para obter criativo pre-carregado de um anuncio */
+  getCreative?: (adId: string) => MetaAdCreative | null;
+  /** Funcao para obter estado de loading do criativo de um anuncio */
+  getLoadingState?: (adId: string) => { isLoading: boolean; hasError: boolean; errorMessage?: string | null };
 }
 
 type SortField = 'ad_name' | 'adset_name' | 'impressions' | 'clicks' | 'spend' | 'conversions' | 'messaging_conversations_started' | 'ctr' | 'cpc' | 'roas';
@@ -115,6 +124,9 @@ export function CampaignAdsTable({
   ads,
   loading = false,
   showAdSetColumn = true,
+  onSelectAd,
+  getCreative,
+  getLoadingState,
 }: CampaignAdsTableProps) {
   // Estado de ordenacao
   const [sortField, setSortField] = useState<SortField>('spend');
@@ -123,6 +135,9 @@ export function CampaignAdsTable({
   // Estado de filtro
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+
+  // Determina se linhas sao clicaveis (quando ha callback de selecao)
+  const isClickable = !!onSelectAd;
 
   // Status unicos para filtro
   const uniqueStatuses = useMemo(() => {
@@ -181,6 +196,46 @@ export function CampaignAdsTable({
       <ArrowUp className="w-4 h-4 text-blue-600" />
     ) : (
       <ArrowDown className="w-4 h-4 text-blue-600" />
+    );
+  }
+
+  /**
+   * Renderiza thumbnail do anuncio usando componente otimizado ou fallback
+   */
+  function renderThumbnail(ad: AdData) {
+    // Se temos funcao de buscar criativo, usar componente AdCreativeThumbnail
+    if (getCreative) {
+      const creative = getCreative(ad.ad_id);
+      const loadState = getLoadingState?.(ad.ad_id);
+
+      return (
+        <AdCreativeThumbnail
+          creative={creative}
+          loading={loadState?.isLoading || false}
+          error={loadState?.hasError ? (loadState.errorMessage || 'Erro') : null}
+          size="md"
+          showQualityIndicator
+          useHdWhenAvailable
+        />
+      );
+    }
+
+    // Fallback: usar thumbnail_url do AdData com tamanho md (56x56)
+    if (ad.thumbnail_url) {
+      return (
+        <img
+          src={ad.thumbnail_url}
+          alt={ad.ad_name}
+          className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
+        />
+      );
+    }
+
+    // Placeholder quando nao ha imagem
+    return (
+      <div className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+        <Image className="w-5 h-5 text-gray-400" />
+      </div>
     );
   }
 
@@ -362,23 +417,16 @@ export function CampaignAdsTable({
               return (
                 <tr
                   key={ad.ad_id}
-                  className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                  className={`
+                    border-b border-gray-100 transition-colors
+                    ${isClickable ? 'cursor-pointer hover:bg-blue-50' : 'hover:bg-gray-50'}
+                  `}
+                  onClick={() => onSelectAd?.(ad)}
                 >
-                  {/* Anuncio com thumbnail */}
+                  {/* Anuncio com thumbnail maior (56x56) */}
                   <td className="py-3 px-2">
                     <div className="flex items-center gap-3">
-                      {/* Thumbnail */}
-                      {ad.thumbnail_url ? (
-                        <img
-                          src={ad.thumbnail_url}
-                          alt={ad.ad_name}
-                          className="w-10 h-10 rounded object-cover flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
-                          <Image className="w-5 h-5 text-gray-400" />
-                        </div>
-                      )}
+                      {renderThumbnail(ad)}
                       <div className="min-w-0">
                         <p className="font-medium text-gray-900 truncate max-w-[180px]" title={ad.ad_name}>
                           {ad.ad_name}

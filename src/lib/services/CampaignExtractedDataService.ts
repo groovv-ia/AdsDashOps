@@ -22,6 +22,8 @@ export interface ExtractedCampaign {
   created_date: string | null;
   ad_sets_count: number;
   ads_count: number;
+  /** ID da conta de anuncios no Meta (campo account_id da tabela campaigns) */
+  account_id?: string;
 }
 
 /** Metricas agregadas de uma campanha */
@@ -86,6 +88,8 @@ export interface AdData {
   reach: number;
   frequency: number;
   thumbnail_url?: string;
+  /** ID da conta de anuncios no Meta (account_id da campanha pai) */
+  meta_ad_account_id?: string;
   // Novas metricas de conversas e leads
   messaging_conversations_started: number;
   cost_per_messaging_conversation_started: number;
@@ -189,7 +193,7 @@ export class CampaignExtractedDataService {
         return { success: false, error: 'Usuario nao autenticado' };
       }
 
-      // Buscar campanhas do usuario
+      // Buscar campanhas do usuario (inclui account_id para integracao com Meta)
       const { data: campaigns, error } = await supabase
         .from('campaigns')
         .select(`
@@ -199,6 +203,7 @@ export class CampaignExtractedDataService {
           status,
           objective,
           created_date,
+          account_id,
           ad_sets!ad_sets_campaign_id_fkey(id),
           ads!ads_campaign_id_fkey(id)
         `)
@@ -210,7 +215,7 @@ export class CampaignExtractedDataService {
         return { success: false, error: error.message };
       }
 
-      // Mapear para o formato de saida
+      // Mapear para o formato de saida (inclui account_id para uso com Meta API)
       const mappedCampaigns: ExtractedCampaign[] = (campaigns || []).map((c: any) => ({
         campaign_id: c.id,
         campaign_name: c.name,
@@ -220,6 +225,7 @@ export class CampaignExtractedDataService {
         created_date: c.created_date,
         ad_sets_count: Array.isArray(c.ad_sets) ? c.ad_sets.length : 0,
         ads_count: Array.isArray(c.ads) ? c.ads.length : 0,
+        account_id: c.account_id || undefined,
       }));
 
       logger.info('Campanhas listadas', { count: mappedCampaigns.length });
@@ -356,7 +362,7 @@ export class CampaignExtractedDataService {
         return { success: false, error: 'Usuario nao autenticado' };
       }
 
-      // Query base para anuncios
+      // Query base para anuncios (inclui account_id da campanha pai via JOIN)
       let query = supabase
         .from('ads')
         .select(`
@@ -366,7 +372,8 @@ export class CampaignExtractedDataService {
           campaign_id,
           ad_set_id,
           thumbnail_url,
-          ad_sets!ads_ad_set_id_fkey(name)
+          ad_sets!ads_ad_set_id_fkey(name),
+          campaigns!ads_campaign_id_fkey(account_id)
         `)
         .eq('campaign_id', campaignId)
         .eq('user_id', user.id);
@@ -445,6 +452,7 @@ export class CampaignExtractedDataService {
           campaign_id: ad.campaign_id,
           status: ad.status || 'UNKNOWN',
           thumbnail_url: ad.thumbnail_url,
+          meta_ad_account_id: ad.campaigns?.account_id || undefined,
           ...derived,
         };
       });
