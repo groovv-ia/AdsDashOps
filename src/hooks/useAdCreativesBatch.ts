@@ -1,9 +1,12 @@
 /**
  * Hook useAdCreativesBatch
  *
- * Gerencia busca em lote de criativos de anuncios.
- * Carrega automaticamente quando recebe lista de ads e
- * fornece acesso individual aos criativos por ad_id.
+ * Gerencia busca em lote de criativos de anuncios com estrategia de 2 fases:
+ * Fase 1 (instantanea): carrega placeholders do banco local (Supabase)
+ * Fase 2 (real-time): busca dados HD da API via Edge Function e substitui
+ *
+ * Fornece indicador de carregamento individual por ad_id enquanto
+ * a busca real-time esta em andamento.
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
@@ -39,8 +42,9 @@ interface UseAdCreativesBatchReturn extends UseAdCreativesBatchState {
 }
 
 /**
- * Hook para gerenciamento de criativos em lote
- * Busca automaticamente quando ads mudam
+ * Hook para gerenciamento de criativos em lote com busca em tempo real.
+ * Fase 1: carrega placeholders do cache local imediatamente.
+ * Fase 2: busca dados atualizados da API em paralelo e substitui.
  */
 export function useAdCreativesBatch(
   ads: Array<{ entity_id: string; meta_ad_account_id: string }> | undefined,
@@ -73,9 +77,9 @@ export function useAdCreativesBatch(
   const adsKey = adIds.sort().join(',');
 
   /**
-   * Busca criativos em lote
-   * Quando metaAdAccountId nao esta disponivel, carrega apenas do cache local (Supabase)
-   * sem chamar a edge function. Isso garante que thumbnails aparecem na listagem.
+   * Busca criativos em 2 fases:
+   * Fase 1: carrega placeholders do cache local (instantaneo)
+   * Fase 2: busca dados atualizados da API e substitui os placeholders
    */
   const fetchCreatives = useCallback(async () => {
     // Recalcula adIds dentro do callback para garantir que sempre está atualizado
@@ -92,50 +96,13 @@ export function useAdCreativesBatch(
       return;
     }
 
-    // Sem metaAdAccountId: carrega apenas do cache local (nao chama edge function)
-    if (!metaAdAccountId) {
-      if (fetchingRef.current) return;
-      fetchingRef.current = true;
-
-      setState(prev => ({ ...prev, globalLoading: true, globalError: null }));
-
-      try {
-        const cached = await getCreativesFromCacheBatch(currentAdIds);
-        const newLoadingStates: Record<string, LoadingState> = {};
-        for (const adId of currentAdIds) {
-          newLoadingStates[adId] = { isLoading: false, hasError: false };
-        }
-
-        setState(prev => ({
-          creatives: { ...prev.creatives, ...cached },
-          loadingStates: { ...prev.loadingStates, ...newLoadingStates },
-          globalLoading: false,
-          globalError: null,
-          fetchedCount: 0,
-          cachedCount: Object.keys(cached).length,
-        }));
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-        setState(prev => ({ ...prev, globalLoading: false, globalError: errorMessage }));
-      } finally {
-        fetchingRef.current = false;
-      }
-      return;
-    }
-
     // Evita busca duplicada
     if (fetchingRef.current) {
-      console.log('[useAdCreativesBatch] Busca já em andamento, ignorando...');
       return;
     }
     fetchingRef.current = true;
 
-    console.log('[useAdCreativesBatch] Iniciando busca de criativos:', {
-      ad_count: currentAdIds.length,
-      meta_ad_account_id: metaAdAccountId,
-    });
-
-    // Define loading para todos os ads
+    // Define loading para todos os ads (indicador de carregamento visivel)
     const initialLoadingStates: Record<string, LoadingState> = {};
     for (const adId of currentAdIds) {
       initialLoadingStates[adId] = { isLoading: true, hasError: false };
@@ -148,13 +115,44 @@ export function useAdCreativesBatch(
       globalError: null,
     }));
 
+    // ========== FASE 1: Carrega placeholders do cache local ==========
     try {
-      const result = await prefetchCreativesForAds(currentAdIds, metaAdAccountId);
+      const cached = await getCreativesFromCacheBatch(currentAdIds);
 
-      console.log('[useAdCreativesBatch] Resultado do prefetch:', {
-        creatives_count: Object.keys(result.creatives).length,
-        errors_count: Object.keys(result.errors).length,
-      });
+      if (Object.keys(cached).length > 0) {
+        // Mostra placeholders imediatamente, mas mantem isLoading=true
+        // para que o indicador de carregamento continue visivel
+        setState(prev => ({
+          ...prev,
+          creatives: { ...prev.creatives, ...cached },
+          cachedCount: Object.keys(cached).length,
+        }));
+      }
+    } catch (cacheError) {
+      console.error('[useAdCreativesBatch] Erro ao carregar cache (fase 1):', cacheError);
+      // Continua para fase 2 mesmo se cache falhar
+    }
+
+    // ========== FASE 2: Busca dados atualizados da API ==========
+    // Sem metaAdAccountId: nao consegue chamar a edge function, finaliza com cache
+    if (!metaAdAccountId) {
+      const finalStates: Record<string, LoadingState> = {};
+      for (const adId of currentAdIds) {
+        finalStates[adId] = { isLoading: false, hasError: false };
+      }
+
+      setState(prev => ({
+        ...prev,
+        loadingStates: { ...prev.loadingStates, ...finalStates },
+        globalLoading: false,
+      }));
+      fetchingRef.current = false;
+      return;
+    }
+
+    try {
+      // Envia TODOS os IDs para a API (o servidor decide cache vs fetch)
+      const result = await prefetchCreativesForAds(currentAdIds, metaAdAccountId);
 
       // Atualiza estados de loading individuais
       const newLoadingStates: Record<string, LoadingState> = {};
@@ -173,29 +171,20 @@ export function useAdCreativesBatch(
         }
       }
 
-      // Calcula contadores
-      const cachedCount = Object.keys(result.creatives).filter(
-        id => !result.errors[id]
-      ).length;
-
+      // Substitui placeholders pelos dados reais da API
       setState(prev => ({
         creatives: { ...prev.creatives, ...result.creatives },
         loadingStates: { ...prev.loadingStates, ...newLoadingStates },
         globalLoading: false,
         globalError: result.errors._batch || null,
-        fetchedCount: Object.keys(result.creatives).length - cachedCount,
-        cachedCount,
+        fetchedCount: Object.keys(result.creatives).length,
+        cachedCount: prev.cachedCount,
       }));
-
-      console.log('[useAdCreativesBatch] Estado atualizado com sucesso');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-      console.error('[useAdCreativesBatch] Erro ao buscar criativos:', {
-        message: errorMessage,
-        error,
-      });
+      console.error('[useAdCreativesBatch] Erro na busca real-time (fase 2):', error);
 
-      // Marca todos como erro
+      // Marca todos como finalizados (mantem placeholders do cache se existirem)
       const errorLoadingStates: Record<string, LoadingState> = {};
       for (const adId of currentAdIds) {
         errorLoadingStates[adId] = {
@@ -214,7 +203,7 @@ export function useAdCreativesBatch(
     } finally {
       fetchingRef.current = false;
     }
-  }, [adsKey, metaAdAccountId, safeAds]); // Usando adsKey + safeAds para ter acesso aos dados completos
+  }, [adsKey, metaAdAccountId, safeAds]);
 
   // Carrega automaticamente quando ads mudam
   useEffect(() => {

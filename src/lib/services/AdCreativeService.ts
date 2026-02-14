@@ -27,66 +27,6 @@ import type {
 // URL base das Edge Functions
 const FUNCTIONS_URL = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
 
-// TTL do cache em dias (criativos sao revalidados apos esse periodo)
-const CREATIVE_CACHE_TTL_DAYS = 7;
-
-// Maximo de tentativas de fetch antes de marcar como failed
-const MAX_FETCH_ATTEMPTS = 3;
-
-/**
- * Verifica se um criativo tem dados completos (imagem OU textos)
- */
-function isCreativeComplete(creative: MetaAdCreative): boolean {
-  const hasImage = !!(creative.thumbnail_url || creative.image_url);
-  const hasTexts = !!(creative.title || creative.body || creative.description);
-  return hasImage || hasTexts;
-}
-
-/**
- * Verifica se um criativo está expirado e precisa ser revalidado
- */
-function isCreativeExpired(creative: MetaAdCreative): boolean {
-  if (!creative.last_validated_at) return true;
-
-  const lastValidated = new Date(creative.last_validated_at);
-  const now = new Date();
-  const daysSinceValidation = (now.getTime() - lastValidated.getTime()) / (1000 * 60 * 60 * 24);
-
-  return daysSinceValidation > CREATIVE_CACHE_TTL_DAYS;
-}
-
-/**
- * Verifica se um criativo deve ser rebuscado
- * Rebusca se: incompleto com tentativas restantes, ou status partial/pending.
- * Criativos completos e com sucesso NAO sao rebuscados mesmo se expirados,
- * pois as URLs do Meta CDN sao temporarias e rebuscar apenas geraria
- * novas URLs que expiram novamente -- ciclo infinito.
- */
-function shouldRefetchCreative(creative: MetaAdCreative): boolean {
-  // Se chegou ao limite de tentativas e falhou, nao tenta mais
-  if (creative.fetch_attempts >= MAX_FETCH_ATTEMPTS && creative.fetch_status === 'failed') {
-    return false;
-  }
-
-  // Se esta completo e com sucesso, usa os dados do cache
-  // (nao rebusca mesmo se expirado, pois URLs Meta sao efemeras)
-  if (creative.is_complete && creative.fetch_status === 'success') {
-    return false;
-  }
-
-  // Se nao esta completo e ainda tem tentativas, rebusca
-  if (!creative.is_complete && creative.fetch_attempts < MAX_FETCH_ATTEMPTS) {
-    return true;
-  }
-
-  // Se esta marcado como partial ou pending, rebusca
-  if (creative.fetch_status === 'partial' || creative.fetch_status === 'pending') {
-    return true;
-  }
-
-  return false;
-}
-
 /**
  * Busca o criativo de um anúncio do Meta
  * Primeiro verifica cache local, depois chama Edge Function se necessário
@@ -521,7 +461,8 @@ export async function fetchAdCreativesBatch(
 
 /**
  * Busca criativos do cache local (Supabase) em lote
- * Filtra criativos que precisam ser rebuscados (incompletos, expirados, etc)
+ * Retorna TODOS os registros do banco para exibicao imediata como placeholders,
+ * sem filtrar por status -- a busca real-time da API cuida de atualizar.
  */
 export async function getCreativesFromCacheBatch(
   adIds: string[]
@@ -545,38 +486,24 @@ export async function getCreativesFromCacheBatch(
     return {};
   }
 
-  // Mapeia por ad_id, filtrando criativos que precisam ser rebuscados
+  // Mapeia todos os registros por ad_id sem filtrar -- servem como placeholders
   const creativesMap: Record<string, MetaAdCreative> = {};
-  let needsRefetchCount = 0;
-  let expiredCount = 0;
-  let incompleteCount = 0;
-
   if (data) {
     for (const creative of data) {
-      // Verifica se precisa rebuscar
-      if (shouldRefetchCreative(creative)) {
-        needsRefetchCount++;
-        if (isCreativeExpired(creative)) expiredCount++;
-        if (!isCreativeComplete(creative)) incompleteCount++;
-        continue; // Não adiciona ao cache, será rebuscado
-      }
-
-      // Adiciona ao cache apenas se estiver OK
       creativesMap[creative.ad_id] = creative;
     }
   }
 
-  console.log(`[AdCreativeService] Encontrados ${Object.keys(creativesMap).length} criativos validos no cache`);
-  if (needsRefetchCount > 0) {
-    console.log(`[AdCreativeService] ${needsRefetchCount} criativos serao rebuscados (${incompleteCount} incompletos, ${expiredCount} expirados)`);
-  }
-
+  console.log(`[AdCreativeService] Encontrados ${Object.keys(creativesMap).length} criativos no cache (placeholders)`);
   return creativesMap;
 }
 
 /**
- * Pre-carrega criativos para uma lista de ads
- * Primeiro verifica cache, depois busca os faltantes da API
+ * Busca criativos em tempo real via Edge Function.
+ * Envia TODOS os ad_ids para a API -- o servidor tem sua propria logica
+ * de cache inteligente que verifica qualidade e decide o que rebuscar.
+ * Isso garante que criativos com imagens p64x64 ou sem cache Storage
+ * sejam atualizados para HD automaticamente.
  */
 export async function prefetchCreativesForAds(
   adIds: string[],
@@ -589,49 +516,26 @@ export async function prefetchCreativesForAds(
     return { creatives: {}, errors: {} };
   }
 
-  console.log(`[AdCreativeService] Prefetch iniciado para ${adIds.length} ads`);
+  console.log(`[AdCreativeService] Fetch real-time iniciado para ${adIds.length} ads`);
 
-  // Verifica cache primeiro
-  const cached = await getCreativesFromCacheBatch(adIds);
-  const cachedIds = new Set(Object.keys(cached));
-
-  // Filtra os que precisam ser buscados
-  const idsToFetch = adIds.filter(id => !cachedIds.has(id));
-
-  console.log(`[AdCreativeService] ${cachedIds.size} em cache, ${idsToFetch.length} para buscar`);
-
-  // Se todos estao em cache, retorna
-  if (idsToFetch.length === 0) {
-    console.log('[AdCreativeService] Todos os criativos estão em cache');
-    return { creatives: cached, errors: {} };
-  }
-
-  // Busca os faltantes
   try {
-    console.log(`[AdCreativeService] Buscando ${idsToFetch.length} criativos faltantes...`);
+    // Envia todos os IDs para a edge function (o servidor decide cache vs fetch)
     const result = await fetchAdCreativesBatch({
-      ad_ids: idsToFetch,
+      ad_ids: adIds,
       meta_ad_account_id: metaAdAccountId,
     });
 
-    // Combina cache com novos resultados
-    const allCreatives = {
-      ...cached,
-      ...result.creatives,
-    };
-
-    console.log(`[AdCreativeService] Prefetch concluído. Total: ${Object.keys(allCreatives).length} criativos`);
+    console.log(`[AdCreativeService] Fetch real-time concluido. Total: ${Object.keys(result.creatives).length} criativos`);
 
     return {
-      creatives: allCreatives,
+      creatives: result.creatives,
       errors: result.errors,
     };
   } catch (error) {
     console.error('[AdCreativeService] Erro ao buscar criativos em lote:', error);
 
-    // Retorna pelo menos o cache
     return {
-      creatives: cached,
+      creatives: {},
       errors: { _batch: error instanceof Error ? error.message : 'Erro desconhecido' },
     };
   }

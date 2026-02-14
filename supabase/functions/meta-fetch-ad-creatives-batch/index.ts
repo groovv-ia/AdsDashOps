@@ -1248,6 +1248,10 @@ Deno.serve(async (req: Request) => {
           p_fetch_status: record.fetch_status,
           p_error_message: record.error_message || null,
           p_extra_data: record.extra_data || {},
+          p_cached_image_url: record.cached_image_url || null,
+          p_cached_thumbnail_url: record.cached_thumbnail_url || null,
+          p_cache_expires_at: record.cache_expires_at || null,
+          p_file_size: record.file_size || null,
         });
 
         if (upsertError) {

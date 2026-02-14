@@ -126,11 +126,12 @@ export function CampaignExtractedDataPage({
   const [selectedAd, setSelectedAd] = useState<AdData | null>(null);
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
 
-  // Monta lista de ads para busca de criativos em lote (somente na aba de anuncios)
+  // Monta lista de ads para busca de criativos em lote
+  // Inicia a busca independente da aba ativa para que os criativos
+  // ja estejam carregados quando o usuario navegar para a aba de anuncios
   const adsForCreatives = useMemo(() => {
-    if (activeTab !== 'ads' || ads.length === 0) return undefined;
+    if (ads.length === 0) return undefined;
 
-    // Filtra apenas ads que possuem meta_ad_account_id (necessario para busca)
     const adsWithAccount = ads.filter(ad => ad.meta_ad_account_id);
     if (adsWithAccount.length === 0) return undefined;
 
@@ -138,7 +139,7 @@ export function CampaignExtractedDataPage({
       entity_id: ad.ad_id,
       meta_ad_account_id: ad.meta_ad_account_id!,
     }));
-  }, [activeTab, ads]);
+  }, [ads]);
 
   // Hook para buscar criativos em lote automaticamente
   const { getCreative, getLoadingState } = useAdCreativesBatch(adsForCreatives);

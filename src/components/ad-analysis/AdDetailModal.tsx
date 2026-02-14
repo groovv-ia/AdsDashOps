@@ -175,9 +175,10 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     preloadedMetricsForAI
   );
 
-  // Usa criativo pre-carregado se disponivel, senao usa o buscado pelo hook
-  const creative = preloadedCreative !== undefined ? preloadedCreative : fetchedCreative;
-  const creativeLoading = preloadedCreative !== undefined ? false : fetchedCreativeLoading;
+  // Usa criativo pre-carregado como placeholder visual imediato,
+  // mas sempre usa o resultado do fetch real-time quando disponivel
+  const creative = fetchedCreative || preloadedCreative || null;
+  const creativeLoading = fetchedCreativeLoading;
 
   // Agrega metricas pre-carregadas no formato para exibicao na aba de metricas
   const aggregatedPreloadedMetrics = useMemo(() => {

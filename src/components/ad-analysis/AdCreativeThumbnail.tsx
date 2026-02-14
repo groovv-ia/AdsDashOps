@@ -83,8 +83,8 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
   // Container com background para estados sem imagem
   const containerClassesWithBg = `${baseContainerClasses} bg-gray-100`;
 
-  // Estado de loading
-  if (loading) {
+  // Estado de loading puro (sem placeholder de criativo)
+  if (loading && !creative) {
     return (
       <div className={containerClassesWithBg}>
         <Loader2 className={`${iconSizes[size]} text-gray-400 animate-spin`} />
@@ -218,6 +218,13 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
           className="hidden"
           onLoad={() => setHdLoaded(true)}
         />
+      )}
+
+      {/* Indicador de carregamento sobreposto (busca real-time em andamento) */}
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
+          <Loader2 className={`${playSizes[size]} text-white animate-spin drop-shadow`} />
+        </div>
       )}
 
       {/* Indicador de video */}
