@@ -4,9 +4,10 @@
  * Visualizacao lado a lado de criativos selecionados.
  * Compara imagens, metricas de performance e textos.
  * Destaca o melhor criativo em cada metrica.
+ * Mostra indicador de loading enquanto imagens HD sao buscadas da API.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   ArrowLeft,
@@ -23,11 +24,14 @@ import {
   Users,
   Save,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import type { EnrichedCreative } from '../../lib/services/CreativeAnalysisService';
+import type { CreativeLoadingState } from '../../hooks/useCreativeAnalysis';
 
 interface CreativeComparisonViewProps {
   creatives: EnrichedCreative[];
+  creativeLoadingStates?: Record<string, CreativeLoadingState>;
   onBack: () => void;
   onSave?: (name: string) => void;
 }
@@ -63,12 +67,27 @@ function formatMetricValue(value: number, format: string): string {
 
 export const CreativeComparisonView: React.FC<CreativeComparisonViewProps> = ({
   creatives,
+  creativeLoadingStates = {},
   onBack,
   onSave,
 }) => {
   const [saveName, setSaveName] = useState('');
   const [showSave, setShowSave] = useState(false);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
+
+  // Reseta erros de imagem quando as URLs mudam (dados frescos da API)
+  const prevUrlsRef = useRef<string>('');
+  useEffect(() => {
+    const currentUrls = creatives.map(c => {
+      const cr = c.creative;
+      return cr.cached_image_url || cr.image_url_hd || cr.image_url || cr.thumbnail_url || '';
+    }).join('|');
+
+    if (currentUrls !== prevUrlsRef.current) {
+      prevUrlsRef.current = currentUrls;
+      setImgErrors({});
+    }
+  }, [creatives]);
 
   // Encontra melhor valor para cada metrica
   const getBestIndex = (key: string, higherIsBetter: boolean): number => {
@@ -172,6 +191,7 @@ export const CreativeComparisonView: React.FC<CreativeComparisonViewProps> = ({
             || c.cached_thumbnail_url || c.thumbnail_url;
           const isVideo = c.creative_type === 'video';
           const hasImg = imageUrl && !imgErrors[c.ad_id];
+          const isLoading = creativeLoadingStates[c.ad_id]?.isLoading || false;
 
           return (
             <div key={c.ad_id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -215,6 +235,16 @@ export const CreativeComparisonView: React.FC<CreativeComparisonViewProps> = ({
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
                     <Image className="w-10 h-10 text-gray-300" />
+                  </div>
+                )}
+
+                {/* Overlay de loading quando fetch real-time esta em andamento */}
+                {isLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-[2px]">
+                    <div className="flex flex-col items-center gap-1">
+                      <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                      <span className="text-[9px] font-medium text-blue-600">HD...</span>
+                    </div>
                   </div>
                 )}
               </div>

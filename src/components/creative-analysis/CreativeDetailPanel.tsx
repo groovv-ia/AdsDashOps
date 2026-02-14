@@ -3,9 +3,11 @@
  *
  * Painel lateral deslizante com detalhes completos de um criativo.
  * Exibe imagem em destaque, metricas, texto do criativo e mini-grafico diario.
+ * Mostra indicador de loading enquanto imagem HD esta sendo buscada da API.
+ * Reseta estado de erro quando dados frescos chegam.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   X,
   ExternalLink,
@@ -24,6 +26,7 @@ import {
   Plus,
   Sparkles,
   BarChart3,
+  Loader2,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -41,6 +44,7 @@ interface CreativeDetailPanelProps {
   onClose: () => void;
   onAddTag?: (adId: string, tag: string) => void;
   onRemoveTag?: (adId: string, tag: string) => void;
+  isLoadingCreative?: boolean;
 }
 
 // Formata valores para exibicao
@@ -59,6 +63,7 @@ export const CreativeDetailPanel: React.FC<CreativeDetailPanelProps> = ({
   onClose,
   onAddTag,
   onRemoveTag,
+  isLoadingCreative = false,
 }) => {
   const [copiedId, setCopiedId] = useState(false);
   const [newTag, setNewTag] = useState('');
@@ -73,6 +78,14 @@ export const CreativeDetailPanel: React.FC<CreativeDetailPanelProps> = ({
     || c.cached_thumbnail_url || c.thumbnail_url || null;
   const isVideo = c.creative_type === 'video';
   const hasImage = imageUrl && !imgError;
+
+  // Reseta erro de imagem quando a URL muda (dados frescos da API)
+  // Usando referencia para comparar sem precisar de useEffect com condicional
+  const prevImageRef = useRef<string | null>(null);
+  if (imageUrl !== prevImageRef.current) {
+    prevImageRef.current = imageUrl;
+    if (imgError) setImgError(false);
+  }
 
   // Copia ad_id para clipboard
   const handleCopyId = () => {
@@ -166,6 +179,16 @@ export const CreativeDetailPanel: React.FC<CreativeDetailPanelProps> = ({
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <Image className="w-12 h-12 text-gray-300" />
+              </div>
+            )}
+
+            {/* Overlay de loading quando fetch real-time esta em andamento */}
+            {isLoadingCreative && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-[2px]">
+                <div className="flex flex-col items-center gap-1.5">
+                  <Loader2 className="w-7 h-7 text-blue-500 animate-spin" />
+                  <span className="text-xs font-medium text-blue-600">Buscando imagem HD...</span>
+                </div>
               </div>
             )}
 

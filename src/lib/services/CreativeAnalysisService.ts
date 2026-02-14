@@ -42,6 +42,7 @@ export interface EnrichedCreative {
   adsetName: string;
   campaignId: string;
   adsetId: string;
+  metaAdAccountId: string;
   status: string;
   metrics: {
     impressions: number;
@@ -195,7 +196,7 @@ export async function searchCreatives(filters: CreativeSearchFilters): Promise<C
   // Passo 1: Busca ads no meta_insights_daily (nivel 'ad') com filtros de periodo
   let insightsQuery = supabase
     .from('meta_insights_daily')
-    .select('entity_id, entity_name, campaign_id, adset_id, date, impressions, clicks, spend, reach, ctr, cpc, cpm, actions_json, action_values_json')
+    .select('entity_id, entity_name, campaign_id, adset_id, meta_ad_account_id, date, impressions, clicks, spend, reach, ctr, cpc, cpm, actions_json, action_values_json')
     .eq('workspace_id', workspaceId)
     .eq('level', 'ad');
 
@@ -220,6 +221,7 @@ export async function searchCreatives(filters: CreativeSearchFilters): Promise<C
     adName: string;
     campaignId: string;
     adsetId: string;
+    metaAdAccountId: string;
     impressions: number;
     clicks: number;
     spend: number;
@@ -246,6 +248,7 @@ export async function searchCreatives(filters: CreativeSearchFilters): Promise<C
         adName: row.entity_name || adId,
         campaignId: row.campaign_id || '',
         adsetId: row.adset_id || '',
+        metaAdAccountId: row.meta_ad_account_id || '',
         impressions: 0,
         clicks: 0,
         spend: 0,
@@ -433,6 +436,7 @@ export async function searchCreatives(filters: CreativeSearchFilters): Promise<C
       adsetName: entityNameMap[m.adsetId] || m.adsetId || 'Adset desconhecido',
       campaignId: m.campaignId,
       adsetId: m.adsetId,
+      metaAdAccountId: creativeMap[adId]?.meta_ad_account_id || m.metaAdAccountId || '',
       status: statusMap[adId] || 'unknown',
       metrics: {
         impressions: m.impressions,

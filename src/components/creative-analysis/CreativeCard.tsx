@@ -3,10 +3,11 @@
  *
  * Card individual de criativo na galeria.
  * Exibe thumbnail, nome, metricas resumidas e status.
- * Suporta selecao para comparacao.
+ * Suporta selecao para comparacao e indicador de loading real-time.
+ * Reseta estado de erro de imagem quando recebe dados frescos da API.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Image,
   Play,
@@ -19,12 +20,14 @@ import {
   DollarSign,
   Sparkles,
   Tag,
+  Loader2,
 } from 'lucide-react';
 import type { EnrichedCreative } from '../../lib/services/CreativeAnalysisService';
 
 interface CreativeCardProps {
   creative: EnrichedCreative;
   isSelected: boolean;
+  isLoadingImage?: boolean;
   onToggleSelect: (adId: string) => void;
   onClick: (creative: EnrichedCreative) => void;
 }
@@ -69,6 +72,7 @@ function getStatusLabel(status: string): string {
 export const CreativeCard: React.FC<CreativeCardProps> = ({
   creative,
   isSelected,
+  isLoadingImage = false,
   onToggleSelect,
   onClick,
 }) => {
@@ -76,9 +80,17 @@ export const CreativeCard: React.FC<CreativeCardProps> = ({
   const { metrics } = creative;
   const c = creative.creative;
 
-  // Determina melhor URL de imagem disponivel
+  // Reseta erro de imagem quando a URL muda (dados frescos da API)
+  const prevImageRef = useRef<string | null>(null);
   const imageUrl = c.cached_image_url || c.image_url_hd || c.image_url
     || c.cached_thumbnail_url || c.thumbnail_url || null;
+
+  useEffect(() => {
+    if (imageUrl !== prevImageRef.current) {
+      prevImageRef.current = imageUrl;
+      setImgError(false);
+    }
+  }, [imageUrl]);
 
   const isVideo = c.creative_type === 'video';
   const hasImage = imageUrl && !imgError;
@@ -154,6 +166,16 @@ export const CreativeCard: React.FC<CreativeCardProps> = ({
             ) : (
               <Image className="w-10 h-10 text-gray-300" />
             )}
+          </div>
+        )}
+
+        {/* Overlay de loading quando fetch real-time esta em andamento */}
+        {isLoadingImage && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/60 backdrop-blur-[2px]">
+            <div className="flex flex-col items-center gap-1.5">
+              <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+              <span className="text-[10px] font-medium text-blue-600">Buscando HD...</span>
+            </div>
           </div>
         )}
 

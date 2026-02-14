@@ -4,6 +4,7 @@
  * Pagina principal do modulo de analise de criativos.
  * Integra filtros, galeria, comparacao, timeline e painel de detalhes.
  * Recebe `platform` como prop para funcionar tanto no contexto Meta quanto Google.
+ * Dispara busca real-time de imagens HD automaticamente apos cada busca.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -14,6 +15,7 @@ import {
   Palette,
   RefreshCw,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { useCreativeAnalysis, type ViewMode } from '../../hooks/useCreativeAnalysis';
 import { saveComparison, addCreativeTag, removeCreativeTag } from '../../lib/services/CreativeAnalysisService';
@@ -36,18 +38,20 @@ const VIEW_TABS: Array<{ mode: ViewMode; label: string; icon: React.ComponentTyp
 ];
 
 export const CreativeAnalysisPage: React.FC<CreativeAnalysisPageProps> = ({ platform }) => {
-  // Estado do hook principal
+  // Estado do hook principal (agora inclui fetchingImages e creativeLoadingStates)
   const {
     creatives,
     total,
     hasMore,
     loading,
+    fetchingImages,
     error,
     filters,
     viewMode,
     selectedIds,
     campaignOptions,
     adsetOptions,
+    creativeLoadingStates,
     updateFilters,
     resetFilters,
     search,
@@ -111,9 +115,13 @@ export const CreativeAnalysisPage: React.FC<CreativeAnalysisPageProps> = ({ plat
     setViewMode('gallery');
   }, [setViewMode]);
 
+  // Atualiza detailCreative quando os criativos sao atualizados pelo fetch real-time
+  const currentDetailCreative = detailCreative
+    ? creatives.find(c => c.creative.ad_id === detailCreative.creative.ad_id) || detailCreative
+    : null;
+
   // Titulo da pagina baseado na plataforma
   const platformTitle = platform === 'meta' ? 'Meta Ads' : 'Google Ads';
-  const platformColor = platform === 'meta' ? 'blue' : 'emerald';
 
   return (
     <div className="space-y-6">
@@ -138,6 +146,14 @@ export const CreativeAnalysisPage: React.FC<CreativeAnalysisPageProps> = ({ plat
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Indicador de fetch real-time em andamento */}
+          {fetchingImages && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-lg">
+              <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
+              <span className="text-xs font-medium text-blue-600">Buscando imagens HD...</span>
+            </div>
+          )}
+
           {/* Tabs de modo de visualizacao */}
           <div className="flex items-center bg-gray-100 rounded-xl p-1">
             {VIEW_TABS.map(tab => {
@@ -228,6 +244,7 @@ export const CreativeAnalysisPage: React.FC<CreativeAnalysisPageProps> = ({ plat
           hasMore={hasMore}
           total={total}
           selectedIds={selectedIds}
+          creativeLoadingStates={creativeLoadingStates}
           onToggleSelect={toggleSelect}
           onSelectAll={selectAll}
           onClearSelection={clearSelection}
@@ -240,6 +257,7 @@ export const CreativeAnalysisPage: React.FC<CreativeAnalysisPageProps> = ({ plat
       {viewMode === 'comparison' && (
         <CreativeComparisonView
           creatives={getSelectedCreatives()}
+          creativeLoadingStates={creativeLoadingStates}
           onBack={handleBackToGallery}
           onSave={handleSaveComparison}
         />
@@ -252,13 +270,18 @@ export const CreativeAnalysisPage: React.FC<CreativeAnalysisPageProps> = ({ plat
         />
       )}
 
-      {/* Painel de detalhe lateral */}
+      {/* Painel de detalhe lateral -- usa criativo atualizado pelo fetch real-time */}
       <CreativeDetailPanel
-        creative={detailCreative}
+        creative={currentDetailCreative}
         isOpen={detailOpen}
         onClose={handleCloseDetail}
         onAddTag={handleAddTag}
         onRemoveTag={handleRemoveTag}
+        isLoadingCreative={
+          currentDetailCreative
+            ? creativeLoadingStates[currentDetailCreative.creative.ad_id]?.isLoading || false
+            : false
+        }
       />
     </div>
   );

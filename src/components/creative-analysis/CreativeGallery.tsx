@@ -3,6 +3,7 @@
  *
  * Grid responsivo de cards de criativos.
  * Suporta selecao multipla, loading e paginacao infinita.
+ * Passa estado de loading real-time por criativo para cada card.
  */
 
 import React, { useRef, useCallback } from 'react';
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { CreativeCard } from './CreativeCard';
 import type { EnrichedCreative } from '../../lib/services/CreativeAnalysisService';
+import type { CreativeLoadingState } from '../../hooks/useCreativeAnalysis';
 
 interface CreativeGalleryProps {
   creatives: EnrichedCreative[];
@@ -22,6 +24,7 @@ interface CreativeGalleryProps {
   hasMore: boolean;
   total: number;
   selectedIds: Set<string>;
+  creativeLoadingStates: Record<string, CreativeLoadingState>;
   onToggleSelect: (adId: string) => void;
   onSelectAll: () => void;
   onClearSelection: () => void;
@@ -36,6 +39,7 @@ export const CreativeGallery: React.FC<CreativeGalleryProps> = ({
   hasMore,
   total,
   selectedIds,
+  creativeLoadingStates,
   onToggleSelect,
   onSelectAll,
   onClearSelection,
@@ -125,15 +129,21 @@ export const CreativeGallery: React.FC<CreativeGalleryProps> = ({
       {/* Grid de cards */}
       {creatives.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {creatives.map(creative => (
-            <CreativeCard
-              key={creative.creative.ad_id}
-              creative={creative}
-              isSelected={selectedIds.has(creative.creative.ad_id)}
-              onToggleSelect={onToggleSelect}
-              onClick={onCreativeClick}
-            />
-          ))}
+          {creatives.map(creative => {
+            const adId = creative.creative.ad_id;
+            const loadingState = creativeLoadingStates[adId];
+
+            return (
+              <CreativeCard
+                key={adId}
+                creative={creative}
+                isSelected={selectedIds.has(adId)}
+                isLoadingImage={loadingState?.isLoading || false}
+                onToggleSelect={onToggleSelect}
+                onClick={onCreativeClick}
+              />
+            );
+          })}
         </div>
       )}
 
