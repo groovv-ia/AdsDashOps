@@ -83,6 +83,18 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
   // Container com background para estados sem imagem
   const containerClassesWithBg = `${baseContainerClasses} bg-gray-100`;
 
+  // Verifica se o criativo tem alguma URL de imagem exibivel
+  // Usado para decidir se mostramos dados em cache ou estado de erro
+  const hasDisplayableImage = creative && (
+    creative.cached_image_url
+    || creative.image_url_hd
+    || creative.image_url
+    || creative.cached_thumbnail_url
+    || creative.thumbnail_url
+    || (creative.extra_data as Record<string, unknown> | undefined)?.raw_creative
+      && typeof ((creative.extra_data as Record<string, unknown>)?.raw_creative as Record<string, unknown>)?.thumbnail_url === 'string'
+  );
+
   // Estado de loading puro (sem placeholder de criativo)
   if (loading && !creative) {
     return (
@@ -92,8 +104,9 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     );
   }
 
-  // Estado de erro
-  if (error) {
+  // Estado de erro: so exibe quando NAO temos dados de criativo com imagem
+  // Se temos creative com imagem em cache, preferimos mostrar a imagem
+  if (error && !hasDisplayableImage) {
     return (
       <div
         className={`${baseContainerClasses} bg-red-50`}

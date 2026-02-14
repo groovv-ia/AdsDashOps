@@ -212,7 +212,7 @@ export function CampaignAdsTable({
         <AdCreativeThumbnail
           creative={creative}
           loading={loadState?.isLoading || false}
-          error={loadState?.hasError ? (loadState.errorMessage || 'Erro') : null}
+          error={loadState?.hasError && !creative ? (loadState.errorMessage || 'Erro') : null}
           size="md"
           showQualityIndicator
           useHdWhenAvailable

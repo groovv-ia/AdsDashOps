@@ -154,52 +154,75 @@ export function useAdCreativesBatch(
       // Envia TODOS os IDs para a API (o servidor decide cache vs fetch)
       const result = await prefetchCreativesForAds(currentAdIds, metaAdAccountId);
 
-      // Atualiza estados de loading individuais
-      const newLoadingStates: Record<string, LoadingState> = {};
-      for (const adId of currentAdIds) {
-        if (result.errors[adId]) {
-          newLoadingStates[adId] = {
-            isLoading: false,
-            hasError: true,
-            errorMessage: result.errors[adId],
-          };
-        } else {
-          newLoadingStates[adId] = {
-            isLoading: false,
-            hasError: false,
-          };
-        }
-      }
+      // Mescla criativos da API com os do cache para verificar dados disponiveis
+      setState(prev => {
+        const mergedCreatives = { ...prev.creatives, ...result.creatives };
 
-      // Substitui placeholders pelos dados reais da API
-      setState(prev => ({
-        creatives: { ...prev.creatives, ...result.creatives },
-        loadingStates: { ...prev.loadingStates, ...newLoadingStates },
-        globalLoading: false,
-        globalError: result.errors._batch || null,
-        fetchedCount: Object.keys(result.creatives).length,
-        cachedCount: prev.cachedCount,
-      }));
+        // Atualiza estados de loading individuais
+        // So marca hasError se NAO temos dados de criativo com imagem no cache
+        const newLoadingStates: Record<string, LoadingState> = {};
+        for (const adId of currentAdIds) {
+          if (result.errors[adId]) {
+            // Verifica se temos criativo com imagem utilizavel (cache ou API)
+            const creative = mergedCreatives[adId];
+            const hasUsableImage = creative && (
+              creative.cached_image_url || creative.image_url_hd
+              || creative.image_url || creative.cached_thumbnail_url
+              || creative.thumbnail_url
+            );
+
+            // Se temos imagem em cache, nao sinaliza erro (exibe o cache)
+            newLoadingStates[adId] = {
+              isLoading: false,
+              hasError: !hasUsableImage,
+              errorMessage: !hasUsableImage ? result.errors[adId] : undefined,
+            };
+          } else {
+            newLoadingStates[adId] = {
+              isLoading: false,
+              hasError: false,
+            };
+          }
+        }
+
+        return {
+          creatives: mergedCreatives,
+          loadingStates: { ...prev.loadingStates, ...newLoadingStates },
+          globalLoading: false,
+          globalError: result.errors._batch || null,
+          fetchedCount: Object.keys(result.creatives).length,
+          cachedCount: prev.cachedCount,
+        };
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       console.error('[useAdCreativesBatch] Erro na busca real-time (fase 2):', error);
 
-      // Marca todos como finalizados (mantem placeholders do cache se existirem)
-      const errorLoadingStates: Record<string, LoadingState> = {};
-      for (const adId of currentAdIds) {
-        errorLoadingStates[adId] = {
-          isLoading: false,
-          hasError: true,
-          errorMessage,
-        };
-      }
+      // Mantem placeholders do cache: so marca erro para ads sem dados em cache
+      setState(prev => {
+        const errorLoadingStates: Record<string, LoadingState> = {};
+        for (const adId of currentAdIds) {
+          const creative = prev.creatives[adId];
+          const hasUsableImage = creative && (
+            creative.cached_image_url || creative.image_url_hd
+            || creative.image_url || creative.cached_thumbnail_url
+            || creative.thumbnail_url
+          );
 
-      setState(prev => ({
-        ...prev,
-        loadingStates: { ...prev.loadingStates, ...errorLoadingStates },
-        globalLoading: false,
-        globalError: errorMessage,
-      }));
+          errorLoadingStates[adId] = {
+            isLoading: false,
+            hasError: !hasUsableImage,
+            errorMessage: !hasUsableImage ? errorMessage : undefined,
+          };
+        }
+
+        return {
+          ...prev,
+          loadingStates: { ...prev.loadingStates, ...errorLoadingStates },
+          globalLoading: false,
+          globalError: errorMessage,
+        };
+      });
     } finally {
       fetchingRef.current = false;
     }
