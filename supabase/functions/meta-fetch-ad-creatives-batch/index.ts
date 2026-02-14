@@ -168,17 +168,9 @@ const postDataCache = new Map<string, PostData>();
 
 /**
  * Verifica se uma URL eh um thumbnail minusculo do Meta CDN (p64x64)
- * Verifica apenas no path da URL, ignorando query params (stp=...p64x64...)
- * pois o parametro stp indica transformacao do CDN, nao a resolucao real da imagem armazenada
  */
 function isLowQualityUrl(url: string): boolean {
-  try {
-    const urlPath = url.split('?')[0];
-    return urlPath.includes('/p64x64/') || urlPath.includes('/p128x128/')
-      || urlPath.includes('/p64x64') || urlPath.includes('/p128x128');
-  } catch {
-    return url.includes('/p64x64/') || url.includes('/p128x128/');
-  }
+  return url.includes('p64x64') || url.includes('p128x128');
 }
 
 /**
@@ -1057,10 +1049,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // ============================================
-    // Verifica cache - com logica resiliente
-    // Separa em: cache definitivo (boa qualidade) e cache provisorio (upgrade desejavel)
-    // Ads com cache provisorio sao incluidos na resposta MAS tambem entram no adsToFetch
-    // para tentativa de upgrade. Se o upgrade falhar, o cache provisorio garante exibicao.
+    // Verifica cache - com logica melhorada
+    // Registros com p64x64 SEM cache no Storage sao considerados desatualizados
     // ============================================
     const { data: cachedCreatives } = await supabaseAdmin
       .from("meta_ad_creatives")
@@ -1068,9 +1058,7 @@ Deno.serve(async (req: Request) => {
       .eq("workspace_id", workspaceId)
       .in("ad_id", ad_ids);
 
-    // cachedMap: todos os criativos com dados uteis (incluindo baixa qualidade)
     const cachedMap: Record<string, Record<string, unknown>> = {};
-    // cachedAdIds: apenas os IDs que NAO precisam de re-fetch
     const cachedAdIds = new Set<string>();
 
     if (cachedCreatives) {
@@ -1081,33 +1069,27 @@ Deno.serve(async (req: Request) => {
         const maxAttemptsReached = (creative.fetch_attempts || 0) >= 3;
         const isFailed = creative.fetch_status === 'failed';
 
+        // NOVO: verifica se imagem eh de baixa qualidade sem cache no Storage
         const imageIsLowQuality = creative.image_url && isLowQualityUrl(creative.image_url);
         const hasCachedStorage = !!creative.cached_image_url;
         const needsUpgrade = imageIsLowQuality && !hasCachedStorage;
 
-        if (hasUsefulData) {
-          // Inclui no cachedMap para garantir que o frontend receba dados
-          cachedMap[creative.ad_id] = creative;
-
-          // Marca como "cache definitivo" (nao precisa re-fetch) somente se:
-          // - Nao precisa de upgrade de qualidade
-          // - OU ja falhou apos muitas tentativas
-          if (!needsUpgrade || (maxAttemptsReached && isFailed)) {
-            cachedAdIds.add(creative.ad_id);
-          } else {
-            console.log(`Ad ${creative.ad_id}: incluido no cache provisorio, tentara upgrade`);
-          }
-        } else if (maxAttemptsReached && isFailed) {
+        // Aceita do cache se:
+        // - Tem dados uteis E nao precisa de upgrade de qualidade
+        // - OU ja falhou apos muitas tentativas
+        if ((hasUsefulData && !needsUpgrade) || (maxAttemptsReached && isFailed)) {
           cachedMap[creative.ad_id] = creative;
           cachedAdIds.add(creative.ad_id);
+        } else if (needsUpgrade) {
+          console.log(`Ad ${creative.ad_id}: imagem p64x64 sem cache Storage, sera rebuscado`);
         }
       }
     }
 
     const adsToFetch = ad_ids.filter(id => !cachedAdIds.has(id));
-    console.log(`Batch creative fetch: ${ad_ids.length} requested, ${cachedAdIds.size} cached OK, ${Object.keys(cachedMap).length - cachedAdIds.size} cached provisorio, ${adsToFetch.length} to fetch/upgrade`);
+    console.log(`Batch creative fetch: ${ad_ids.length} requested, ${cachedAdIds.size} cached OK, ${adsToFetch.length} to fetch/upgrade`);
 
-    // Se todos estao em cache definitivo, retorna
+    // Se todos estao em cache com boa qualidade, retorna
     if (adsToFetch.length === 0) {
       return new Response(
         JSON.stringify({
@@ -1127,17 +1109,10 @@ Deno.serve(async (req: Request) => {
       .eq("workspace_id", workspaceId)
       .maybeSingle();
 
-    // Se nao tem conexao Meta, retorna os dados em cache disponiveis em vez de erro
     if (!metaConnection || metaConnection.status !== "connected") {
-      console.log("No valid Meta connection - returning cached data as fallback");
       return new Response(
-        JSON.stringify({
-          creatives: cachedMap,
-          errors: {},
-          cached_count: Object.keys(cachedMap).length,
-          fetched_count: 0,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "No valid Meta connection found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -1273,10 +1248,6 @@ Deno.serve(async (req: Request) => {
           p_fetch_status: record.fetch_status,
           p_error_message: record.error_message || null,
           p_extra_data: record.extra_data || {},
-          p_cached_image_url: record.cached_image_url || null,
-          p_cached_thumbnail_url: record.cached_thumbnail_url || null,
-          p_cache_expires_at: record.cache_expires_at || null,
-          p_file_size: record.file_size || null,
         });
 
         if (upsertError) {

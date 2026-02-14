@@ -42,8 +42,7 @@ interface AsyncState<T> {
 }
 
 /**
- * Hook para gerenciar criativo de um anuncio com busca real-time.
- * Estrategia fetch-first: mostra cache como placeholder, busca da API em paralelo.
+ * Hook para gerenciar criativo de um anúncio
  */
 export function useAdCreative(adId: string | null, metaAdAccountId: string | null) {
   const [state, setState] = useState<AsyncState<MetaAdCreative>>({
@@ -53,7 +52,7 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
   });
   const [isCached, setIsCached] = useState(false);
 
-  // Busca criativo da API (edge function)
+  // Busca criativo ao montar ou quando IDs mudam
   const fetchCreative = useCallback(async () => {
     if (!adId || !metaAdAccountId) {
       setState({ data: null, loading: false, error: null });
@@ -68,15 +67,14 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
         meta_ad_account_id: metaAdAccountId,
       });
       setState({ data: response.creative, loading: false, error: null });
-      setIsCached(false);
+      setIsCached(response.cached);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao buscar criativo';
-      // Mantem dados existentes (placeholder) em caso de erro na API
-      setState(prev => ({ ...prev, loading: false, error: message }));
+      setState({ data: null, loading: false, error: message });
     }
   }, [adId, metaAdAccountId]);
 
-  // Forca atualizacao do criativo
+  // Força atualização do criativo
   const refresh = useCallback(async () => {
     if (!adId || !metaAdAccountId) return;
 
@@ -92,18 +90,19 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
     }
   }, [adId, metaAdAccountId]);
 
-  // Carrega do cache local (usado como placeholder)
+  // Carrega do cache local primeiro
   const loadFromCache = useCallback(async () => {
     if (!adId) return;
 
     const cached = await getAdCreativeFromCache(adId);
     if (cached) {
-      setState(prev => ({ ...prev, data: cached }));
+      setState({ data: cached, loading: false, error: null });
       setIsCached(true);
     }
   }, [adId]);
 
-  // Effect: busca real-time com cache como placeholder
+  // Effect para buscar criativo quando IDs mudam
+  // Sempre tenta carregar do cache local; se metaAdAccountId disponivel, busca da API como fallback
   useEffect(() => {
     if (!adId) return;
 
@@ -112,36 +111,20 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     async function loadCreative() {
-      // Fase 1: carrega placeholder do cache local (instantaneo)
+      // Tenta carregar do cache local primeiro (nao precisa de metaAdAccountId)
       const cached = await getAdCreativeFromCache(adId);
 
       if (cancelled) return;
 
       if (cached) {
-        // Mostra placeholder imediatamente, mantem loading=true
-        setState(prev => ({ ...prev, data: cached }));
+        setState({ data: cached, loading: false, error: null });
         setIsCached(true);
-      }
-
-      // Fase 2: busca da API em tempo real (substitui placeholder)
-      if (metaAdAccountId) {
-        try {
-          const response = await fetchAdCreative({
-            ad_id: adId,
-            meta_ad_account_id: metaAdAccountId,
-          });
-          if (cancelled) return;
-          setState({ data: response.creative, loading: false, error: null });
-          setIsCached(false);
-        } catch (err) {
-          if (cancelled) return;
-          const message = err instanceof Error ? err.message : 'Erro ao buscar criativo';
-          // Se temos placeholder do cache, mantem e so desliga loading
-          setState(prev => ({ ...prev, loading: false, error: prev.data ? null : message }));
-        }
+      } else if (metaAdAccountId) {
+        // Se nao encontrou no cache e temos metaAdAccountId, busca da API
+        fetchCreative();
       } else {
-        // Sem metaAdAccountId: finaliza com o que temos do cache
-        setState(prev => ({ ...prev, loading: false }));
+        // Sem cache e sem metaAdAccountId, nao ha como buscar
+        setState({ data: null, loading: false, error: null });
       }
     }
 
@@ -150,7 +133,7 @@ export function useAdCreative(adId: string | null, metaAdAccountId: string | nul
     return () => {
       cancelled = true;
     };
-  }, [adId, metaAdAccountId]);
+  }, [adId, metaAdAccountId, fetchCreative]);
 
   return {
     creative: state.data,
