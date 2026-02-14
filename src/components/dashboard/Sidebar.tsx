@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3 } from 'lucide-react';
+import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3, Palette } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 import { UpgradeBanner } from './UpgradeBanner';
 
@@ -46,6 +46,7 @@ const menuSections: MenuSection[] = [
     items: [
       { icon: Link, label: 'Conexao Meta', page: 'meta-admin' },
       { icon: RefreshCw, label: 'Meta Ads Sync', page: 'meta-sync' },
+      { icon: Palette, label: 'Analise de Criativos', page: 'meta-creative-analysis' },
     ],
   },
   {
@@ -57,6 +58,7 @@ const menuSections: MenuSection[] = [
       { icon: Link, label: 'Conexao Google', page: 'google-admin' },
       { icon: RefreshCw, label: 'Google Ads Sync', page: 'google-sync' },
       { icon: BarChart3, label: 'Ver Campanhas', page: 'google-campaigns' },
+      { icon: Palette, label: 'Analise de Criativos', page: 'google-creative-analysis' },
     ],
   },
 ];
@@ -194,7 +196,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {/* Itens da secao - com animacao */}
                     <div className={`
                       overflow-hidden transition-all duration-200 ease-in-out
-                      ${isExpanded ? 'max-h-48 opacity-100 mt-1' : 'max-h-0 opacity-0'}
+                      ${isExpanded ? 'max-h-64 opacity-100 mt-1' : 'max-h-0 opacity-0'}
                     `}>
                       <div className="pl-4 space-y-0.5">
                         {section.items.map((item, itemIndex) => {
