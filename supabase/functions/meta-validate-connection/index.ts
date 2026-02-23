@@ -319,6 +319,9 @@ Deno.serve(async (req: Request) => {
     const connectionName = meData.name || `Meta Connection - ${business_manager_id}`;
     let connectionId: string;
 
+    // Calcula data de expiracao do token: 60 dias a partir de agora (Long-Lived Token)
+    const tokenExpiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+
     if (existingConnection) {
       connectionId = existingConnection.id;
       const { error } = await supabaseAdmin
@@ -329,6 +332,7 @@ Deno.serve(async (req: Request) => {
           granted_scopes: grantedScopes,
           status: "connected",
           name: connectionName,
+          token_expires_at: tokenExpiresAt,
           last_validated_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -352,6 +356,7 @@ Deno.serve(async (req: Request) => {
           status: "connected",
           name: connectionName,
           is_default: true,
+          token_expires_at: tokenExpiresAt,
           last_validated_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),

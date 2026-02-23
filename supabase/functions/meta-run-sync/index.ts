@@ -152,9 +152,96 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: "No workspace found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const { data: metaConnection } = await supabaseAdmin.from("meta_connections").select("access_token_encrypted, status").eq("workspace_id", workspace.id).maybeSingle();
-    if (!metaConnection || metaConnection.status !== "connected") {
+    const { data: metaConnection } = await supabaseAdmin
+      .from("meta_connections")
+      .select("id, access_token_encrypted, status, token_expires_at, updated_at")
+      .eq("workspace_id", workspace.id)
+      .maybeSingle();
+
+    // Verifica se a conexao existe e nao esta permanentemente invalida
+    if (!metaConnection || metaConnection.status === "token_expired") {
       return new Response(JSON.stringify({ error: "No valid Meta connection" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Verifica se o token esta proximo de expirar ou ja expirou para tentar renovar
+    const appId = Deno.env.get("META_APP_ID");
+    const appSecret = Deno.env.get("META_APP_SECRET");
+
+    // Calcula dias restantes ate a expiracao do token
+    const expiresAtStr = metaConnection.token_expires_at ||
+      (metaConnection.updated_at
+        ? new Date(new Date(metaConnection.updated_at).getTime() + 60 * 24 * 60 * 60 * 1000).toISOString()
+        : null);
+
+    if (expiresAtStr && appId && appSecret) {
+      const expiresAt = new Date(expiresAtStr);
+      const now = new Date();
+      const daysRemaining = Math.floor((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Se token expirou ou expira em menos de 7 dias, tenta renovar automaticamente
+      if (daysRemaining <= 7) {
+        console.log(`[meta-run-sync] Token expira em ${daysRemaining} dias. Tentando renovar automaticamente...`);
+
+        try {
+          const { data: currentToken } = await supabaseAdmin.rpc("decrypt_token", {
+            p_encrypted_token: metaConnection.access_token_encrypted,
+          });
+          const tokenToRefresh = currentToken || metaConnection.access_token_encrypted;
+
+          const refreshUrl = new URL("https://graph.facebook.com/v19.0/oauth/access_token");
+          refreshUrl.searchParams.set("grant_type", "fb_exchange_token");
+          refreshUrl.searchParams.set("client_id", appId);
+          refreshUrl.searchParams.set("client_secret", appSecret);
+          refreshUrl.searchParams.set("fb_exchange_token", tokenToRefresh);
+
+          const refreshResp = await fetch(refreshUrl.toString());
+          const refreshData = await refreshResp.json();
+
+          if (refreshData.access_token && !refreshData.error) {
+            const expiresInSeconds = refreshData.expires_in || 5183944;
+            const newExpiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+
+            const { data: encryptedNew } = await supabaseAdmin.rpc("encrypt_token", {
+              p_token: refreshData.access_token,
+            });
+
+            await supabaseAdmin
+              .from("meta_connections")
+              .update({
+                access_token_encrypted: encryptedNew || refreshData.access_token,
+                token_expires_at: newExpiresAt,
+                updated_at: new Date().toISOString(),
+                status: "connected",
+              })
+              .eq("id", metaConnection.id);
+
+            console.log(`[meta-run-sync] Token renovado automaticamente. Nova expiracao: ${newExpiresAt}`);
+
+            // Usa o novo token para a sincronizacao
+            metaConnection.access_token_encrypted = encryptedNew || refreshData.access_token;
+          } else if (refreshData.error) {
+            // Erro 190 indica token permanentemente invalido (exige reconexao)
+            if (refreshData.error.code === 190) {
+              await supabaseAdmin
+                .from("meta_connections")
+                .update({ status: "token_expired" })
+                .eq("id", metaConnection.id);
+
+              return new Response(
+                JSON.stringify({
+                  error: "Token de acesso expirou e nao pode ser renovado automaticamente. Reconecte sua conta Meta.",
+                  error_code: "TOKEN_PERMANENTLY_EXPIRED",
+                  requires_reconnect: true,
+                }),
+                { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+              );
+            }
+            console.warn(`[meta-run-sync] Falha ao renovar token: ${refreshData.error.message}. Tentando prosseguir com token atual.`);
+          }
+        } catch (refreshError) {
+          console.warn("[meta-run-sync] Erro ao tentar renovar token:", refreshError);
+        }
+      }
     }
 
     const { data: decryptedToken } = await supabaseAdmin.rpc("decrypt_token", { p_encrypted_token: metaConnection.access_token_encrypted });

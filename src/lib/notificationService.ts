@@ -362,6 +362,12 @@ export class NotificationMonitoringService {
   startMonitoring() {
     if (this.monitoringInterval) return;
 
+    // Verifica expiracao de tokens a cada 6 horas
+    const TOKEN_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
+    setInterval(() => {
+      this.checkTokenExpiry();
+    }, TOKEN_CHECK_INTERVAL);
+
     // Check every 5 minutes
     this.monitoringInterval = setInterval(() => {
       this.checkCampaignPerformance();
@@ -373,6 +379,8 @@ export class NotificationMonitoringService {
     this.checkCampaignPerformance();
     this.checkBudgetAlerts();
     this.checkSyncStatus();
+    // Verifica tokens na inicializacao
+    this.checkTokenExpiry();
   }
 
   // Stop monitoring
@@ -532,13 +540,13 @@ export class NotificationMonitoringService {
 
   private async checkBudgetThresholds(campaign: any, settings: NotificationSettings) {
     const totalSpend = campaign.ad_metrics.reduce((sum: number, metric: any) => sum + metric.spend, 0);
-    const totalBudget = campaign.ad_sets.reduce((sum: number, adSet: any) => 
+    const totalBudget = campaign.ad_sets.reduce((sum: number, adSet: any) =>
       sum + (adSet.daily_budget || adSet.lifetime_budget || 0), 0
     );
 
     if (totalBudget > 0) {
       const spendPercentage = (totalSpend / totalBudget) * 100;
-      
+
       if (spendPercentage >= settings.thresholds.budget_alert_percentage) {
         await this.notificationService.createNotification({
           title: 'Alerta de Orçamento',
@@ -556,6 +564,90 @@ export class NotificationMonitoringService {
           }
         });
       }
+    }
+  }
+
+  // Verifica expiracao de tokens das conexoes Meta e Google
+  async checkTokenExpiry() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Busca conexoes Meta do workspace do usuario
+      const { data: workspace } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('owner_id', user.id)
+        .maybeSingle();
+
+      if (!workspace) return;
+
+      const { data: metaConnections } = await supabase
+        .from('meta_connections')
+        .select('id, token_expires_at, updated_at, status')
+        .eq('workspace_id', workspace.id);
+
+      if (!metaConnections || metaConnections.length === 0) return;
+
+      for (const connection of metaConnections) {
+        // Pula conexoes ja marcadas como expiradas permanentemente
+        if (connection.status === 'token_expired') {
+          await this.notificationService.createNotification({
+            title: 'Reconexao Meta Ads Necessaria',
+            message: 'Seu acesso ao Meta Ads expirou e precisa ser renovado manualmente. Acesse Configuracoes > Conexoes para reconectar.',
+            type: 'error',
+            category: 'sync',
+            priority: 'urgent',
+            read: false,
+            action_url: '/meta-admin',
+            action_label: 'Reconectar Meta Ads',
+            metadata: { connection_id: connection.id, platform: 'meta', reason: 'token_permanently_expired' }
+          });
+          continue;
+        }
+
+        // Calcula dias restantes usando token_expires_at ou estimativa por updated_at
+        const expiresAtStr = connection.token_expires_at ||
+          (connection.updated_at
+            ? new Date(new Date(connection.updated_at).getTime() + 60 * 24 * 60 * 60 * 1000).toISOString()
+            : null);
+
+        if (!expiresAtStr) continue;
+
+        const expiresAt = new Date(expiresAtStr);
+        const now = new Date();
+        const daysRemaining = Math.floor((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        // Token ja expirado
+        if (daysRemaining <= 0) {
+          await this.notificationService.createNotification({
+            title: 'Token Meta Ads Expirado',
+            message: 'Seu token de acesso ao Meta Ads expirou. A sincronizacao sera realizada automaticamente ao proximo ciclo, ou voce pode tentar manualmente.',
+            type: 'error',
+            category: 'sync',
+            priority: 'high',
+            read: false,
+            action_url: '/meta-admin',
+            action_label: 'Verificar Sincronizacao',
+            metadata: { connection_id: connection.id, platform: 'meta', days_remaining: daysRemaining }
+          });
+        } else if (daysRemaining <= 7) {
+          // Token expirando em breve
+          await this.notificationService.createNotification({
+            title: 'Token Meta Ads Expirando em Breve',
+            message: `Seu token de acesso ao Meta Ads expira em ${daysRemaining} dia${daysRemaining !== 1 ? 's' : ''}. A renovacao automatica sera tentada na proxima sincronizacao.`,
+            type: 'warning',
+            category: 'sync',
+            priority: 'medium',
+            read: false,
+            action_url: '/meta-admin',
+            action_label: 'Ir para Sincronizacao',
+            metadata: { connection_id: connection.id, platform: 'meta', days_remaining: daysRemaining }
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao verificar expiracao de tokens:', error);
     }
   }
 }

@@ -29,6 +29,9 @@ import {
   Image,
   MessageSquare,
   CircleDollarSign,
+  Key,
+  ShieldAlert,
+  X,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -48,6 +51,11 @@ import {
   SyncStatusResponse,
   SyncResult,
 } from '../../lib/services/MetaSystemUserService';
+import {
+  getTokenExpiryStatus,
+  refreshMetaToken,
+  TokenStatusInfo,
+} from '../../lib/services/TokenRefreshService';
 import { useClient } from '../../contexts/ClientContext';
 import { AdDetailModal, AdCreativeThumbnail } from '../ad-analysis';
 import type { AdDetailModalState } from '../../types/adAnalysis';
@@ -191,6 +199,12 @@ export const MetaAdsSyncPage: React.FC = () => {
   // Mensagens
   const [error, setError] = useState<string | null>(null);
 
+  // Status de expiracao do token Meta
+  const [tokenStatus, setTokenStatus] = useState<TokenStatusInfo | null>(null);
+  const [refreshingToken, setRefreshingToken] = useState(false);
+  const [tokenRefreshMessage, setTokenRefreshMessage] = useState<string | null>(null);
+  const [showTokenBanner, setShowTokenBanner] = useState(true);
+
   // Estado do modal de detalhes do anuncio
   const [adDetailModal, setAdDetailModal] = useState<AdDetailModalState>({
     isOpen: false,
@@ -207,7 +221,36 @@ export const MetaAdsSyncPage: React.FC = () => {
   // Carrega status inicial
   useEffect(() => {
     loadStatus();
+    checkTokenStatus();
   }, [selectedClient]);
+
+  // Verifica status do token Meta
+  const checkTokenStatus = async () => {
+    const status = await getTokenExpiryStatus();
+    setTokenStatus(status);
+    setShowTokenBanner(true);
+  };
+
+  // Renova o token Meta manualmente
+  const handleRefreshToken = async () => {
+    setRefreshingToken(true);
+    setTokenRefreshMessage(null);
+    try {
+      const result = await refreshMetaToken(tokenStatus?.connectionId || undefined);
+      if (result.success) {
+        setTokenRefreshMessage('Token renovado com sucesso! Valido por mais 60 dias.');
+        await checkTokenStatus();
+      } else {
+        setTokenRefreshMessage(
+          result.requiresReconnect
+            ? 'Nao foi possivel renovar automaticamente. Reconecte sua conta Meta.'
+            : `Falha ao renovar: ${result.error}`
+        );
+      }
+    } finally {
+      setRefreshingToken(false);
+    }
+  };
 
   // Carrega dados quando filtros mudam e ha conta selecionada
   useEffect(() => {
@@ -1241,6 +1284,78 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Banner de aviso de expiracao/renovacao de token */}
+        {showTokenBanner && tokenStatus && tokenStatus.status !== 'valid' && tokenStatus.status !== 'unknown' && (
+          <div className={`rounded-xl border p-4 ${
+            tokenStatus.status === 'expired'
+              ? 'bg-red-50 border-red-200'
+              : 'bg-amber-50 border-amber-200'
+          }`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 flex-shrink-0 ${tokenStatus.status === 'expired' ? 'text-red-600' : 'text-amber-600'}`}>
+                  {tokenStatus.status === 'expired' ? (
+                    <ShieldAlert className="w-5 h-5" />
+                  ) : (
+                    <Key className="w-5 h-5" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <p className={`font-semibold text-sm ${tokenStatus.status === 'expired' ? 'text-red-800' : 'text-amber-800'}`}>
+                    {tokenStatus.status === 'expired'
+                      ? 'Token de acesso Meta Ads expirado'
+                      : `Token de acesso expira em ${tokenStatus.daysRemaining} dia${tokenStatus.daysRemaining !== 1 ? 's' : ''}`
+                    }
+                  </p>
+                  <p className={`text-sm mt-0.5 ${tokenStatus.status === 'expired' ? 'text-red-700' : 'text-amber-700'}`}>
+                    {tokenStatus.status === 'expired'
+                      ? 'Sincronizacoes falharam por conta desse token. Clique em "Renovar Token" para tentar renovar automaticamente.'
+                      : 'O token sera renovado automaticamente na proxima sincronizacao. Voce tambem pode renovar agora.'
+                    }
+                  </p>
+                  {tokenRefreshMessage && (
+                    <p className={`text-sm mt-2 font-medium ${tokenRefreshMessage.includes('sucesso') ? 'text-green-700' : 'text-red-700'}`}>
+                      {tokenRefreshMessage}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={handleRefreshToken}
+                  disabled={refreshingToken}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    tokenStatus.status === 'expired'
+                      ? 'bg-red-600 hover:bg-red-700 text-white disabled:opacity-50'
+                      : 'bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50'
+                  }`}
+                >
+                  {refreshingToken ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Key className="w-3.5 h-3.5" />
+                  )}
+                  {refreshingToken ? 'Renovando...' : 'Renovar Token'}
+                </button>
+                <button
+                  onClick={() => setShowTokenBanner(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Mensagem de sucesso apos renovacao quando banner foi fechado */}
+        {!showTokenBanner && tokenRefreshMessage?.includes('sucesso') && (
+          <div className="rounded-xl border bg-green-50 border-green-200 p-3 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+            <p className="text-sm text-green-700 font-medium">{tokenRefreshMessage}</p>
+          </div>
+        )}
+
         {/* Aviso quando contas estão aguardando primeira sincronização */}
         {syncStatus.health_status === 'pending_first_sync' && accountCards.length > 0 && (
           <Card className="bg-blue-50 border-blue-200">
@@ -1299,6 +1414,24 @@ export const MetaAdsSyncPage: React.FC = () => {
                 )}
               </div>
             </div>
+            {syncResult.errors.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {syncResult.errors.map((err, idx) => {
+                  // Detecta erros de token expirado e exibe mensagem amigavel
+                  const isTokenError = err.toLowerCase().includes('session has expired') ||
+                    err.toLowerCase().includes('error validating access token') ||
+                    err.toLowerCase().includes('token');
+                  return (
+                    <p key={idx} className="text-sm text-red-600">
+                      {isTokenError
+                        ? `Erro de autenticacao: Seu token de acesso ao Meta Ads expirou. Clique em "Renovar Token" acima para corrigir.`
+                        : err
+                      }
+                    </p>
+                  );
+                })}
+              </div>
+            )}
             {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
           </div>
         )}
