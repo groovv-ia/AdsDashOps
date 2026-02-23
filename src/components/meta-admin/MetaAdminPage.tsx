@@ -478,8 +478,8 @@ export const MetaAdminPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Badge secundario de sincronizacao - so mostra se conectado */}
-            {syncStatus && connectionStatus.connected && (
+            {/* Badge secundario de sincronizacao - so mostra se conectado e nao for erro */}
+            {syncStatus && connectionStatus.connected && syncStatus.health_status !== 'error' && (
               <div className="flex flex-col items-end gap-2">
                 <span className={`px-3 py-1.5 rounded-lg text-xs font-medium ${getSyncStatusColor(syncStatus.health_status)}`}>
                   {getSyncStatusLabel(syncStatus.health_status)}
