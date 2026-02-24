@@ -34,12 +34,34 @@ const CREATIVE_CACHE_TTL_DAYS = 7;
 const MAX_FETCH_ATTEMPTS = 3;
 
 /**
- * Verifica se um criativo tem dados completos (imagem OU textos)
+ * Verifica se um criativo tem dados suficientes para ser exibido.
+ * Ter qualquer URL de imagem ja e suficiente para exibicao visual.
+ * Textos sao complementares e nao bloqueiam a exibicao.
  */
 function isCreativeComplete(creative: MetaAdCreative): boolean {
-  const hasImage = !!(creative.thumbnail_url || creative.image_url);
+  const hasImage = !!(
+    creative.cached_image_url ||
+    creative.image_url_hd ||
+    creative.image_url ||
+    creative.cached_thumbnail_url ||
+    creative.thumbnail_url
+  );
   const hasTexts = !!(creative.title || creative.body || creative.description);
   return hasImage || hasTexts;
+}
+
+/**
+ * Verifica se um criativo tem pelo menos uma URL de imagem disponivel
+ * para exibicao imediata, independente do status de completude
+ */
+function hasDisplayableImage(creative: MetaAdCreative): boolean {
+  return !!(
+    creative.cached_image_url ||
+    creative.image_url_hd ||
+    creative.image_url ||
+    creative.cached_thumbnail_url ||
+    creative.thumbnail_url
+  );
 }
 
 /**
@@ -56,31 +78,27 @@ function isCreativeExpired(creative: MetaAdCreative): boolean {
 }
 
 /**
- * Verifica se um criativo deve ser rebuscado
- * Rebusca se: incompleto com tentativas restantes, ou status partial/pending.
- * Criativos completos e com sucesso NAO sao rebuscados mesmo se expirados,
- * pois as URLs do Meta CDN sao temporarias e rebuscar apenas geraria
- * novas URLs que expiram novamente -- ciclo infinito.
+ * Verifica se um criativo deve ser rebuscado da API do Meta.
+ *
+ * Regras:
+ * - Criativos com imagem disponivel NUNCA sao descartados do cache,
+ *   mesmo que marcados como pending/partial -- eles podem ser exibidos.
+ * - So rebusca se nao tem nenhuma URL de imagem E ainda tem tentativas restantes.
+ * - Criativos failed apos max tentativas sao aceitos como estao.
  */
 function shouldRefetchCreative(creative: MetaAdCreative): boolean {
-  // Se chegou ao limite de tentativas e falhou, nao tenta mais
+  // Chegou ao limite de tentativas e falhou: aceita como esta
   if (creative.fetch_attempts >= MAX_FETCH_ATTEMPTS && creative.fetch_status === 'failed') {
     return false;
   }
 
-  // Se esta completo e com sucesso, usa os dados do cache
-  // (nao rebusca mesmo se expirado, pois URLs Meta sao efemeras)
-  if (creative.is_complete && creative.fetch_status === 'success') {
+  // Tem imagem disponivel: nunca descarta, exibe o que tem
+  if (hasDisplayableImage(creative)) {
     return false;
   }
 
-  // Se nao esta completo e ainda tem tentativas, rebusca
-  if (!creative.is_complete && creative.fetch_attempts < MAX_FETCH_ATTEMPTS) {
-    return true;
-  }
-
-  // Se esta marcado como partial ou pending, rebusca
-  if (creative.fetch_status === 'partial' || creative.fetch_status === 'pending') {
+  // Sem imagem alguma e ainda tem tentativas: tenta buscar
+  if (creative.fetch_attempts < MAX_FETCH_ATTEMPTS) {
     return true;
   }
 

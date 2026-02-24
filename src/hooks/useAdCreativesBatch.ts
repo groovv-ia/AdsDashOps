@@ -135,17 +135,32 @@ export function useAdCreativesBatch(
       meta_ad_account_id: metaAdAccountId,
     });
 
-    // Define loading para todos os ads
+    // Pre-verifica cache local antes de definir estados de loading.
+    // Isso garante que criativos ja em cache aparecem imediatamente
+    // sem exibir o spinner enquanto os demais sao buscados.
+    let cachedPreload: Record<string, MetaAdCreative> = {};
+    try {
+      cachedPreload = await getCreativesFromCacheBatch(currentAdIds);
+    } catch {
+      // Cache indisponivel: continua sem pre-load
+    }
+
+    // Define loading apenas para ads que NAO estao em cache
     const initialLoadingStates: Record<string, LoadingState> = {};
     for (const adId of currentAdIds) {
-      initialLoadingStates[adId] = { isLoading: true, hasError: false };
+      initialLoadingStates[adId] = {
+        isLoading: !cachedPreload[adId],
+        hasError: false,
+      };
     }
 
     setState(prev => ({
       ...prev,
+      creatives: { ...prev.creatives, ...cachedPreload },
       loadingStates: { ...prev.loadingStates, ...initialLoadingStates },
       globalLoading: true,
       globalError: null,
+      cachedCount: Object.keys(cachedPreload).length,
     }));
 
     try {

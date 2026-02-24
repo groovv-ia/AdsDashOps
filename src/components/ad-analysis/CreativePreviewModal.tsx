@@ -111,11 +111,20 @@ export const CreativePreviewModal: React.FC<CreativePreviewModalProps> = ({
   // Sempre exibe fallback local -- Meta bloqueia iframes via X-Frame-Options
   const hasPreviewUrl = !!previewUrl;
 
-  // Melhor URL de imagem disponivel, priorizando HD
-  const hdImageUrl = creative?.image_url_hd || creative?.image_url || creative?.thumbnail_url;
+  // Melhor URL de imagem disponivel, priorizando cache permanente e depois CDN HD
+  const hdImageUrl = creative?.cached_image_url
+    || creative?.image_url_hd
+    || creative?.image_url
+    || creative?.cached_thumbnail_url
+    || creative?.thumbnail_url
+    || null;
+
   const isCarousel = creative?.creative_type === 'carousel';
   const isVideo = creative?.creative_type === 'video';
+
+  // Extrai slides do carrossel; se nao houver slides, mostra imagem principal como fallback
   const carouselSlides = isCarousel && creative ? extractCarouselSlides(creative) : [];
+  const carouselHasSlides = carouselSlides.length > 0;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
@@ -194,28 +203,65 @@ export const CreativePreviewModal: React.FC<CreativePreviewModalProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Coluna esquerda: Imagem/Video/Carrossel */}
                 <div>
-                  {isCarousel && carouselSlides.length > 0 ? (
+                  {/* Carrossel com slides extraidos */}
+                  {isCarousel && carouselHasSlides ? (
                     <CarouselViewer slides={carouselSlides} />
                   ) : isVideo ? (
-                    <div className="bg-gray-50 rounded-xl overflow-hidden">
-                      {creative?.video_url ? (
+                    /* Video: tenta reproduzir; se nao houver URL valida, mostra thumbnail */
+                    <div className="bg-gray-900 rounded-xl overflow-hidden">
+                      {creative?.video_source_url ? (
                         <video
-                          src={creative.video_url}
+                          src={creative.video_source_url}
                           controls
                           className="w-full max-h-[480px] object-contain"
                           poster={hdImageUrl || undefined}
                         />
+                      ) : hdImageUrl && !imgError ? (
+                        /* Sem URL de video: exibe thumbnail como preview do video */
+                        <div className="relative">
+                          <img
+                            src={hdImageUrl}
+                            alt={adName || 'Thumbnail do video'}
+                            className="w-full max-h-[480px] object-contain"
+                            onError={() => setImgError(true)}
+                          />
+                          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 gap-3">
+                            <div className="bg-white/90 rounded-full p-4">
+                              <Play className="w-8 h-8 text-gray-800 fill-gray-800" />
+                            </div>
+                            {previewUrl && (
+                              <a
+                                href={previewUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                                Assistir no Meta
+                              </a>
+                            )}
+                          </div>
+                        </div>
                       ) : (
                         <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                           <Play className="w-16 h-16 mb-3" />
                           <p className="text-sm">Video nao disponivel para exibicao embarcada</p>
-                          {creative?.video_id && (
-                            <p className="text-xs text-gray-300 mt-1">ID: {creative.video_id}</p>
+                          {previewUrl && (
+                            <a
+                              href={previewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              Abrir no Meta
+                            </a>
                           )}
                         </div>
                       )}
                     </div>
                   ) : hdImageUrl && !imgError ? (
+                    /* Imagem estatica ou carrossel sem slides extraidos */
                     <div className="bg-gray-50 rounded-xl overflow-hidden">
                       <img
                         src={hdImageUrl}
@@ -225,11 +271,23 @@ export const CreativePreviewModal: React.FC<CreativePreviewModalProps> = ({
                       />
                     </div>
                   ) : (
+                    /* Nenhuma imagem disponivel */
                     <div className="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-xl text-gray-400">
                       <ImageIcon className="w-16 h-16 mb-3" />
                       <p className="text-sm">
                         {imgError ? 'Imagem expirada ou indisponivel' : 'Sem imagem disponivel'}
                       </p>
+                      {previewUrl && (
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          Abrir no Meta
+                        </a>
+                      )}
                     </div>
                   )}
                 </div>
