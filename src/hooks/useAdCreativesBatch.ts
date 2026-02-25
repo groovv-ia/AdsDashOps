@@ -38,6 +38,8 @@ interface UseAdCreativesBatchReturn extends UseAdCreativesBatchState {
   getLoadingState: (adId: string) => LoadingState;
   refetch: () => Promise<void>;
   hasCreative: (adId: string) => boolean;
+  /** Atualiza um criativo individual no estado local (ex: apos enriquecimento HD) */
+  updateCreative: (adId: string, creative: MetaAdCreative) => void;
 }
 
 /**
@@ -320,12 +322,28 @@ export function useAdCreativesBatch(
     await fetchCreatives();
   }, [fetchCreatives]);
 
+  /**
+   * Atualiza um criativo individual no estado local.
+   * Usado para refletir imediatamente o resultado do enriquecimento HD
+   * sem precisar re-buscar todos os criativos.
+   */
+  const updateCreative = useCallback((adId: string, creative: MetaAdCreative) => {
+    setState(prev => ({
+      ...prev,
+      creatives: {
+        ...prev.creatives,
+        [adId]: creative,
+      },
+    }));
+  }, []);
+
   return {
     ...state,
     getCreative,
     getLoadingState,
     refetch,
     hasCreative,
+    updateCreative,
   };
 }
 

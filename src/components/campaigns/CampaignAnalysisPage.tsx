@@ -108,6 +108,7 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
     getCreative,
     getLoadingState,
     refetch: refetchCreatives,
+    updateCreative,
   } = useAdCreativesBatch(activeTab === 'ads' ? adsForCreatives : []);
 
   /**
@@ -894,6 +895,11 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
             end: getDateRange().dateTo,
           }}
           preloadedCreative={getCreative(selectedAd.entity_id)}
+          onEnriched={(creative) => {
+            if (selectedAd?.entity_id && creative) {
+              updateCreative(selectedAd.entity_id, creative as MetaAdCreative);
+            }
+          }}
         />
       )}
     </div>

@@ -58,7 +58,7 @@ import {
 } from '../../lib/services/TokenRefreshService';
 import { useClient } from '../../contexts/ClientContext';
 import { AdDetailModal, AdCreativeThumbnail } from '../ad-analysis';
-import type { AdDetailModalState } from '../../types/adAnalysis';
+import type { AdDetailModalState, MetaAdCreative } from '../../types/adAnalysis';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
 import { ExportReportModal } from './ExportReportModal';
 import type { AnalysisLevel } from '../../types/metricsAnalysis';
@@ -1187,6 +1187,7 @@ export const MetaAdsSyncPage: React.FC = () => {
   const {
     getCreative,
     getLoadingState,
+    updateCreative,
   } = useAdCreativesBatch(adsForCreatives);
 
   // ============================================================
@@ -2086,6 +2087,11 @@ export const MetaAdsSyncPage: React.FC = () => {
             ? insights.filter((row) => row.entity_id === adDetailModal.adData?.ad_id)
             : []
         }
+        onEnriched={(creative) => {
+          if (adDetailModal.adData?.ad_id && creative) {
+            updateCreative(adDetailModal.adData.ad_id, creative as MetaAdCreative);
+          }
+        }}
       />
 
       {/* Modal de Exportacao de Relatorios */}
