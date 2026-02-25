@@ -2088,8 +2088,10 @@ export const MetaAdsSyncPage: React.FC = () => {
             : []
         }
         onEnriched={(creative) => {
-          if (adDetailModal.adData?.ad_id && creative) {
-            updateCreative(adDetailModal.adData.ad_id, creative as MetaAdCreative);
+          // Usa o ad_id do proprio criativo retornado para evitar problema de closure
+          // stale com adDetailModal.adData.ad_id
+          if (creative?.ad_id) {
+            updateCreative(creative.ad_id, creative as MetaAdCreative);
           }
         }}
       />

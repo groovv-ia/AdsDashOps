@@ -896,8 +896,10 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
           }}
           preloadedCreative={getCreative(selectedAd.entity_id)}
           onEnriched={(creative) => {
-            if (selectedAd?.entity_id && creative) {
-              updateCreative(selectedAd.entity_id, creative as MetaAdCreative);
+            // Usa o ad_id do proprio criativo retornado para evitar problema de closure
+            // stale com selectedAd.entity_id
+            if (creative?.ad_id) {
+              updateCreative(creative.ad_id, creative as MetaAdCreative);
             }
           }}
         />
