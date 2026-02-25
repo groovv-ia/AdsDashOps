@@ -876,6 +876,7 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
       {/* Modal de detalhes do anuncio */}
       {selectedAd && (
         <AdDetailModal
+          key={selectedAd.entity_id}
           isOpen={isAdModalOpen}
           onClose={() => {
             setIsAdModalOpen(false);

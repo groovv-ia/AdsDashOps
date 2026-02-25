@@ -6,7 +6,7 @@
  * Suporta dados pre-carregados para exibicao imediata.
  */
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   X,
   Eye,
@@ -179,6 +179,12 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
 
   // Criativo enriquecido manualmente (substitui tudo quando disponivel)
   const [enrichedCreative, setEnrichedCreative] = useState<typeof fetchedCreative>(undefined);
+
+  // Limpa o criativo enriquecido sempre que o anuncio mudar
+  // Evita que o criativo HD de um anuncio apareça em outro ao reutilizar o modal
+  useEffect(() => {
+    setEnrichedCreative(undefined);
+  }, [adData?.ad_id]);
 
   // Resolve criativo final: enriquecido > pre-carregado > buscado pelo hook
   const creative = enrichedCreative !== undefined

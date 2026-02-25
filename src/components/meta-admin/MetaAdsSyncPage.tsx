@@ -2078,6 +2078,7 @@ export const MetaAdsSyncPage: React.FC = () => {
       {/* Modal de Detalhes do Anuncio */}
       {/* Passa os insights pre-carregados filtrados pelo ad_id do anuncio selecionado */}
       <AdDetailModal
+        key={adDetailModal.adData?.ad_id || 'closed'}
         isOpen={adDetailModal.isOpen}
         onClose={handleCloseAdDetail}
         adData={adDetailModal.adData}
