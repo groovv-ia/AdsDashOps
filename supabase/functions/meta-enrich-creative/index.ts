@@ -399,17 +399,7 @@ Deno.serve(async (req: Request) => {
 
     // ── 1. Busca dados completos do anuncio + criativo na API do Meta ──────────
     // Inclui effective_object_story_id e asset_feed_spec para acesso a midia HD
-    const adFields = [
-      "id",
-      "name",
-      "status",
-      "creative{",
-        "id,name,title,body,image_url,thumbnail_url,video_id,",
-        "call_to_action_type,object_story_spec,effective_object_story_id,",
-        "asset_feed_spec",
-      "}",
-      "preview_shareable_link",
-    ].join("");
+    const adFields = "id,name,status,creative{id,name,title,body,image_url,thumbnail_url,video_id,call_to_action_type,object_story_spec,effective_object_story_id,asset_feed_spec},preview_shareable_link";
 
     const adUrl = `https://graph.facebook.com/v21.0/${ad_id}?fields=${adFields}&access_token=${accessToken}`;
     const adResponse = await fetch(adUrl);
