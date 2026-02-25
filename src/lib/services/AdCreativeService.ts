@@ -34,6 +34,45 @@ const CREATIVE_CACHE_TTL_DAYS = 7;
 const MAX_FETCH_ATTEMPTS = 3;
 
 /**
+ * Verifica se uma URL do Meta CDN esta expirada.
+ *
+ * URLs do Meta CDN contem o parametro `oe` (expiration epoch) na query string.
+ * Ex: ?oe=6977DB69 — valor hexadecimal do timestamp Unix de expiracao.
+ * Quando esse timestamp esta no passado, a imagem retorna erro 403/broken.
+ *
+ * URLs de Supabase Storage (cached_image_url) nao tem esse parametro
+ * e sao permanentes — nunca sao consideradas expiradas por esta funcao.
+ */
+export function isMetaCdnUrlExpired(url: string | null | undefined): boolean {
+  if (!url) return true;
+
+  // URLs do Supabase Storage (storage.googleapis.com ou supabase.co/storage) sao permanentes
+  if (url.includes('/storage/v1/object/') || url.includes('storage.googleapis.com')) {
+    return false;
+  }
+
+  try {
+    // Extrai o parametro `oe` da URL do Meta CDN
+    const urlObj = new URL(url);
+    const oeParam = urlObj.searchParams.get('oe');
+
+    if (!oeParam) {
+      // Sem parametro `oe`: nao e URL do Meta CDN com expiracao — assume valida
+      return false;
+    }
+
+    // O valor `oe` e um timestamp Unix em hexadecimal
+    const expiresAt = parseInt(oeParam, 16) * 1000; // converte para milissegundos
+    const now = Date.now();
+
+    return now > expiresAt;
+  } catch {
+    // URL invalida: considera expirada para forcar re-fetch
+    return true;
+  }
+}
+
+/**
  * Verifica se um criativo tem dados suficientes para ser exibido.
  * Ter qualquer URL de imagem ja e suficiente para exibicao visual.
  * Textos sao complementares e nao bloqueiam a exibicao.
@@ -51,17 +90,26 @@ function isCreativeComplete(creative: MetaAdCreative): boolean {
 }
 
 /**
- * Verifica se um criativo tem pelo menos uma URL de imagem disponivel
- * para exibicao imediata, independente do status de completude
+ * Verifica se um criativo tem pelo menos uma URL de imagem NAO EXPIRADA disponivel
+ * para exibicao imediata.
+ *
+ * Prioriza URLs do Supabase Storage (cached_image_url / cached_thumbnail_url) que sao
+ * permanentes. URLs do Meta CDN sao verificadas quanto a expiracao via parametro `oe`.
  */
 function hasDisplayableImage(creative: MetaAdCreative): boolean {
-  return !!(
-    creative.cached_image_url ||
-    creative.image_url_hd ||
-    creative.image_url ||
-    creative.cached_thumbnail_url ||
-    creative.thumbnail_url
-  );
+  // URLs do Supabase Storage sao permanentes — sempre validas
+  if (creative.cached_image_url || creative.cached_thumbnail_url) {
+    return true;
+  }
+
+  // URLs do Meta CDN: verifica se alguma ainda esta valida (nao expirada)
+  const metaCdnUrls = [
+    creative.image_url_hd,
+    creative.image_url,
+    creative.thumbnail_url,
+  ].filter(Boolean) as string[];
+
+  return metaCdnUrls.some(url => !isMetaCdnUrlExpired(url));
 }
 
 /**
@@ -81,24 +129,36 @@ function isCreativeExpired(creative: MetaAdCreative): boolean {
  * Verifica se um criativo deve ser rebuscado da API do Meta.
  *
  * Regras:
- * - Criativos com imagem disponivel NUNCA sao descartados do cache,
- *   mesmo que marcados como pending/partial -- eles podem ser exibidos.
- * - So rebusca se nao tem nenhuma URL de imagem E ainda tem tentativas restantes.
- * - Criativos failed apos max tentativas sao aceitos como estao.
+ * - Criativos com URLs permanentes (Supabase Storage) nunca sao rebuscados.
+ * - Criativos cujas URLs do Meta CDN expiraram sao rebuscados (URLs vencidas = imagem quebrada).
+ * - Criativos sem imagem alguma e com tentativas restantes sao rebuscados.
+ * - Criativos failed apos max tentativas sao aceitos como estao (para evitar loop).
  */
 function shouldRefetchCreative(creative: MetaAdCreative): boolean {
-  // Chegou ao limite de tentativas e falhou: aceita como esta
+  // URLs permanentes no Supabase Storage: nunca precisa rebuscar
+  if (creative.cached_image_url || creative.cached_thumbnail_url) {
+    return false;
+  }
+
+  // Chegou ao limite de tentativas e falhou: aceita como esta para evitar loop
   if (creative.fetch_attempts >= MAX_FETCH_ATTEMPTS && creative.fetch_status === 'failed') {
     return false;
   }
 
-  // Tem imagem disponivel: nunca descarta, exibe o que tem
-  if (hasDisplayableImage(creative)) {
-    return false;
+  // Todas as URLs do Meta CDN estao expiradas: precisa rebuscar para obter URLs novas
+  const metaCdnUrls = [
+    creative.image_url_hd,
+    creative.image_url,
+    creative.thumbnail_url,
+  ].filter(Boolean) as string[];
+
+  if (metaCdnUrls.length > 0 && metaCdnUrls.every(url => isMetaCdnUrlExpired(url))) {
+    // Ha URLs mas todas expiraram: rebusca para renovar
+    return true;
   }
 
   // Sem imagem alguma e ainda tem tentativas: tenta buscar
-  if (creative.fetch_attempts < MAX_FETCH_ATTEMPTS) {
+  if (!hasDisplayableImage(creative) && creative.fetch_attempts < MAX_FETCH_ATTEMPTS) {
     return true;
   }
 

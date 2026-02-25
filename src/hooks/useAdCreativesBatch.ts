@@ -12,6 +12,7 @@ import {
   getCreativesFromCacheBatch,
   enrichAdCreative,
   shouldEnrichCreative,
+  fetchAdCreativesBatch,
 } from '../lib/services/AdCreativeService';
 import type { MetaAdCreative } from '../types/adAnalysis';
 
@@ -40,6 +41,8 @@ interface UseAdCreativesBatchReturn extends UseAdCreativesBatchState {
   hasCreative: (adId: string) => boolean;
   /** Atualiza um criativo individual no estado local (ex: apos enriquecimento HD) */
   updateCreative: (adId: string, creative: MetaAdCreative) => void;
+  /** Re-fetch de um criativo especifico sem rebuscar todos (ex: imagem expirada no browser) */
+  refetchSingle: (adId: string) => Promise<void>;
 }
 
 /**
@@ -337,6 +340,62 @@ export function useAdCreativesBatch(
     }));
   }, []);
 
+  /**
+   * Refaz o fetch de um criativo especifico sem rebuscar toda a lista.
+   * Util quando o browser detecta que uma imagem expirou (onError).
+   * Chama a edge function para obter URLs frescas do Meta CDN.
+   */
+  const refetchSingle = useCallback(async (adId: string) => {
+    if (!metaAdAccountId) return;
+
+    // Marca o criativo como carregando
+    setState(prev => ({
+      ...prev,
+      loadingStates: {
+        ...prev.loadingStates,
+        [adId]: { isLoading: true, hasError: false },
+      },
+      // Remove o criativo expirado do estado para forcar re-render
+      creatives: Object.fromEntries(
+        Object.entries(prev.creatives).filter(([id]) => id !== adId)
+      ),
+    }));
+
+    try {
+      const result = await fetchAdCreativesBatch({
+        ad_ids: [adId],
+        meta_ad_account_id: metaAdAccountId,
+      });
+
+      const newCreative = result.creatives[adId];
+      const errorMsg = result.errors[adId];
+
+      setState(prev => ({
+        ...prev,
+        loadingStates: {
+          ...prev.loadingStates,
+          [adId]: {
+            isLoading: false,
+            hasError: !!errorMsg,
+            errorMessage: errorMsg,
+          },
+        },
+        creatives: newCreative
+          ? { ...prev.creatives, [adId]: newCreative }
+          : prev.creatives,
+      }));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      setState(prev => ({
+        ...prev,
+        loadingStates: {
+          ...prev.loadingStates,
+          [adId]: { isLoading: false, hasError: true, errorMessage },
+        },
+      }));
+    }
+  }, [metaAdAccountId]);
+
   return {
     ...state,
     getCreative,
@@ -344,6 +403,7 @@ export function useAdCreativesBatch(
     refetch,
     hasCreative,
     updateCreative,
+    refetchSingle,
   };
 }
 

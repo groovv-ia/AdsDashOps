@@ -26,6 +26,8 @@ interface CampaignAdsTableProps {
   getCreative?: (adId: string) => MetaAdCreative | null;
   /** Funcao para obter estado de loading do criativo de um anuncio */
   getLoadingState?: (adId: string) => { isLoading: boolean; hasError: boolean; errorMessage?: string | null };
+  /** Callback quando a imagem de um criativo falha ao carregar (para disparar re-fetch) */
+  onCreativeImageError?: (adId: string) => void;
 }
 
 type SortField = 'ad_name' | 'adset_name' | 'impressions' | 'clicks' | 'spend' | 'conversions' | 'messaging_conversations_started' | 'ctr' | 'cpc' | 'roas';
@@ -127,6 +129,7 @@ export function CampaignAdsTable({
   onSelectAd,
   getCreative,
   getLoadingState,
+  onCreativeImageError,
 }: CampaignAdsTableProps) {
   // Estado de ordenacao
   const [sortField, setSortField] = useState<SortField>('spend');
@@ -216,6 +219,7 @@ export function CampaignAdsTable({
           size="md"
           showQualityIndicator
           useHdWhenAvailable
+          onImageError={onCreativeImageError}
         />
       );
     }

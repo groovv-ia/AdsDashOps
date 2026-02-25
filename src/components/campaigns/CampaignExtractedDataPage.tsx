@@ -141,7 +141,7 @@ export function CampaignExtractedDataPage({
   }, [activeTab, ads]);
 
   // Hook para buscar criativos em lote automaticamente
-  const { getCreative, getLoadingState } = useAdCreativesBatch(adsForCreatives);
+  const { getCreative, getLoadingState, refetchSingle } = useAdCreativesBatch(adsForCreatives);
 
   // Carregar dados quando campanha mudar
   useEffect(() => {
@@ -468,6 +468,7 @@ export function CampaignExtractedDataPage({
                   onSelectAd={handleSelectAd}
                   getCreative={getCreative}
                   getLoadingState={getLoadingState}
+                  onCreativeImageError={refetchSingle}
                 />
               </Card>
             )}

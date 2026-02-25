@@ -14,6 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { Image, Play, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import type { MetaAdCreative } from '../../types/adAnalysis';
+import { isMetaCdnUrlExpired } from '../../lib/services/AdCreativeService';
 
 // Props do componente
 interface AdCreativeThumbnailProps {
@@ -23,8 +24,10 @@ interface AdCreativeThumbnailProps {
   size?: 'sm' | 'md' | 'lg';
   onClick?: () => void;
   showTypeIndicator?: boolean;
-  showQualityIndicator?: boolean; // Novo: mostra indicador de qualidade
-  useHdWhenAvailable?: boolean; // Novo: usa imagem HD quando disponível
+  showQualityIndicator?: boolean;
+  useHdWhenAvailable?: boolean;
+  /** Callback disparado quando a imagem falha ao carregar (URL expirada ou invalida) */
+  onImageError?: (adId: string) => void;
   className?: string;
 }
 
@@ -58,6 +61,7 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
   showTypeIndicator = true,
   showQualityIndicator = false,
   useHdWhenAvailable = true,
+  onImageError,
   className = '',
 }) => {
   // Estado para controlar erro de carregamento de imagem (CDN expirado)
@@ -70,6 +74,14 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     setImgError(false);
     setHdLoaded(false);
   }, [creative?.ad_id]);
+
+  // Handler de erro de imagem: notifica o componente pai para disparar re-fetch
+  const handleImgError = () => {
+    setImgError(true);
+    if (onImageError && creative?.ad_id) {
+      onImageError(creative.ad_id);
+    }
+  };
 
   // Classes base do container (sem background padrao, sera adicionado conforme necessario)
   const baseContainerClasses = `
@@ -118,21 +130,30 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
     );
   }
 
-  // Seleciona URLs com estrategia de 3 camadas:
-  // 1. cached_image_url (Supabase Storage - permanente, mais confiavel)
+  // Seleciona URLs com estrategia de 4 camadas (prioridade decrescente):
+  // 1. cached_image_url (Supabase Storage - permanente, nunca expira)
   // 2. image_url_hd / image_url (Meta CDN - alta resolucao, pode expirar)
-  // 3. thumbnail_url (Meta CDN - p64x64 rapido, pode expirar)
+  // 3. thumbnail_url (Meta CDN - rapida, pode expirar)
   // 4. extra_data fallback
+  //
+  // URLs do Meta CDN sao filtradas pelo parametro `oe` (expiration epoch).
+  // Se uma URL do CDN expirou, ela e ignorada (evita imagem quebrada no browser).
 
-  // URL HD: prioriza cached (permanente), depois Meta CDN HD
+  // Helper para validar URL do Meta CDN — retorna null se expirada
+  const validCdnUrl = (url: string | null | undefined): string | null => {
+    if (!url) return null;
+    return isMetaCdnUrlExpired(url) ? null : url;
+  };
+
+  // URL HD: prioriza cached permanente, depois CDN valida
   const hdUrl = creative.cached_image_url
-    || (useHdWhenAvailable ? creative.image_url_hd : null)
-    || creative.image_url
+    || (useHdWhenAvailable ? validCdnUrl(creative.image_url_hd) : null)
+    || validCdnUrl(creative.image_url)
     || null;
 
-  // URL thumbnail rapida: prioriza cached, depois Meta CDN
+  // URL thumbnail rapida: prioriza cached permanente, depois CDN valida
   const thumbnailUrl = creative.cached_thumbnail_url
-    || creative.thumbnail_url
+    || validCdnUrl(creative.thumbnail_url)
     || null;
 
   // URL final para exibicao (melhor disponivel)
@@ -207,7 +228,7 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
         alt={creative.title || 'Preview do anuncio'}
         className="w-full h-full object-cover"
         loading="lazy"
-        onError={() => setImgError(true)}
+        onError={handleImgError}
       />
 
       {/* Pre-carrega imagem HD em background para troca progressiva */}
