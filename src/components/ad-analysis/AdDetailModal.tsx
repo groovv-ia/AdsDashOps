@@ -31,6 +31,7 @@ import {
   VolumeX,
   Maximize2,
   ChevronRight,
+  Zap,
 } from 'lucide-react';
 import {
   LineChart,
@@ -46,6 +47,7 @@ import {
   Area,
 } from 'recharts';
 import { useAdDetailData, type PreloadedMetricsData } from '../../hooks/useAdDetails';
+import { enrichAdCreative } from '../../lib/services/AdCreativeService';
 import { ScoreCircle } from './ScoreCircle';
 import { ImageZoomModal } from './ImageZoomModal';
 import { CarouselViewer, type CarouselSlide } from './CarouselViewer';
@@ -175,9 +177,16 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
     preloadedMetricsForAI
   );
 
-  // Usa criativo pre-carregado se disponivel, senao usa o buscado pelo hook
-  const creative = preloadedCreative !== undefined ? preloadedCreative : fetchedCreative;
-  const creativeLoading = preloadedCreative !== undefined ? false : fetchedCreativeLoading;
+  // Criativo enriquecido manualmente (substitui tudo quando disponivel)
+  const [enrichedCreative, setEnrichedCreative] = useState<typeof fetchedCreative>(undefined);
+
+  // Resolve criativo final: enriquecido > pre-carregado > buscado pelo hook
+  const creative = enrichedCreative !== undefined
+    ? enrichedCreative
+    : (preloadedCreative !== undefined ? preloadedCreative : fetchedCreative);
+  const creativeLoading = enrichedCreative !== undefined
+    ? false
+    : (preloadedCreative !== undefined ? false : fetchedCreativeLoading);
 
   // Agrega metricas pre-carregadas no formato para exibicao na aba de metricas
   const aggregatedPreloadedMetrics = useMemo(() => {
@@ -444,6 +453,9 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
                 onRefresh={refreshCreative}
                 onImageClick={() => setImageZoomOpen(true)}
                 adName={adData?.entity_name || ''}
+                adId={adData?.ad_id}
+                metaAdAccountId={adData?.meta_ad_account_id}
+                onEnriched={(c) => setEnrichedCreative(c)}
               />
             )}
 
@@ -728,6 +740,12 @@ interface CreativeTabProps {
   onImageClick: () => void;
   /** Nome do anuncio para exibicao no modal de preview */
   adName?: string;
+  /** ID do anuncio — necessario para enriquecimento manual */
+  adId?: string;
+  /** ID da conta Meta — necessario para enriquecimento manual */
+  metaAdAccountId?: string;
+  /** Callback chamado apos enriquecimento bem-sucedido com o criativo atualizado */
+  onEnriched?: (creative: ReturnType<typeof useAdDetailData>['creative']) => void;
 }
 
 /**
@@ -761,12 +779,18 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
   onRefresh,
   onImageClick,
   adName,
+  adId,
+  metaAdAccountId,
+  onEnriched,
 }) => {
   // Estados para controle do video
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Estado para enriquecimento manual (busca direto na API Meta)
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
   // Estado para o modal de preview completo
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
@@ -796,6 +820,21 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
       await onRefresh();
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  // Handler de enriquecimento — busca diretamente na API do Meta sem cache
+  const handleEnrich = async () => {
+    if (!adId || !metaAdAccountId) return;
+    setIsEnriching(true);
+    setEnrichError(null);
+    try {
+      const result = await enrichAdCreative(adId, metaAdAccountId);
+      if (onEnriched) onEnriched(result.creative);
+    } catch (err) {
+      setEnrichError(err instanceof Error ? err.message : 'Erro ao enriquecer criativo');
+    } finally {
+      setIsEnriching(false);
     }
   };
 
@@ -915,14 +954,57 @@ const CreativeTab: React.FC<CreativeTabProps> = ({
             )}
             <button
               onClick={handleRefresh}
-              disabled={isRefreshing}
+              disabled={isRefreshing || isEnriching}
               className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50 transition-colors"
-              title="Atualizar criativo"
+              title="Atualizar criativo (cache local)"
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
+            {/* Botao de enriquecimento — busca diretamente na API do Meta */}
+            {adId && metaAdAccountId && (
+              <button
+                onClick={handleEnrich}
+                disabled={isEnriching || isRefreshing}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors shadow-sm"
+                title="Buscar criativo em alta resolucao diretamente da API do Meta"
+              >
+                {isEnriching ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Buscando na Meta...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5" />
+                    Buscar HD
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Overlay de loading durante enriquecimento */}
+        {isEnriching && (
+          <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-amber-700">Buscando criativo em alta resolucao na API do Meta...</span>
+          </div>
+        )}
+
+        {/* Mensagem de erro do enriquecimento */}
+        {enrichError && !isEnriching && (
+          <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+            <span className="text-sm text-red-700">{enrichError}</span>
+            <button
+              onClick={() => setEnrichError(null)}
+              className="ml-auto p-0.5 text-red-400 hover:text-red-600"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Overlay de loading durante refresh */}
         {isRefreshing && (

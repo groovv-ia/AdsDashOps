@@ -60,6 +60,9 @@ export interface MetaAdCreative {
   video_duration: number | null;
   video_format: string | null;
   file_size: number | null;
+  // Campos de enriquecimento direto da API Meta
+  needs_enrichment: boolean | null;
+  enriched_at: string | null;
 }
 
 // Interface para análise detalhada de elementos visuais específicos

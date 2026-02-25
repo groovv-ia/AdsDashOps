@@ -10,6 +10,8 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   prefetchCreativesForAds,
   getCreativesFromCacheBatch,
+  enrichAdCreative,
+  shouldEnrichCreative,
 } from '../lib/services/AdCreativeService';
 import type { MetaAdCreative } from '../types/adAnalysis';
 
@@ -203,6 +205,39 @@ export function useAdCreativesBatch(
       }));
 
       console.log('[useAdCreativesBatch] Estado atualizado com sucesso');
+
+      // Enriquecimento em background: identifica criativos que precisam de HD
+      // e dispara o enriquecimento silenciosamente sem bloquear a UI
+      if (metaAdAccountId) {
+        const toEnrich = safeAds.filter(ad => {
+          const creative = result.creatives[ad.entity_id];
+          return creative && shouldEnrichCreative(creative);
+        });
+
+        if (toEnrich.length > 0) {
+          console.log(`[useAdCreativesBatch] Enriquecimento em background para ${toEnrich.length} criativos`);
+
+          // Dispara enriquecimento em paralelo (sem await — nao bloqueia UI)
+          Promise.allSettled(
+            toEnrich.map(ad =>
+              enrichAdCreative(ad.entity_id, ad.meta_ad_account_id || metaAdAccountId)
+                .then(response => {
+                  // Atualiza o estado com o criativo enriquecido
+                  setState(prev => ({
+                    ...prev,
+                    creatives: {
+                      ...prev.creatives,
+                      [ad.entity_id]: response.creative,
+                    },
+                  }));
+                })
+                .catch(err => {
+                  console.warn(`[useAdCreativesBatch] Enriquecimento falhou para ${ad.entity_id}:`, err);
+                })
+            )
+          );
+        }
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       console.error('[useAdCreativesBatch] Erro ao buscar criativos:', {

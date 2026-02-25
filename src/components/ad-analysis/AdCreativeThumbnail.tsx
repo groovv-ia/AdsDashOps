@@ -247,11 +247,17 @@ export const AdCreativeThumbnail: React.FC<AdCreativeThumbnailProps> = ({
       )}
 
       {/* Indicador de qualidade - bolinha colorida no canto superior esquerdo */}
-      {showQualityIndicator && quality !== 'unknown' && (
+      {showQualityIndicator && quality !== 'unknown' && !creative.enriched_at && (
+        <div
+          className="absolute top-1 left-1 w-1.5 h-1.5 rounded-full bg-amber-400"
+          title="Criativo pendente de enriquecimento HD"
+        />
+      )}
+      {showQualityIndicator && quality !== 'unknown' && creative.enriched_at && (
         <div
           className={`absolute top-1 left-1 w-1.5 h-1.5 rounded-full ${getQualityColor()}`}
-          title={`Qualidade: ${quality.toUpperCase()}`}
-        ></div>
+          title={`Qualidade: ${quality.toUpperCase()} — Enriquecido`}
+        />
       )}
     </div>
   );

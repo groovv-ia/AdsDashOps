@@ -452,7 +452,7 @@ export async function deleteAIAnalysis(analysisId: string): Promise<boolean> {
 }
 
 /**
- * Força atualização do criativo de um anúncio
+ * Força atualização do criativo de um anúncio (usa cache com force_refresh)
  */
 export async function refreshAdCreative(
   adId: string,
@@ -463,6 +463,59 @@ export async function refreshAdCreative(
     meta_ad_account_id: metaAdAccountId,
     force_refresh: true,
   });
+}
+
+// Resposta do endpoint de enriquecimento
+export interface EnrichCreativeResponse {
+  creative: MetaAdCreative;
+  enriched: true;
+  save_error?: string;
+}
+
+/**
+ * Enriquece um criativo buscando diretamente na API do Meta sem cache.
+ *
+ * Diferente de refreshAdCreative, esta funcao:
+ * - NUNCA consulta o cache local antes de buscar
+ * - Tenta obter a imagem na maior resolucao disponivel via post original
+ * - Tenta buscar pelo hash da imagem via adimages API
+ * - Marca o criativo com needs_enrichment=false e enriched_at=now
+ */
+export async function enrichAdCreative(
+  adId: string,
+  metaAdAccountId: string
+): Promise<EnrichCreativeResponse> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('Usuário não autenticado');
+  }
+
+  const response = await fetch(`${FUNCTIONS_URL}/meta-enrich-creative`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ ad_id: adId, meta_ad_account_id: metaAdAccountId }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.error || `Erro HTTP ${response.status} ao enriquecer criativo`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Verifica se um criativo precisa de enriquecimento.
+ * Retorna true quando ainda nao foi enriquecido (enriched_at nulo ou needs_enrichment=true)
+ */
+export function shouldEnrichCreative(creative: MetaAdCreative): boolean {
+  return creative.needs_enrichment === true || !creative.enriched_at;
 }
 
 // Interface para payload de busca em lote
