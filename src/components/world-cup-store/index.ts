@@ -1,0 +1,1 @@
+export { WorldCupStorePage } from './WorldCupStorePage';

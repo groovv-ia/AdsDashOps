@@ -24,6 +24,7 @@ import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtrac
 import { WorkspacesPage } from './components/workspaces/WorkspacesPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
 import { GoogleAdminPage, GoogleAdsSyncPage, GoogleCampaignsPage, GoogleCampaignDetailPage } from './components/google-admin';
+import { WorldCupStorePage } from './components/world-cup-store';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -405,6 +406,8 @@ function AppContent() {
         return <SupportPage />;
       case 'workspaces':
         return <WorkspacesPage />;
+      case 'world-cup-store':
+        return <WorldCupStorePage />;
       default:
         return <MetaAdminPage />;
     }

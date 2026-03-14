@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3 } from 'lucide-react';
+import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3, ShoppingBag } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 import { UpgradeBanner } from './UpgradeBanner';
 
@@ -60,6 +60,9 @@ const menuSections: MenuSection[] = [
     ],
   },
 ];
+
+// Item da Loja Copa do Mundo 2026
+const worldCupStoreItem: MenuItem = { icon: ShoppingBag, label: 'Loja Copa 2026', page: 'world-cup-store' };
 
 // Item de Workspaces na navegacao principal
 const workspacesItem: MenuItem = { icon: Building2, label: 'Workspaces', page: 'workspaces' };
@@ -234,6 +237,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Separador */}
             <div className="my-3 mx-3 border-t border-slate-100" />
+
+            {/* Item Loja Copa 2026 */}
+            <div className="px-3 mb-1">
+              <button
+                onClick={() => handlePageClick(worldCupStoreItem.page)}
+                className={`
+                  w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left
+                  transition-all duration-150
+                  ${currentPage === worldCupStoreItem.page
+                    ? 'bg-green-50 text-green-800'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }
+                `}
+              >
+                <worldCupStoreItem.icon className={`
+                  w-5 h-5 flex-shrink-0
+                  ${currentPage === worldCupStoreItem.page ? 'text-green-600' : 'text-slate-400'}
+                `} />
+                <span className="text-base font-medium leading-6">{worldCupStoreItem.label}</span>
+                {currentPage === worldCupStoreItem.page && (
+                  <span className="ml-auto text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-semibold">
+                    2026
+                  </span>
+                )}
+              </button>
+            </div>
 
             {/* Item Workspaces */}
             <div className="px-3">
