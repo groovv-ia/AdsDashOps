@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "tavily_mcp": {
+      "enabled": true
+    }
+  }
+}
