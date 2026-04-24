@@ -231,20 +231,20 @@ export const MetaAdsSyncPage: React.FC = () => {
     setShowTokenBanner(true);
   };
 
-  // Renova o token Meta manualmente
+  // Valida o token de System User via Edge Function (chama /me na Meta API)
   const handleRefreshToken = async () => {
     setRefreshingToken(true);
     setTokenRefreshMessage(null);
     try {
       const result = await refreshMetaToken(tokenStatus?.connectionId || undefined);
       if (result.success) {
-        setTokenRefreshMessage('Token renovado com sucesso! Valido por mais 60 dias.');
+        setTokenRefreshMessage('Token de System User validado com sucesso!');
         await checkTokenStatus();
       } else {
         setTokenRefreshMessage(
           result.requiresReconnect
-            ? 'Nao foi possivel renovar automaticamente. Reconecte sua conta Meta.'
-            : `Falha ao renovar: ${result.error}`
+            ? 'Token foi revogado ou esta invalido. Reconecte na pagina Meta Admin com um novo token.'
+            : `Falha ao validar: ${result.error}`
         );
       }
     } finally {
@@ -1285,7 +1285,7 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Banner de aviso de expiracao/renovacao de token */}
+        {/* Banner de aviso de token invalido/revogado */}
         {showTokenBanner && tokenStatus && tokenStatus.status !== 'valid' && tokenStatus.status !== 'unknown' && (
           <div className={`rounded-xl border p-4 ${
             tokenStatus.status === 'expired'
@@ -1304,14 +1304,14 @@ export const MetaAdsSyncPage: React.FC = () => {
                 <div className="flex-1">
                   <p className={`font-semibold text-sm ${tokenStatus.status === 'expired' ? 'text-red-800' : 'text-amber-800'}`}>
                     {tokenStatus.status === 'expired'
-                      ? 'Token de acesso Meta Ads expirado'
-                      : `Token de acesso expira em ${tokenStatus.daysRemaining} dia${tokenStatus.daysRemaining !== 1 ? 's' : ''}`
+                      ? 'Token de acesso Meta Ads invalido'
+                      : 'Token de acesso requer verificacao'
                     }
                   </p>
                   <p className={`text-sm mt-0.5 ${tokenStatus.status === 'expired' ? 'text-red-700' : 'text-amber-700'}`}>
                     {tokenStatus.status === 'expired'
-                      ? 'Sincronizacoes falharam por conta desse token. Clique em "Renovar Token" para tentar renovar automaticamente.'
-                      : 'O token sera renovado automaticamente na proxima sincronizacao. Voce tambem pode renovar agora.'
+                      ? 'O token do System User foi revogado ou esta invalido. Clique em "Verificar Token" para confirmar, ou reconecte na pagina Meta Admin.'
+                      : 'Clique em "Verificar Token" para confirmar que o token ainda esta ativo.'
                     }
                   </p>
                   {tokenRefreshMessage && (
@@ -1336,8 +1336,17 @@ export const MetaAdsSyncPage: React.FC = () => {
                   ) : (
                     <Key className="w-3.5 h-3.5" />
                   )}
-                  {refreshingToken ? 'Renovando...' : 'Renovar Token'}
+                  {refreshingToken ? 'Verificando...' : 'Verificar Token'}
                 </button>
+                {tokenStatus.status === 'expired' && (
+                  <button
+                    onClick={() => (window.location.href = '#meta-admin')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-700 hover:bg-gray-800 text-white transition-colors"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    Reconectar
+                  </button>
+                )}
                 <button
                   onClick={() => setShowTokenBanner(false)}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -1425,7 +1434,7 @@ export const MetaAdsSyncPage: React.FC = () => {
                   return (
                     <p key={idx} className="text-sm text-red-600">
                       {isTokenError
-                        ? `Erro de autenticacao: Seu token de acesso ao Meta Ads expirou. Clique em "Renovar Token" acima para corrigir.`
+                        ? `Erro de autenticacao: Seu token do Meta Ads esta invalido. Clique em "Verificar Token" acima ou reconecte na pagina Meta Admin.`
                         : err
                       }
                     </p>

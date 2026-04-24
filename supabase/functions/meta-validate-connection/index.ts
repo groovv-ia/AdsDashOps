@@ -319,8 +319,9 @@ Deno.serve(async (req: Request) => {
     const connectionName = meData.name || `Meta Connection - ${business_manager_id}`;
     let connectionId: string;
 
-    // Calcula data de expiracao do token: 60 dias a partir de agora (Long-Lived Token)
-    const tokenExpiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+    // System User tokens sao permanentes (nao expiram por tempo, so se revogados manualmente).
+    // Define expiracao em 10 anos como indicador de "sem expiracao".
+    const tokenExpiresAt = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
 
     if (existingConnection) {
       connectionId = existingConnection.id;

@@ -32,6 +32,7 @@ import { forceSessionRefresh, isRLSError } from '../../utils/sessionRefresh';
 
 interface ConnectionStatus {
   connected: boolean;
+  tokenExpired: boolean;
   businessManagerId?: string;
   scopes?: string[];
   lastValidated?: string;
@@ -190,8 +191,10 @@ export const MetaAdminPage: React.FC = () => {
         setSyncStatus(status);
 
         if (status.connection) {
+          const isTokenExpired = status.connection.status === 'token_expired';
           setConnectionStatus({
             connected: status.connection.status === 'connected',
+            tokenExpired: isTokenExpired,
             businessManagerId: status.connection.business_manager_id,
             scopes: status.connection.granted_scopes,
             lastValidated: status.connection.last_validated_at,
@@ -428,7 +431,12 @@ export const MetaAdminPage: React.FC = () => {
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-1">
                   <h3 className="font-semibold text-gray-900 text-lg">
-                    {connectionStatus.connected ? 'Meta Ads Conectado' : 'Desconectado'}
+                    {connectionStatus.connected
+                      ? 'Meta Ads Conectado'
+                      : connectionStatus.tokenExpired
+                        ? 'Token Invalido - Reconexao Necessaria'
+                        : 'Desconectado'
+                    }
                   </h3>
                   {/* Badge de conexao - sempre mostra status da conexao */}
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getConnectionBadgeStyle(connectionStatus.connected)}`}>
@@ -511,12 +519,33 @@ export const MetaAdminPage: React.FC = () => {
         </Card>
       )}
 
+      {/* Alerta de token expirado/revogado acima do formulario */}
+      {connectionStatus?.tokenExpired && (
+        <Card className="border-l-4 border-l-red-500 bg-red-50">
+          <div className="flex items-start space-x-3">
+            <AlertTriangle className="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-red-800">Token do System User Invalido</h3>
+              <p className="text-sm text-red-700 mt-1">
+                O token atual foi revogado ou esta invalido. Cole um novo token de System User abaixo para reconectar.
+                O Business Manager ID ja esta preenchido automaticamente.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Form de Conexao */}
       <Card>
         <div className="flex items-center space-x-2 mb-4">
           <Link2 className="w-5 h-5 text-blue-600" />
           <h3 className="font-semibold text-gray-900">
-            {connectionStatus?.connected ? 'Atualizar Conexao' : 'Nova Conexao'}
+            {connectionStatus?.tokenExpired
+              ? 'Reconectar com Novo Token'
+              : connectionStatus?.connected
+                ? 'Atualizar Conexao'
+                : 'Nova Conexao'
+            }
           </h3>
         </div>
 
