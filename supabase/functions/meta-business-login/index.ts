@@ -183,7 +183,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const metaAppId = Deno.env.get("META_APP_ID") || Deno.env.get("VITE_META_APP_ID");
+    const metaAppId = Deno.env.get("META_APP_ID");
     const metaAppSecret = Deno.env.get("META_APP_SECRET");
 
     if (!metaAppId || !metaAppSecret) {
