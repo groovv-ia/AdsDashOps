@@ -58,10 +58,10 @@ export async function getTokenExpiryStatus(): Promise<TokenStatusInfo> {
       return { status: 'unknown', daysRemaining: null, expiresAt: null, connectionId: null };
     }
 
-    // Busca a conexao Meta com status e data de expiracao
+    // Busca a conexao Meta com status, data de expiracao e metodo de conexao
     const { data: connection } = await supabase
       .from('meta_connections')
-      .select('id, token_expires_at, status, updated_at')
+      .select('id, token_expires_at, status, updated_at, connection_method')
       .eq('workspace_id', workspace.id)
       .maybeSingle();
 
@@ -77,6 +77,12 @@ export async function getTokenExpiryStatus(): Promise<TokenStatusInfo> {
         expiresAt: connection.token_expires_at,
         connectionId: connection.id,
       };
+    }
+
+    // BISUAT (Facebook Login for Business) e permanente por definicao.
+    // Nao precisa calcular dias restantes -- so expira se revogado manualmente.
+    if ((connection as { connection_method?: string }).connection_method === 'flfb') {
+      return { status: 'valid', daysRemaining: null, expiresAt: null, connectionId: connection.id };
     }
 
     // System User tokens sao permanentes. Se token_expires_at nao existe,

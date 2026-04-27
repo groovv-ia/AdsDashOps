@@ -25,6 +25,26 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Facebook JavaScript SDK - carregado de forma assincrona para nao bloquear a pagina -->
+    <!-- Necessario para o Facebook Login for Business (FLFB) -->
+    <script>
+      window.fbAsyncInit = function() {
+        FB.init({
+          appId: document.querySelector('meta[name="fb-app-id"]')?.content || '',
+          cookie: true,
+          xfbml: false,
+          version: 'v21.0'
+        });
+      };
+      (function(d, s, id) {
+        var js, fjs = d.getElementsByTagName(s)[0];
+        if (d.getElementById(id)) { return; }
+        js = d.createElement(s); js.id = id;
+        js.src = "https://connect.facebook.net/pt_BR/sdk.js";
+        js.async = true; js.defer = true;
+        fjs.parentNode.insertBefore(js, fjs);
+      }(document, 'script', 'facebook-jssdk'));
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
