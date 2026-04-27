@@ -34,7 +34,7 @@ import {
   AdAccount,
   SyncStatusResponse,
 } from '../../lib/services/MetaSystemUserService';
-import { loginWithFLFB } from '../../lib/facebook-sdk';
+import { redirectToFLFB } from '../../lib/facebook-sdk';
 import { supabase } from '../../lib/supabase';
 import { forceSessionRefresh, isRLSError } from '../../utils/sessionRefresh';
 
@@ -58,8 +58,7 @@ interface ConnectionStatus {
 /** Passos do fluxo FLFB para exibicao de progresso */
 type FLFBStep =
   | 'idle'
-  | 'opening_popup'
-  | 'waiting_auth'
+  | 'redirecting'
   | 'validating_token'
   | 'fetching_accounts'
   | 'saving'
@@ -68,8 +67,7 @@ type FLFBStep =
 
 const FLFB_STEP_LABELS: Record<FLFBStep, string> = {
   idle: '',
-  opening_popup: 'Abrindo popup do Facebook...',
-  waiting_auth: 'Aguardando sua autorizacao...',
+  redirecting: 'Redirecionando para o Facebook...',
   validating_token: 'Validando token...',
   fetching_accounts: 'Buscando contas de anuncios...',
   saving: 'Salvando configuracao...',
@@ -108,10 +106,11 @@ export const MetaAdminPage: React.FC = () => {
   // --- Mensagem de sucesso global ---
   const [globalSuccess, setGlobalSuccess] = useState<string | null>(null);
 
-  // Carrega status inicial
+  // Carrega status inicial e processa retorno do OAuth FLFB se houver code no localStorage
   useEffect(() => {
     loadSyncStatus();
     loadDirectAccountCount();
+    processFLFBReturn();
   }, []);
 
   // Abre formulario manual automaticamente se desconectado ou metodo manual
@@ -122,6 +121,80 @@ export const MetaAdminPage: React.FC = () => {
       setShowManualForm(isManual || isDisconnected);
     }
   }, [loadingStatus, connectionStatus]);
+
+  /**
+   * Processa o retorno do fluxo FLFB apos o redirect de volta para /meta-admin.
+   * Le o authorization code do localStorage (salvo pelo OAuthCallback) e
+   * envia para a edge function meta-business-login para obter o BISUAT.
+   */
+  const processFLFBReturn = async () => {
+    const code = localStorage.getItem('flfb_oauth_code');
+    const flfbError = localStorage.getItem('flfb_oauth_error');
+
+    // Limpa chaves do localStorage independente do resultado
+    localStorage.removeItem('flfb_oauth_code');
+    localStorage.removeItem('flfb_oauth_error');
+    localStorage.removeItem('flfb_oauth_state');
+    localStorage.removeItem('flfb_oauth_flow');
+
+    if (flfbError) {
+      setFlfbStep('error');
+      setFlfbError(flfbError);
+      return;
+    }
+
+    if (!code) return;
+
+    console.log('[MetaAdminPage] Authorization code FLFB detectado, processando...');
+    setFlfbStep('validating_token');
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setFlfbStep('error');
+        setFlfbError('Sessao expirada. Faca login novamente.');
+        return;
+      }
+
+      setFlfbStep('fetching_accounts');
+
+      const redirectUri =
+        import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
+
+      const response = await fetch(`${SUPABASE_FUNCTIONS_URL}/meta-business-login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ code, redirect_uri: redirectUri }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setFlfbStep('error');
+        setFlfbError(data.error || 'Erro ao processar conexao. Tente novamente.');
+        return;
+      }
+
+      setFlfbStep('saving');
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      setFlfbStep('done');
+      setGlobalSuccess(
+        `Conectado com sucesso! ${data.adaccounts_count} conta(s) de anuncios vinculadas.`
+      );
+
+      await Promise.all([loadSyncStatus(), loadAdAccounts(), loadDirectAccountCount()]);
+
+      setTimeout(() => setFlfbStep('idle'), 3000);
+    } catch (err) {
+      setFlfbStep('error');
+      setFlfbError(err instanceof Error ? err.message : 'Erro inesperado. Tente novamente.');
+    }
+  };
 
   // ============================================================
   // Carregamento de dados
@@ -255,80 +328,23 @@ export const MetaAdminPage: React.FC = () => {
   // ============================================================
 
   /**
-   * Inicia o fluxo FLFB:
-   * 1. Abre popup do Facebook com o config_id configurado
-   * 2. Obtem o authorization code retornado pelo SDK
-   * 3. Envia o code para a edge function meta-business-login
-   * 4. A edge function troca o code pelo BISUAT e salva a conexao
+   * Inicia o fluxo FLFB via redirecionamento direto.
+   * O Facebook autentica e redireciona de volta para /oauth-callback,
+   * que salva o code no localStorage e redireciona para /meta-admin.
+   * O processFLFBReturn() no useEffect inicial processa o code ao montar.
    */
-  const handleFLFBConnect = async () => {
+  const handleFLFBConnect = () => {
     setFlfbError(null);
     setGlobalSuccess(null);
-    setFlfbStep('opening_popup');
+    setFlfbStep('redirecting');
 
-    // Abre popup do Facebook
-    setFlfbStep('waiting_auth');
-    const loginResult = await loginWithFLFB();
+    const result = redirectToFLFB();
 
-    if (!loginResult.success || !loginResult.code) {
+    if (!result.success) {
       setFlfbStep('error');
-      setFlfbError(
-        loginResult.cancelled
-          ? 'Login cancelado. Clique novamente para tentar.'
-          : loginResult.error || 'Erro desconhecido ao conectar com o Facebook.'
-      );
-      return;
+      setFlfbError(result.error || 'Erro ao iniciar conexao com o Facebook.');
     }
-
-    // Envia code para o backend
-    setFlfbStep('validating_token');
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setFlfbStep('error');
-        setFlfbError('Sessao expirada. Faca login novamente.');
-        return;
-      }
-
-      setFlfbStep('fetching_accounts');
-
-      const response = await fetch(`${SUPABASE_FUNCTIONS_URL}/meta-business-login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ code: loginResult.code }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setFlfbStep('error');
-        setFlfbError(data.error || 'Erro ao processar conexao. Tente novamente.');
-        return;
-      }
-
-      setFlfbStep('saving');
-      // Aguarda propagacao das escritas no banco
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      setFlfbStep('done');
-      setGlobalSuccess(
-        `Conectado com sucesso! ${data.adaccounts_count} conta(s) de anuncios vinculadas.`
-      );
-
-      // Recarrega todos os dados
-      await Promise.all([loadSyncStatus(), loadAdAccounts(), loadDirectAccountCount()]);
-
-      // Reseta estado do FLFB apos 3 segundos
-      setTimeout(() => setFlfbStep('idle'), 3000);
-    } catch (err) {
-      setFlfbStep('error');
-      setFlfbError(err instanceof Error ? err.message : 'Erro inesperado. Tente novamente.');
-    }
+    // Se success, o redirecionamento ocorre e a pagina sera recarregada ao voltar
   };
 
   // ============================================================
@@ -387,6 +403,7 @@ export const MetaAdminPage: React.FC = () => {
   // ============================================================
 
   const getFLFBButtonState = () => {
+    // "redirecting" mostra loading brevemente antes do browser navegar para o Facebook
     const isLoading = flfbStep !== 'idle' && flfbStep !== 'done' && flfbStep !== 'error';
     const isDone = flfbStep === 'done';
     return { isLoading, isDone };
@@ -674,8 +691,8 @@ export const MetaAdminPage: React.FC = () => {
             {flfbLoading && (
               <div className="mt-4 flex items-center gap-2">
                 <div className="flex gap-1">
-                  {(['opening_popup', 'waiting_auth', 'validating_token', 'fetching_accounts', 'saving'] as FLFBStep[]).map((step) => {
-                    const steps: FLFBStep[] = ['opening_popup', 'waiting_auth', 'validating_token', 'fetching_accounts', 'saving'];
+                  {(['redirecting', 'validating_token', 'fetching_accounts', 'saving'] as FLFBStep[]).map((step) => {
+                    const steps: FLFBStep[] = ['redirecting', 'validating_token', 'fetching_accounts', 'saving'];
                     const currentIdx = steps.indexOf(flfbStep);
                     const stepIdx = steps.indexOf(step);
                     return (

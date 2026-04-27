@@ -1,146 +1,22 @@
 /**
  * facebook-sdk.ts
  *
- * Modulo que encapsula toda a interacao com o Facebook JavaScript SDK.
- * Usado pelo fluxo do Facebook Login for Business (FLFB), que gera tokens
- * de System User permanentes (BISUAT - Business Integration System User Access Token).
+ * Modulo responsavel pelo fluxo de autorizacao do Facebook Login for Business (FLFB).
  *
- * Fluxo FLFB:
- * 1. initFacebookSDK() - inicializa o SDK com o App ID
- * 2. loginWithFLFB()   - abre o popup de autorizacao com o config_id da configuracao
- * 3. O SDK retorna um `code` (authorization code) que deve ser enviado para o backend
- * 4. O backend (edge function) troca o code pelo BISUAT permanente
- */
-
-// ============================================================
-// Tipagem do objeto global window.FB
-// ============================================================
-
-/** Resposta do metodo FB.getLoginStatus e dos callbacks de login */
-export interface FBAuthResponse {
-  accessToken?: string;
-  code?: string;
-  expiresIn?: number;
-  grantedScopes?: string;
-  reauthorize_required_in?: number;
-  signedRequest?: string;
-  userID?: string;
-}
-
-/** Objeto de status da sessao Facebook */
-export interface FBStatusResponse {
-  status: 'connected' | 'not_authorized' | 'unknown';
-  authResponse: FBAuthResponse | null;
-}
-
-/** Parametros para o metodo FB.login() */
-export interface FBLoginOptions {
-  /** ID da configuracao do Facebook Login for Business */
-  config_id?: string;
-  /** Tipo de resposta: 'code' para authorization code flow */
-  response_type?: 'code' | 'token';
-  /** Escopos adicionais (geralmente nao necessario com config_id) */
-  scope?: string;
-  /** Permissoes extras */
-  auth_type?: string;
-  /** Retorna access_token com as permissoes extras */
-  return_scopes?: boolean;
-}
-
-/** Interface do objeto global FB */
-interface FacebookSDK {
-  init(params: { appId: string; cookie?: boolean; xfbml?: boolean; version: string }): void;
-  login(callback: (response: FBStatusResponse) => void, options?: FBLoginOptions): void;
-  logout(callback: (response: FBStatusResponse) => void): void;
-  getLoginStatus(callback: (response: FBStatusResponse) => void, force?: boolean): void;
-  api(path: string, callback: (response: Record<string, unknown>) => void): void;
-  api(
-    path: string,
-    method: string,
-    params: Record<string, unknown>,
-    callback: (response: Record<string, unknown>) => void
-  ): void;
-}
-
-// Declara window.FB como optional para evitar erros quando o SDK ainda nao carregou
-declare global {
-  interface Window {
-    FB?: FacebookSDK;
-    fbAsyncInit?: () => void;
-  }
-}
-
-// ============================================================
-// Inicializacao do SDK
-// ============================================================
-
-/**
- * Inicializa o Facebook SDK com o App ID configurado.
- * Aguarda o SDK ser carregado caso ainda nao esteja disponivel.
+ * O FLFB com config_id NAO suporta o popup via FB.login() do JavaScript SDK —
+ * o Facebook retorna erro "response_type=token nao e compativel com esse fluxo".
+ * Por isso, usamos redirecionamento direto para a URL de dialogo OAuth do Facebook,
+ * passando o config_id como parametro. Esse e o unico metodo compativel com FLFB.
  *
- * @returns Promise resolvida quando o SDK estiver pronto
+ * Fluxo:
+ * 1. redirectToFLFB()  - redireciona para o dialogo OAuth do Facebook com config_id
+ * 2. Facebook autentica e redireciona de volta para /oauth-callback com ?code=XXX&state=flfb_...
+ * 3. OAuthCallback.tsx detecta o prefixo "flfb_" no state e salva o code
+ * 4. MetaAdminPage.tsx le o code do localStorage e chama meta-business-login
  */
-export function initFacebookSDK(): Promise<FacebookSDK> {
-  return new Promise((resolve, reject) => {
-    const appId = import.meta.env.VITE_META_APP_ID;
-
-    if (!appId) {
-      reject(new Error('VITE_META_APP_ID nao configurado. Verifique o arquivo .env'));
-      return;
-    }
-
-    // Se o SDK ja esta carregado, inicializa imediatamente
-    if (window.FB) {
-      window.FB.init({ appId, cookie: true, xfbml: false, version: 'v21.0' });
-      resolve(window.FB);
-      return;
-    }
-
-    // Aguarda o SDK ser carregado (fbAsyncInit e chamado quando o script do SDK carrega)
-    const originalInit = window.fbAsyncInit;
-    const timeout = setTimeout(() => {
-      reject(new Error('Timeout ao carregar o Facebook SDK. Verifique sua conexao de internet.'));
-    }, 10000);
-
-    window.fbAsyncInit = function () {
-      clearTimeout(timeout);
-
-      // Chama o init original se existia (definido no index.html)
-      if (originalInit) originalInit();
-
-      if (!window.FB) {
-        reject(new Error('Facebook SDK falhou ao inicializar'));
-        return;
-      }
-
-      window.FB.init({ appId, cookie: true, xfbml: false, version: 'v21.0' });
-      resolve(window.FB);
-    };
-  });
-}
 
 // ============================================================
-// Verificacao de status
-// ============================================================
-
-/**
- * Verifica o status atual de login do Facebook.
- * Retorna 'connected' se o usuario ja autorizou o app, 'not_authorized' caso contrario.
- */
-export function getFBLoginStatus(): Promise<FBStatusResponse> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const fb = await initFacebookSDK();
-      // true forca verificacao com o servidor (ignora cache)
-      fb.getLoginStatus((response) => resolve(response), true);
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
-
-// ============================================================
-// Login com Facebook Login for Business
+// Tipos exportados
 // ============================================================
 
 /** Resultado do processo de login FLFB */
@@ -150,21 +26,34 @@ export interface FLFBLoginResult {
   code?: string;
   /** Descricao do erro caso success = false */
   error?: string;
-  /** Se o usuario cancelou o popup voluntariamente */
+  /** Se o usuario cancelou o fluxo voluntariamente */
   cancelled?: boolean;
 }
 
+// ============================================================
+// Redirecionamento FLFB via URL direta
+// ============================================================
+
 /**
- * Abre o popup do Facebook Login for Business e retorna o authorization code.
+ * Inicia o fluxo FLFB redirecionando o usuario para o dialogo OAuth do Facebook.
+ * Usa config_id para especificar a configuracao de permissoes FLFB.
+ * O state com prefixo "flfb_" permite ao OAuthCallback identificar o fluxo.
  *
- * O config_id especifica qual configuracao usar (permissoes, tipo de token, ativos).
- * Com response_type: 'code', o SDK retorna um authorization code que deve ser
- * enviado para o backend para ser trocado pelo BISUAT permanente.
- *
- * @returns FLFBLoginResult com o code ou mensagem de erro
+ * NAO usa FB.login() pois esse metodo e incompativel com config_id:
+ * o SDK do Facebook injeta response_type=token internamente, causando erro 400.
  */
-export async function loginWithFLFB(): Promise<FLFBLoginResult> {
+export function redirectToFLFB(): { success: boolean; error?: string } {
+  const appId = import.meta.env.VITE_META_APP_ID;
   const configId = import.meta.env.VITE_META_LOGIN_CONFIG_ID;
+  const redirectUri =
+    import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
+
+  if (!appId) {
+    return {
+      success: false,
+      error: 'VITE_META_APP_ID nao configurado. Verifique o arquivo .env',
+    };
+  }
 
   if (!configId) {
     return {
@@ -173,85 +62,43 @@ export async function loginWithFLFB(): Promise<FLFBLoginResult> {
     };
   }
 
-  let fb: FacebookSDK;
-  try {
-    fb = await initFacebookSDK();
-  } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : 'Erro ao carregar o Facebook SDK',
-    };
-  }
+  // Prefixo "flfb_" permite distinguir do fluxo OAuth classico no OAuthCallback
+  const state = `flfb_${Date.now()}`;
 
-  return new Promise((resolve) => {
-    fb.login(
-      (response: FBStatusResponse) => {
-        console.log('[FLFB] Resposta do login:', response.status);
+  // Salva marcadores para o componente identificar o retorno
+  localStorage.setItem('flfb_oauth_state', state);
+  localStorage.setItem('flfb_oauth_flow', 'connecting');
 
-        if (response.status === 'connected' && response.authResponse) {
-          const { code, accessToken } = response.authResponse;
+  // Constroi URL de autorizacao FLFB com config_id e response_type=code
+  const authUrl = new URL('https://www.facebook.com/v21.0/dialog/oauth');
+  authUrl.searchParams.set('client_id', appId);
+  authUrl.searchParams.set('config_id', configId);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('state', state);
 
-          // FLFB com response_type:'code' retorna um authorization code
-          if (code) {
-            console.log('[FLFB] Authorization code recebido com sucesso');
-            resolve({ success: true, code });
-            return;
-          }
+  console.log('[FLFB] Redirecionando para autorizacao Facebook com config_id:', configId);
+  console.log('[FLFB] Redirect URI:', redirectUri);
+  console.log('[FLFB] State:', state);
 
-          // Fallback: se por algum motivo retornou accessToken diretamente
-          if (accessToken) {
-            console.warn('[FLFB] AccessToken retornado diretamente (esperava code)');
-            resolve({ success: true, code: accessToken });
-            return;
-          }
+  window.location.href = authUrl.toString();
 
-          resolve({
-            success: false,
-            error: 'Resposta de autorizacao incompleta: nenhum code ou token recebido',
-          });
-        } else if (response.status === 'not_authorized') {
-          // Usuario autorizou o Facebook mas nao autorizou o app
-          resolve({
-            success: false,
-            cancelled: true,
-            error: 'Autorizacao negada. Voce precisa permitir o acesso para continuar.',
-          });
-        } else {
-          // 'unknown' - popup fechado sem autorizacao
-          resolve({
-            success: false,
-            cancelled: true,
-            error: 'Login cancelado. Tente novamente.',
-          });
-        }
-      },
-      {
-        config_id: configId,
-        response_type: 'code',
-      }
-    );
-  });
+  return { success: true };
 }
 
 // ============================================================
-// Logout
+// Logout (limpa estado local)
 // ============================================================
 
 /**
- * Desconecta o usuario do Facebook no contexto deste app.
- * Nao apaga os dados do banco -- apenas limpa a sessao local do SDK.
+ * Limpa o estado local do fluxo FLFB.
+ * Nao apaga dados do banco -- apenas remove marcadores do localStorage.
  */
 export function fbLogout(): Promise<void> {
-  return new Promise(async (resolve) => {
-    if (!window.FB) {
-      resolve();
-      return;
-    }
-    try {
-      const fb = await initFacebookSDK();
-      fb.logout(() => resolve());
-    } catch {
-      resolve();
-    }
+  return Promise.resolve().then(() => {
+    localStorage.removeItem('flfb_oauth_state');
+    localStorage.removeItem('flfb_oauth_flow');
+    localStorage.removeItem('flfb_oauth_code');
+    localStorage.removeItem('flfb_oauth_error');
   });
 }
