@@ -442,7 +442,7 @@ export const initiateOAuth = {
     const uri = getRedirectUri(redirectUri);
     const scope = 'ads_read,ads_management,business_management';
     const state = Date.now().toString(); // Previne CSRF attacks
-    const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(uri)}&scope=${scope}&response_type=code&state=${state}`;
+    const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(uri)}&scope=${scope}&response_type=code&state=${state}`;
     console.log('Meta OAuth URL:', authUrl);
     window.open(authUrl, 'meta-oauth', 'width=600,height=600');
   },
@@ -470,7 +470,7 @@ export const exchangeCodeForToken = {
     const uri = getRedirectUri(redirectUri);
     console.log('Trocando código por token Meta com redirect_uri:', uri);
 
-    const response = await fetch('https://graph.facebook.com/v19.0/oauth/access_token', {
+    const response = await fetch('https://graph.facebook.com/v21.0/oauth/access_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({

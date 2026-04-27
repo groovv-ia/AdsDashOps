@@ -671,7 +671,7 @@ const OAuthStep: React.FC<any> = ({ connector, setupData, onDataChange, onNext, 
     switch (connector.platform.toLowerCase()) {
       case 'meta':
         const scope = 'ads_read,ads_management,business_management';
-        authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${Date.now()}`;
+        authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${Date.now()}`;
         break;
       case 'google':
         const googleScope = 'https://www.googleapis.com/auth/adwords';

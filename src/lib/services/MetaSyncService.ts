@@ -23,7 +23,7 @@ export type ProgressCallback = (progress: SyncProgress) => void;
  * Implementa rate limiting inteligente e sincronização em lotes
  */
 export class MetaSyncService {
-  private baseUrl = 'https://graph.facebook.com/v19.0';
+  private baseUrl = 'https://graph.facebook.com/v21.0';
   private accessToken: string;
   private progressCallback?: ProgressCallback;
   private workspaceId: string | null = null;
