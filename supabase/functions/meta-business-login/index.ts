@@ -391,47 +391,105 @@ Deno.serve(async (req: Request) => {
     console.log("[meta-business-login] BISUAT obtido com sucesso");
 
     // -------------------------------------------------------
-    // 4. Validar BISUAT e obter dados do System User + ad accounts
-    //    Usa field expansion para buscar adaccounts na mesma chamada
-    //    Ref: https://stackoverflow.com/questions/77471638
+    // 4. Validar BISUAT em ETAPAS TOLERANTES
+    //
+    // A) Etapa A (OBRIGATORIA): /me?fields=id,name -- valida o token.
+    //    Se falhar, abortamos com erro descritivo (codigo + mensagem do Meta).
+    // B) Etapa B (OPCIONAL): /me?fields=client_business_id -- pode falhar
+    //    se o token nao for de System User; seguimos sem ele.
+    // C) Etapa C (OPCIONAL): /me?fields=adaccounts{...} -- field expansion
+    //    pode falhar se ainda nao houve propagacao de permissoes; a cascata
+    //    posterior tenta os outros 4 metodos para encontrar contas.
     // -------------------------------------------------------
-    const meFields = "id,name,client_business_id,adaccounts{id,name,account_status,currency,timezone_name}";
-    const meResponse = await fetch(
-      `${GRAPH_API_BASE}/me?fields=${meFields}&access_token=${bisuat}`
-    );
-    const meData: MetaMeExpandedResponse = await meResponse.json();
 
-    if (meData.error) {
-      console.error("[meta-business-login] Token invalido:", meData.error);
+    // --- Etapa A: validacao basica do token (obrigatoria) ---
+    console.log("[meta-business-login] [Etapa A] Validando token via /me?fields=id,name...");
+    const meBasicResponse = await fetch(
+      `${GRAPH_API_BASE}/me?fields=id,name&access_token=${bisuat}`
+    );
+    const meBasicData: { id?: string; name?: string; error?: { message: string; code: number; type?: string; error_subcode?: number } } =
+      await meBasicResponse.json();
+
+    if (meBasicData.error || !meBasicData.id) {
+      console.error("[meta-business-login] [Etapa A] Token invalido:", meBasicData.error);
+      // Mascara o token nos logs (primeiros 6 + ultimos 4 chars)
+      const masked = bisuat.length > 12
+        ? `${bisuat.slice(0, 6)}...${bisuat.slice(-4)}`
+        : "***";
+      console.error(`[meta-business-login] [Etapa A] Token mascarado: ${masked}`);
+
+      const code = meBasicData.error?.code;
+      let userMessage = meBasicData.error?.message || "Resposta invalida da Meta API";
+      if (code === 190) {
+        userMessage = "Sua autorizacao Meta foi revogada ou expirou. Clique em Reconectar.";
+      } else if (code === 200) {
+        userMessage = "Faltam permissoes ads_read ou business_management. Refaca o consent garantindo todas as permissoes.";
+      }
+
       return new Response(
         JSON.stringify({
           error: "Token invalido ou sem permissao",
-          details: meData.error.message,
+          details: userMessage,
+          meta_error_code: code,
+          meta_error_subcode: meBasicData.error?.error_subcode,
+          meta_error_type: meBasicData.error?.type,
+          meta_error_message: meBasicData.error?.message,
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const systemUserId = meData.id;
-    console.log(`[meta-business-login] System User: ${systemUserId} (${meData.name})`);
-    console.log(`[meta-business-login] client_business_id: ${meData.client_business_id || "nao disponivel"}`);
+    const systemUserId = meBasicData.id;
+    const systemUserName = meBasicData.name;
+    console.log(`[meta-business-login] [Etapa A] OK: System User ${systemUserId} (${systemUserName})`);
 
-    // Extrair ad accounts da field expansion do /me
-    let meAdAccounts: MetaAdAccount[] = [];
-    if (meData.adaccounts?.data && meData.adaccounts.data.length > 0) {
-      meAdAccounts = [...meData.adaccounts.data];
-      console.log(`[meta-business-login] /me field expansion: ${meAdAccounts.length} contas na primeira pagina`);
-
-      // Se houver paginacao, busca paginas adicionais
-      const nextPage = meData.adaccounts.paging?.next;
-      if (nextPage) {
-        const extraAccounts = await fetchRemainingFieldExpansionPages(nextPage, bisuat);
-        meAdAccounts.push(...extraAccounts);
-        console.log(`[meta-business-login] /me field expansion total (com paginacao): ${meAdAccounts.length} contas`);
+    // --- Etapa B: client_business_id (opcional, best-effort) ---
+    let clientBusinessId: string | undefined;
+    try {
+      const meBmResponse = await fetch(
+        `${GRAPH_API_BASE}/me?fields=client_business_id&access_token=${bisuat}`
+      );
+      const meBmData: { client_business_id?: string; error?: { message: string; code: number } } =
+        await meBmResponse.json();
+      if (meBmData.error) {
+        console.warn(`[meta-business-login] [Etapa B] client_business_id indisponivel:`, meBmData.error.message);
+      } else {
+        clientBusinessId = meBmData.client_business_id;
+        console.log(`[meta-business-login] [Etapa B] client_business_id: ${clientBusinessId || "nao disponivel"}`);
       }
-    } else {
-      console.log(`[meta-business-login] /me field expansion: 0 contas retornadas`);
+    } catch (err) {
+      console.warn(`[meta-business-login] [Etapa B] Erro ao buscar client_business_id:`, err);
     }
+
+    // --- Etapa C: field expansion para adaccounts (opcional, best-effort) ---
+    let meAdAccounts: MetaAdAccount[] = [];
+    try {
+      const meAdsResponse = await fetch(
+        `${GRAPH_API_BASE}/me?fields=adaccounts{id,name,account_status,currency,timezone_name}&access_token=${bisuat}`
+      );
+      const meAdsData: MetaMeExpandedResponse = await meAdsResponse.json();
+
+      if (meAdsData.error) {
+        console.warn(`[meta-business-login] [Etapa C] field expansion erro:`, meAdsData.error.message);
+      } else if (meAdsData.adaccounts?.data && meAdsData.adaccounts.data.length > 0) {
+        meAdAccounts = [...meAdsData.adaccounts.data];
+        console.log(`[meta-business-login] [Etapa C] /me field expansion: ${meAdAccounts.length} contas (1a pagina)`);
+
+        const nextPage = meAdsData.adaccounts.paging?.next;
+        if (nextPage) {
+          const extraAccounts = await fetchRemainingFieldExpansionPages(nextPage, bisuat);
+          meAdAccounts.push(...extraAccounts);
+          console.log(`[meta-business-login] [Etapa C] total com paginacao: ${meAdAccounts.length} contas`);
+        }
+      } else {
+        console.log(`[meta-business-login] [Etapa C] field expansion: 0 contas retornadas`);
+      }
+    } catch (err) {
+      console.warn(`[meta-business-login] [Etapa C] Erro ao buscar adaccounts via /me:`, err);
+    }
+
+    // Variavel meData reduzida para uso posterior (apenas o que precisamos)
+    const meData = { id: systemUserId, name: systemUserName, client_business_id: clientBusinessId };
 
     // -------------------------------------------------------
     // 5. Buscar ad accounts via cascata (usa meAdAccounts como prioridade)

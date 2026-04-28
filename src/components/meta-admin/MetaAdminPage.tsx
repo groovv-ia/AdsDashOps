@@ -180,7 +180,14 @@ export const MetaAdminPage: React.FC = () => {
 
       if (!response.ok) {
         setFlfbStep('error');
-        setFlfbError(data.error || 'Erro ao processar conexao. Tente novamente.');
+        // Monta mensagem detalhada com codigo Meta para diagnostico
+        const detail = data.details || data.error || 'Erro ao processar conexao. Tente novamente.';
+        const metaCode = data.meta_error_code;
+        const metaMsg = data.meta_error_message;
+        const fullMessage = metaCode
+          ? `${detail} (Meta error ${metaCode}${metaMsg ? `: ${metaMsg}` : ''})`
+          : detail;
+        setFlfbError(fullMessage);
         return;
       }
 
