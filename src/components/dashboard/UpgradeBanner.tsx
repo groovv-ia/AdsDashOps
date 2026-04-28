@@ -20,16 +20,9 @@ export const UpgradeBanner: React.FC<UpgradeBannerProps> = ({ onUpgradeClick, co
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          // Busca o perfil do usuario para verificar o plano
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('plan')
-            .eq('id', user.id)
-            .maybeSingle();
-
-          // Define o plano baseado nos dados ou assume free como padrao
-          const plan = profile?.plan || 'free';
-          setUserPlan(plan === 'pro' ? 'pro' : 'free');
+          // Coluna 'plan' nao existe na tabela profiles -- assume sempre free
+          // para evitar erro 400 na query
+          setUserPlan('free');
         } else {
           setUserPlan('free');
         }
