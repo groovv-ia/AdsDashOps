@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3 } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
-import { UpgradeBanner } from './UpgradeBanner';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -284,8 +283,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </nav>
 
-          {/* Banner de Upgrade Pro no rodape */}
-          <UpgradeBanner onUpgradeClick={() => handlePageClick('upgrade')} />
         </div>
       </aside>
     </>
