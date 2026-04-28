@@ -422,7 +422,7 @@ Deno.serve(async (req: Request) => {
     // =====================================================
     const { data: metaConnection } = await supabaseAdmin
       .from("meta_connections")
-      .select("id, access_token_encrypted, status, business_manager_id")
+      .select("id, access_token_encrypted, status, business_manager_id, connection_method")
       .eq("workspace_id", workspaceId)
       .eq("status", "connected")
       .maybeSingle();
@@ -453,14 +453,40 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // Busca ad accounts via cascata
-    // Passa APP_ID e APP_SECRET para tentar App Token nos endpoints de BM
+    // Busca ad accounts: rota depende do connection_method
+    // - user_token: prioriza /me/adaccounts (User Access Token ve contas do usuario)
+    // - manual/flfb: usa cascata completa com endpoints de BM
     // =====================================================
     const metaAppId = Deno.env.get("META_APP_ID");
     const metaAppSecret = Deno.env.get("META_APP_SECRET");
+    const connectionMethod = (metaConnection as { connection_method?: string }).connection_method;
 
-    const { accounts: allAdAccounts, source: accountSource } =
-      await findAdAccountsCascade(accessToken, bmId, metaAppId, metaAppSecret);
+    let allAdAccounts: MetaAdAccount[];
+    let accountSource: string;
+
+    if (connectionMethod === "user_token") {
+      // Para User Access Token, /me/adaccounts retorna diretamente as contas do usuario
+      console.log(`[meta-list-adaccounts] connection_method=user_token, usando /me/adaccounts como primario`);
+      allAdAccounts = await fetchPaginatedAdAccounts(
+        `${GRAPH_API_BASE}/me/adaccounts`,
+        accessToken,
+        "me_adaccounts_user_token"
+      );
+      accountSource = "me_adaccounts";
+
+      // Fallback: se /me/adaccounts nao retornou nada, tenta cascata completa
+      if (allAdAccounts.length === 0) {
+        console.log(`[meta-list-adaccounts] /me/adaccounts retornou 0, tentando cascata completa...`);
+        const cascadeResult = await findAdAccountsCascade(accessToken, bmId, metaAppId, metaAppSecret);
+        allAdAccounts = cascadeResult.accounts;
+        accountSource = cascadeResult.source;
+      }
+    } else {
+      // Para manual/flfb, usa cascata completa com endpoints de BM
+      const cascadeResult = await findAdAccountsCascade(accessToken, bmId, metaAppId, metaAppSecret);
+      allAdAccounts = cascadeResult.accounts;
+      accountSource = cascadeResult.source;
+    }
 
     console.log(`[meta-list-adaccounts] Resultado: ${allAdAccounts.length} contas via "${accountSource}"`);
 

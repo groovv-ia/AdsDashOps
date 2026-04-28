@@ -96,7 +96,7 @@ Deno.serve(async (req: Request) => {
     // 1. Status da conexao Meta
     const { data: metaConnection } = await supabaseAdmin
       .from("meta_connections")
-      .select("id, status, granted_scopes, last_validated_at, business_manager_id, connection_method")
+      .select("id, status, granted_scopes, last_validated_at, business_manager_id, connection_method, token_expires_at")
       .eq("workspace_id", workspace.id)
       .maybeSingle();
 
@@ -377,6 +377,7 @@ Deno.serve(async (req: Request) => {
         granted_scopes: metaConnection.granted_scopes,
         last_validated_at: metaConnection.last_validated_at,
         connection_method: metaConnection.connection_method || "manual",
+        token_expires_at: metaConnection.token_expires_at || null,
       } : null,
       health_status: healthStatus,
       ad_accounts: adAccounts?.map((acc) => {

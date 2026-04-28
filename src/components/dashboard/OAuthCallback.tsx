@@ -49,9 +49,12 @@ export const OAuthCallback: React.FC = () => {
       });
 
       // Identifica a plataforma pelo prefixo do state
-      // "flfb_" = Facebook Login for Business via redirecionamento direto
+      // "meta_user_" = OAuth padrao com User Access Token (metodo principal)
+      // "flfb_" = Facebook Login for Business legado
       let detectedPlatform = 'unknown';
-      if (state?.startsWith('flfb_')) {
+      if (state?.startsWith('meta_user_')) {
+        detectedPlatform = 'meta_user';
+      } else if (state?.startsWith('flfb_')) {
         detectedPlatform = 'flfb';
       } else if (state?.startsWith('meta_')) {
         detectedPlatform = 'meta';
@@ -80,8 +83,11 @@ export const OAuthCallback: React.FC = () => {
         // Salva erro no localStorage usando prefixo da plataforma
         localStorage.setItem(`${detectedPlatform}_oauth_error`, fullErrorMessage);
         localStorage.removeItem(`${detectedPlatform}_oauth_flow`);
-        // Limpa marcadores do fluxo FLFB se for o caso
-        if (detectedPlatform === 'flfb') {
+        // Limpa marcadores do fluxo OAuth Meta
+        if (detectedPlatform === 'meta_user') {
+          localStorage.removeItem('meta_user_oauth_flow');
+          localStorage.removeItem('meta_user_oauth_state');
+        } else if (detectedPlatform === 'flfb') {
           localStorage.removeItem('flfb_oauth_flow');
           localStorage.removeItem('flfb_oauth_state');
         }
@@ -110,7 +116,13 @@ export const OAuthCallback: React.FC = () => {
       localStorage.setItem(`${detectedPlatform}_oauth_platform`, detectedPlatform);
       localStorage.removeItem(`${detectedPlatform}_oauth_error`);
 
-      // Para o fluxo FLFB, salva tambem nas chaves especificas que MetaAdminPage le
+      // Para o fluxo OAuth padrao, salva nas chaves que MetaAdminPage le
+      if (detectedPlatform === 'meta_user') {
+        localStorage.setItem('meta_user_oauth_code', code);
+        localStorage.removeItem('meta_user_oauth_flow');
+      }
+
+      // Para o fluxo FLFB legado
       if (detectedPlatform === 'flfb') {
         localStorage.setItem('flfb_oauth_code', code);
         localStorage.removeItem('flfb_oauth_flow');
@@ -152,6 +164,8 @@ export const OAuthCallback: React.FC = () => {
    */
   const getRedirectUrl = (detectedPlatform: string): string => {
     switch (detectedPlatform) {
+      case 'meta_user':
+        return '/meta-admin';
       case 'flfb':
         return '/meta-admin';
       case 'google':
@@ -170,6 +184,8 @@ export const OAuthCallback: React.FC = () => {
    */
   const getPlatformName = (): string => {
     switch (platform) {
+      case 'meta_user':
+        return 'Meta Ads';
       case 'flfb':
         return 'Meta Ads (Business)';
       case 'google':

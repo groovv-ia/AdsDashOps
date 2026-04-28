@@ -1,8 +1,8 @@
 /**
  * MetaSystemUserService
  *
- * Servico para comunicacao com as Edge Functions do Meta Ads System User.
- * Gerencia conexao, listagem de contas, vinculacao e sincronizacao.
+ * Servico para comunicacao com as Edge Functions do Meta Ads.
+ * Gerencia conexao (OAuth e manual), listagem de contas, vinculacao e sincronizacao.
  */
 
 import { supabase } from '../supabase';
@@ -19,6 +19,34 @@ export interface ValidateConnectionResponse {
   error?: string;
   details?: string;
   missing_scopes?: string[];
+}
+
+// Resposta do fluxo OAuth padrao (User Access Token)
+export interface MetaUserLoginResponse {
+  status: 'connected' | 'error';
+  connection_method?: string;
+  workspace_id?: string;
+  business_manager_id?: string;
+  meta_user_id?: string;
+  meta_user_name?: string;
+  meta_user_email?: string;
+  adaccounts_count?: number;
+  token_expires_at?: string;
+  is_long_lived?: boolean;
+  granted_scopes?: string[];
+  error?: string;
+  details?: string;
+}
+
+// Resposta da renovacao de token
+export interface RefreshTokenResponse {
+  success?: boolean;
+  expires_at?: string;
+  was_renewed?: boolean;
+  connection_method?: string;
+  message?: string;
+  error?: string;
+  requires_reconnect?: boolean;
 }
 
 export interface AdAccount {
@@ -222,6 +250,64 @@ export async function validateMetaConnection(
       error: data.error || 'Erro ao validar conexao',
       details: data.details,
       missing_scopes: data.missing_scopes,
+    };
+  }
+
+  return data;
+}
+
+/**
+ * Processa o retorno do fluxo OAuth padrao do Facebook.
+ * Envia o authorization code para a edge function meta-user-login
+ * que troca por um User Access Token long-lived (60 dias).
+ */
+export async function processMetaUserLogin(
+  code: string,
+  redirectUri: string
+): Promise<MetaUserLoginResponse> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(getEdgeFunctionUrl('meta-user-login'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ code, redirect_uri: redirectUri }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    return {
+      status: 'error',
+      error: data.error || 'Erro ao processar login Meta',
+      details: data.details,
+    };
+  }
+
+  return data;
+}
+
+/**
+ * Renova/valida o token Meta atual.
+ * Para user_token: renova automaticamente se expira em menos de 7 dias.
+ * Para manual/flfb: apenas valida se o token ainda esta ativo.
+ */
+export async function refreshMetaToken(
+  connectionId?: string
+): Promise<RefreshTokenResponse> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(getEdgeFunctionUrl('meta-refresh-token'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ connection_id: connectionId }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    return {
+      error: data.error || 'Erro ao renovar token',
+      requires_reconnect: data.requires_reconnect,
     };
   }
 

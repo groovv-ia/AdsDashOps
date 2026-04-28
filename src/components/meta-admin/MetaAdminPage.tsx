@@ -4,8 +4,8 @@
  * Pagina de administracao para configurar conexao Meta Ads.
  *
  * Dois metodos de conexao:
- * 1. Facebook Login for Business (FLFB) - recomendado, 1 clique, token permanente
- * 2. Manual - formulario com Business Manager ID + System User Token (avancado)
+ * 1. OAuth padrao (recomendado) - 1 clique, User Access Token de 60 dias renovavel
+ * 2. Manual - formulario com Business Manager ID + System User Token permanente (avancado)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -22,23 +22,26 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
-  Sparkles,
   ArrowRight,
   Trash2,
   PlusCircle,
   Search,
+  Clock,
+  Key,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import {
   validateMetaConnection,
+  processMetaUserLogin,
+  refreshMetaToken,
   listMetaAdAccounts,
   getMetaSyncStatus,
   addMetaAccountManual,
   AdAccount,
   SyncStatusResponse,
 } from '../../lib/services/MetaSystemUserService';
-import { redirectToFLFB } from '../../lib/facebook-sdk';
+import { redirectToMetaOAuth } from '../../lib/facebook-sdk';
 import { supabase } from '../../lib/supabase';
 import { forceSessionRefresh, isRLSError } from '../../utils/sessionRefresh';
 
@@ -52,27 +55,28 @@ const SUPABASE_FUNCTIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v
 interface ConnectionStatus {
   connected: boolean;
   tokenExpired: boolean;
-  connectionMethod?: 'manual' | 'flfb';
+  connectionMethod?: 'manual' | 'flfb' | 'user_token';
   businessManagerId?: string;
   scopes?: string[];
   lastValidated?: string;
   adAccountsCount?: number;
+  tokenExpiresAt?: string;
 }
 
-/** Passos do fluxo FLFB para exibicao de progresso */
-type FLFBStep =
+/** Passos do fluxo OAuth para exibicao de progresso */
+type OAuthStep =
   | 'idle'
   | 'redirecting'
-  | 'validating_token'
+  | 'exchanging_token'
   | 'fetching_accounts'
   | 'saving'
   | 'done'
   | 'error';
 
-const FLFB_STEP_LABELS: Record<FLFBStep, string> = {
+const OAUTH_STEP_LABELS: Record<OAuthStep, string> = {
   idle: '',
   redirecting: 'Redirecionando para o Facebook...',
-  validating_token: 'Validando token...',
+  exchanging_token: 'Obtendo token de acesso...',
   fetching_accounts: 'Buscando contas de anuncios...',
   saving: 'Salvando configuracao...',
   done: 'Conectado com sucesso!',
@@ -94,9 +98,9 @@ export const MetaAdminPage: React.FC = () => {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
 
-  // --- Estado do fluxo FLFB ---
-  const [flfbStep, setFlfbStep] = useState<FLFBStep>('idle');
-  const [flfbError, setFlfbError] = useState<string | null>(null);
+  // --- Estado do fluxo OAuth ---
+  const [oauthStep, setOauthStep] = useState<OAuthStep>('idle');
+  const [oauthError, setOauthError] = useState<string | null>(null);
 
   // --- Estado do formulario manual ---
   const [showManualForm, setShowManualForm] = useState(false);
@@ -120,100 +124,93 @@ export const MetaAdminPage: React.FC = () => {
   const [addAccountError, setAddAccountError] = useState<string | null>(null);
   const [addAccountSuccess, setAddAccountSuccess] = useState<string | null>(null);
 
-  // Carrega status inicial e processa retorno do OAuth FLFB se houver code no localStorage
+  // --- Renovacao de token ---
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Carrega status inicial e processa retorno do OAuth se houver code no localStorage
   useEffect(() => {
     loadSyncStatus();
     loadDirectAccountCount();
-    processFLFBReturn();
+    processOAuthReturn();
   }, []);
 
-  // Abre formulario manual automaticamente se desconectado ou metodo manual
+  // Abre formulario manual automaticamente se desconectado com metodo manual
   useEffect(() => {
     if (!loadingStatus) {
       const isManual = connectionStatus?.connectionMethod === 'manual';
-      const isDisconnected = !connectionStatus?.connected;
-      setShowManualForm(isManual || isDisconnected);
+      setShowManualForm(isManual && connectionStatus?.connected === true);
     }
   }, [loadingStatus, connectionStatus]);
 
   /**
-   * Processa o retorno do fluxo FLFB apos o redirect de volta para /meta-admin.
+   * Processa o retorno do fluxo OAuth apos o redirect de volta para /meta-admin.
    * Le o authorization code do localStorage (salvo pelo OAuthCallback) e
-   * envia para a edge function meta-business-login para obter o BISUAT.
+   * envia para a edge function meta-user-login para obter o User Access Token.
+   * Tambem processa retornos legados do FLFB para retrocompatibilidade.
    */
-  const processFLFBReturn = async () => {
-    const code = localStorage.getItem('flfb_oauth_code');
-    const flfbError = localStorage.getItem('flfb_oauth_error');
+  const processOAuthReturn = async () => {
+    // Tenta novo fluxo OAuth primeiro, depois FLFB legado
+    const code = localStorage.getItem('meta_user_oauth_code') || localStorage.getItem('flfb_oauth_code');
+    const oauthErrorMsg = localStorage.getItem('meta_user_oauth_error') || localStorage.getItem('flfb_oauth_error');
 
     // Limpa chaves do localStorage independente do resultado
+    localStorage.removeItem('meta_user_oauth_code');
+    localStorage.removeItem('meta_user_oauth_error');
+    localStorage.removeItem('meta_user_oauth_state');
+    localStorage.removeItem('meta_user_oauth_flow');
+    // Limpa chaves legadas do FLFB
     localStorage.removeItem('flfb_oauth_code');
     localStorage.removeItem('flfb_oauth_error');
     localStorage.removeItem('flfb_oauth_state');
     localStorage.removeItem('flfb_oauth_flow');
 
-    if (flfbError) {
-      setFlfbStep('error');
-      setFlfbError(flfbError);
+    if (oauthErrorMsg) {
+      setOauthStep('error');
+      setOauthError(oauthErrorMsg);
       return;
     }
 
     if (!code) return;
 
-    console.log('[MetaAdminPage] Authorization code FLFB detectado, processando...');
-    setFlfbStep('validating_token');
+    console.log('[MetaAdminPage] Authorization code detectado, processando...');
+    setOauthStep('exchanging_token');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        setFlfbStep('error');
-        setFlfbError('Sessao expirada. Faca login novamente.');
+        setOauthStep('error');
+        setOauthError('Sessao expirada. Faca login novamente.');
         return;
       }
 
-      setFlfbStep('fetching_accounts');
+      setOauthStep('fetching_accounts');
 
       const redirectUri =
         import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
 
-      const response = await fetch(`${SUPABASE_FUNCTIONS_URL}/meta-business-login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ code, redirect_uri: redirectUri }),
-      });
+      // Chama a nova edge function meta-user-login
+      const result = await processMetaUserLogin(code, redirectUri);
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setFlfbStep('error');
-        // Monta mensagem detalhada com codigo Meta para diagnostico
-        const detail = data.details || data.error || 'Erro ao processar conexao. Tente novamente.';
-        const metaCode = data.meta_error_code;
-        const metaMsg = data.meta_error_message;
-        const fullMessage = metaCode
-          ? `${detail} (Meta error ${metaCode}${metaMsg ? `: ${metaMsg}` : ''})`
-          : detail;
-        setFlfbError(fullMessage);
+      if (result.status !== 'connected') {
+        setOauthStep('error');
+        setOauthError(result.details || result.error || 'Erro ao processar conexao. Tente novamente.');
         return;
       }
 
-      setFlfbStep('saving');
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      setOauthStep('saving');
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
-      setFlfbStep('done');
+      setOauthStep('done');
       setGlobalSuccess(
-        `Conectado com sucesso! ${data.adaccounts_count} conta(s) de anuncios vinculadas.`
+        `Conectado com sucesso! ${result.adaccounts_count} conta(s) de anuncios encontradas.`
       );
 
       await Promise.all([loadSyncStatus(), loadAdAccounts(), loadDirectAccountCount()]);
 
-      setTimeout(() => setFlfbStep('idle'), 3000);
+      setTimeout(() => setOauthStep('idle'), 3000);
     } catch (err) {
-      setFlfbStep('error');
-      setFlfbError(err instanceof Error ? err.message : 'Erro inesperado. Tente novamente.');
+      setOauthStep('error');
+      setOauthError(err instanceof Error ? err.message : 'Erro inesperado. Tente novamente.');
     }
   };
 
@@ -227,7 +224,6 @@ export const MetaAdminPage: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Busca workspace como owner
       const { data: workspaceOwner } = await supabase
         .from('workspaces')
         .select('id')
@@ -236,7 +232,6 @@ export const MetaAdminPage: React.FC = () => {
 
       let workspaceId = workspaceOwner?.id || null;
 
-      // Fallback: busca como membro
       if (!workspaceId) {
         const { data: workspaceMember } = await supabase
           .from('workspace_members')
@@ -257,7 +252,6 @@ export const MetaAdminPage: React.FC = () => {
         .eq('workspace_id', workspaceId);
 
       if (error) {
-        // Tenta renovar sessao em caso de erro RLS
         if (isRLSError(error)) {
           const refreshed = await forceSessionRefresh();
           if (refreshed) {
@@ -288,17 +282,26 @@ export const MetaAdminPage: React.FC = () => {
         setSyncStatus(status);
 
         if (status.connection) {
-          const isTokenExpired = status.connection.status === 'token_expired';
+          const conn = status.connection as {
+            status: string;
+            business_manager_id: string;
+            granted_scopes: string[];
+            last_validated_at: string;
+            connection_method?: string;
+            token_expires_at?: string;
+          };
+          const isTokenExpired = conn.status === 'token_expired';
           setConnectionStatus({
-            connected: status.connection.status === 'connected',
+            connected: conn.status === 'connected',
             tokenExpired: isTokenExpired,
-            connectionMethod: (status.connection as { connection_method?: 'manual' | 'flfb' }).connection_method || 'manual',
-            businessManagerId: status.connection.business_manager_id,
-            scopes: status.connection.granted_scopes,
-            lastValidated: status.connection.last_validated_at,
+            connectionMethod: (conn.connection_method as 'manual' | 'flfb' | 'user_token') || 'manual',
+            businessManagerId: conn.business_manager_id,
+            scopes: conn.granted_scopes,
+            lastValidated: conn.last_validated_at,
             adAccountsCount: status.totals.ad_accounts,
+            tokenExpiresAt: conn.token_expires_at,
           });
-          setBusinessManagerId(status.connection.business_manager_id || '');
+          setBusinessManagerId(conn.business_manager_id || '');
         }
 
         if (status.ad_accounts.length > 0) {
@@ -337,16 +340,7 @@ export const MetaAdminPage: React.FC = () => {
   };
 
   /**
-   * Remove a conexao Meta do workspace atual:
-   * - Deleta os registros de meta_connections
-   * - Deleta as meta_ad_accounts vinculadas
-   * - Deleta os meta_sync_state vinculados
-   * Apos isso, recarrega a pagina para refletir o estado desconectado.
-   */
-  /**
-   * Chama a edge function meta-disconnect via service role para garantir
-   * que RLS nao bloqueie as delecoes de meta_connections, meta_ad_accounts
-   * e meta_sync_state do workspace atual.
+   * Remove a conexao Meta do workspace via edge function meta-disconnect.
    */
   const handleDisconnect = async () => {
     setDisconnecting(true);
@@ -376,7 +370,6 @@ export const MetaAdminPage: React.FC = () => {
         return;
       }
 
-      // Reseta estado local apos desconexao bem-sucedida
       setConnectionStatus(null);
       setAdAccounts([]);
       setSyncStatus(null);
@@ -393,20 +386,46 @@ export const MetaAdminPage: React.FC = () => {
 
   const handleForceRefresh = async () => {
     setManualError(null);
-    setFlfbError(null);
+    setOauthError(null);
     await Promise.all([loadAdAccounts(), loadSyncStatus(), loadDirectAccountCount()]);
     setGlobalSuccess('Dados atualizados com sucesso!');
     setTimeout(() => setGlobalSuccess(null), 3000);
   };
 
   // ============================================================
+  // Renovacao de token
+  // ============================================================
+
+  const handleRefreshToken = async () => {
+    setRefreshing(true);
+    try {
+      const result = await refreshMetaToken();
+
+      if (result.error) {
+        if (result.requires_reconnect) {
+          setOauthError('Token expirado. Reconecte clicando no botao abaixo.');
+        } else {
+          setManualError(result.error);
+        }
+      } else {
+        const msg = result.was_renewed
+          ? 'Token renovado com sucesso!'
+          : 'Token validado com sucesso.';
+        setGlobalSuccess(msg);
+        setTimeout(() => setGlobalSuccess(null), 3000);
+        await loadSyncStatus();
+      }
+    } catch (err) {
+      setManualError(err instanceof Error ? err.message : 'Erro ao renovar token.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // ============================================================
   // Adicao manual de conta de anuncios
   // ============================================================
 
-  /**
-   * Envia o ID da conta para a edge function meta-add-account-manual,
-   * que valida na Meta API e salva no banco se valida.
-   */
   const handleAddAccountManual = async () => {
     if (!manualAccountId.trim()) {
       setAddAccountError('Informe o ID da conta de anuncios.');
@@ -426,7 +445,6 @@ export const MetaAdminPage: React.FC = () => {
           : result.message || 'Conta adicionada com sucesso!';
         setAddAccountSuccess(msg);
         setManualAccountId('');
-        // Recarrega lista de contas e status
         await Promise.all([loadAdAccounts(), loadSyncStatus(), loadDirectAccountCount()]);
         setTimeout(() => setAddAccountSuccess(null), 5000);
       } else {
@@ -440,27 +458,20 @@ export const MetaAdminPage: React.FC = () => {
   };
 
   // ============================================================
-  // Facebook Login for Business (FLFB)
+  // Conexao OAuth padrao (metodo principal)
   // ============================================================
 
-  /**
-   * Inicia o fluxo FLFB via redirecionamento direto.
-   * O Facebook autentica e redireciona de volta para /oauth-callback,
-   * que salva o code no localStorage e redireciona para /meta-admin.
-   * O processFLFBReturn() no useEffect inicial processa o code ao montar.
-   */
-  const handleFLFBConnect = () => {
-    setFlfbError(null);
+  const handleOAuthConnect = () => {
+    setOauthError(null);
     setGlobalSuccess(null);
-    setFlfbStep('redirecting');
+    setOauthStep('redirecting');
 
-    const result = redirectToFLFB();
+    const result = redirectToMetaOAuth();
 
     if (!result.success) {
-      setFlfbStep('error');
-      setFlfbError(result.error || 'Erro ao iniciar conexao com o Facebook.');
+      setOauthStep('error');
+      setOauthError(result.error || 'Erro ao iniciar conexao com o Facebook.');
     }
-    // Se success, o redirecionamento ocorre e a pagina sera recarregada ao voltar
   };
 
   // ============================================================
@@ -515,31 +526,43 @@ export const MetaAdminPage: React.FC = () => {
   };
 
   // ============================================================
-  // Helpers de estilo
+  // Helpers
   // ============================================================
 
-  const getFLFBButtonState = () => {
-    // "redirecting" mostra loading brevemente antes do browser navegar para o Facebook
-    const isLoading = flfbStep !== 'idle' && flfbStep !== 'done' && flfbStep !== 'error';
-    const isDone = flfbStep === 'done';
+  const getOAuthButtonState = () => {
+    const isLoading = oauthStep !== 'idle' && oauthStep !== 'done' && oauthStep !== 'error';
+    const isDone = oauthStep === 'done';
     return { isLoading, isDone };
   };
 
+  /** Retorna badge visual conforme o metodo de conexao */
   const getConnectionMethodBadge = () => {
     if (!connectionStatus?.connected) return null;
-    if (connectionStatus.connectionMethod === 'flfb') {
+    if (connectionStatus.connectionMethod === 'user_token') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-300">
+          <Clock className="w-3 h-3" />
+          Token OAuth (60 dias)
+        </span>
+      );
+    }
+    if (connectionStatus.connectionMethod === 'manual' || connectionStatus.connectionMethod === 'flfb') {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-300">
-          <Sparkles className="w-3 h-3" />
+          <Key className="w-3 h-3" />
           Token Permanente
         </span>
       );
     }
-    return (
-      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-300">
-        Token Manual
-      </span>
-    );
+    return null;
+  };
+
+  /** Calcula dias ate a expiracao do token */
+  const getDaysUntilExpiry = (): number | null => {
+    if (!connectionStatus?.tokenExpiresAt) return null;
+    const expiresAt = new Date(connectionStatus.tokenExpiresAt).getTime();
+    const now = Date.now();
+    return Math.ceil((expiresAt - now) / (1000 * 60 * 60 * 24));
   };
 
   const getSyncStatusColor = (status: string) => {
@@ -577,9 +600,11 @@ export const MetaAdminPage: React.FC = () => {
     );
   }
 
-  const { isLoading: flfbLoading, isDone: flfbDone } = getFLFBButtonState();
+  const { isLoading: oauthLoading, isDone: oauthDone } = getOAuthButtonState();
   const isConnected = connectionStatus?.connected === true;
-  const isFLFBMethod = connectionStatus?.connectionMethod === 'flfb';
+  const isUserToken = connectionStatus?.connectionMethod === 'user_token';
+  const daysUntilExpiry = getDaysUntilExpiry();
+  const showExpiryWarning = isUserToken && daysUntilExpiry !== null && daysUntilExpiry <= 14;
 
   // ============================================================
   // Render
@@ -642,11 +667,9 @@ export const MetaAdminPage: React.FC = () => {
                         : 'Desconectado'
                     }
                   </h3>
-                  {/* Badge de status de conexao */}
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${isConnected ? 'text-emerald-700 bg-emerald-100 border border-emerald-300' : 'text-red-600 bg-red-100 border border-red-200'}`}>
                     {isConnected ? 'Conectado' : 'Desconectado'}
                   </span>
-                  {/* Badge do metodo de conexao */}
                   {getConnectionMethodBadge()}
                 </div>
 
@@ -665,28 +688,24 @@ export const MetaAdminPage: React.FC = () => {
                     {dbAccountCount} conta(s) prontas para sincronizacao
                   </p>
                 )}
+
+                {/* Info de expiracao do token OAuth */}
+                {isUserToken && daysUntilExpiry !== null && (
+                  <p className={`text-xs mt-1 ${daysUntilExpiry <= 7 ? 'text-red-600 font-semibold' : daysUntilExpiry <= 14 ? 'text-amber-600' : 'text-gray-500'}`}>
+                    Token expira em {daysUntilExpiry} dia(s)
+                    {daysUntilExpiry <= 7 && ' -- renovacao necessaria!'}
+                  </p>
+                )}
+
                 {connectionStatus.lastValidated && (
                   <p className="text-xs text-gray-500 mt-1">
                     Ultima validacao: {new Date(connectionStatus.lastValidated).toLocaleString('pt-BR')}
                   </p>
                 )}
-
-                {/* Sugestao de migrar para FLFB quando usando metodo manual */}
-                {isConnected && !isFLFBMethod && (
-                  <button
-                    onClick={handleFLFBConnect}
-                    disabled={flfbLoading}
-                    className="mt-3 inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    Migrar para conexao automatica (token permanente)
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
-                )}
               </div>
             </div>
 
-            {/* Lado direito: badge de saude + botao de desconectar */}
+            {/* Lado direito: badges e acoes */}
             <div className="flex flex-col items-end gap-2">
               {syncStatus && isConnected && syncStatus.health_status !== 'error' && (
                 <span className={`px-3 py-1.5 rounded-lg text-xs font-medium ${getSyncStatusColor(syncStatus.health_status)}`}>
@@ -695,6 +714,18 @@ export const MetaAdminPage: React.FC = () => {
               )}
               {syncStatus?.health_status === 'stale' && (
                 <p className="text-xs text-amber-600">Acesse "Meta Ads Sync" para atualizar</p>
+              )}
+
+              {/* Botao de renovar token (apenas para user_token) */}
+              {isConnected && isUserToken && (
+                <button
+                  onClick={handleRefreshToken}
+                  disabled={refreshing}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-60"
+                >
+                  {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  Renovar Token
+                </button>
               )}
 
               {/* Botao de desconectar com confirmacao inline */}
@@ -708,7 +739,6 @@ export const MetaAdminPage: React.FC = () => {
                 </button>
               )}
 
-              {/* Confirmacao de desconexao */}
               {isConnected && confirmDisconnect && (
                 <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
                   <span className="text-xs text-red-700 font-medium">Confirmar?</span>
@@ -757,44 +787,76 @@ export const MetaAdminPage: React.FC = () => {
           <div className="flex items-start space-x-3">
             <AlertTriangle className="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="font-semibold text-red-800">Token do System User Invalido</h3>
+              <h3 className="font-semibold text-red-800">Token Invalido</h3>
               <p className="text-sm text-red-700 mt-1">
-                O token atual foi revogado ou esta invalido. Use o botao "Conectar com Meta" abaixo
-                para reconectar automaticamente, ou cole um novo token no formulario manual.
+                O token atual foi revogado ou esta invalido. Clique em "Conectar com Facebook" abaixo
+                para reconectar, ou cole um novo token permanente no formulario avancado.
               </p>
             </div>
           </div>
         </Card>
       )}
 
+      {/* ---- Alerta de expiracao proxima (user_token) ---- */}
+      {showExpiryWarning && !connectionStatus?.tokenExpired && (
+        <Card className={`border-l-4 ${daysUntilExpiry! <= 7 ? 'border-l-red-500 bg-red-50' : 'border-l-amber-500 bg-amber-50'}`}>
+          <div className="flex items-start justify-between">
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className={`w-6 h-6 flex-shrink-0 mt-0.5 ${daysUntilExpiry! <= 7 ? 'text-red-500' : 'text-amber-500'}`} />
+              <div>
+                <h3 className={`font-semibold ${daysUntilExpiry! <= 7 ? 'text-red-800' : 'text-amber-800'}`}>
+                  Token expira em {daysUntilExpiry} dia(s)
+                </h3>
+                <p className={`text-sm mt-1 ${daysUntilExpiry! <= 7 ? 'text-red-700' : 'text-amber-700'}`}>
+                  {daysUntilExpiry! <= 7
+                    ? 'Renove agora para evitar perda de acesso aos dados.'
+                    : 'O token sera renovado automaticamente, mas voce pode renovar manualmente.'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleRefreshToken}
+              disabled={refreshing}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+                daysUntilExpiry! <= 7
+                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  : 'bg-amber-600 hover:bg-amber-700 text-white'
+              } disabled:opacity-60`}
+            >
+              {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Renovar Agora
+            </button>
+          </div>
+        </Card>
+      )}
+
       {/* ======================================================
-          SECAO A: Facebook Login for Business (metodo principal)
+          SECAO A: Conexao via OAuth padrao (metodo principal)
           ====================================================== */}
       <Card className="border-2 border-blue-100 bg-gradient-to-br from-white to-blue-50/30">
         <div className="flex items-start gap-4">
-          {/* Icone */}
           <div className="p-3 bg-blue-600 rounded-xl flex-shrink-0">
             <img src="/meta-icon.svg" alt="Meta" className="w-6 h-6 brightness-0 invert" />
           </div>
 
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <h3 className="font-bold text-gray-900 text-lg">Conectar com Meta</h3>
+              <h3 className="font-bold text-gray-900 text-lg">Conectar com Facebook</h3>
               <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full border border-blue-200">
                 Recomendado
               </span>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              Autorize em 1 clique usando o Facebook Login for Business.
-              Gera um token de sistema permanente que nunca precisa ser renovado.
+              Autorize em 1 clique usando sua conta do Facebook.
+              Acessa automaticamente todas as contas de anuncios vinculadas ao seu perfil.
             </p>
 
             {/* Beneficios */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
               {[
                 { icon: '1', label: '1 clique', desc: 'Sem copiar tokens' },
-                { icon: '∞', label: 'Token permanente', desc: 'Nunca expira' },
-                { icon: '🔒', label: 'Seguro', desc: 'Padrao Meta oficial' },
+                { icon: '\u2713', label: 'Acesso direto', desc: 'Ve todas as suas contas' },
+                { icon: '\u21BB', label: 'Renovavel', desc: 'Token de 60 dias' },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-2.5 p-2.5 bg-white rounded-lg border border-gray-100 shadow-sm">
                   <span className="text-base w-6 text-center font-bold text-blue-600">{item.icon}</span>
@@ -808,41 +870,41 @@ export const MetaAdminPage: React.FC = () => {
 
             {/* Botao principal */}
             <button
-              onClick={handleFLFBConnect}
-              disabled={flfbLoading}
+              onClick={handleOAuthConnect}
+              disabled={oauthLoading}
               className={`
                 inline-flex items-center gap-2.5 px-6 py-3 rounded-xl font-semibold text-sm
                 transition-all duration-200 shadow-sm
-                ${flfbDone
+                ${oauthDone
                   ? 'bg-emerald-600 text-white cursor-default'
-                  : flfbLoading
+                  : oauthLoading
                     ? 'bg-blue-400 text-white cursor-not-allowed'
                     : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white hover:shadow-md'
                 }
               `}
             >
-              {flfbLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {flfbDone && <CheckCircle className="w-4 h-4" />}
-              {!flfbLoading && !flfbDone && (
+              {oauthLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {oauthDone && <CheckCircle className="w-4 h-4" />}
+              {!oauthLoading && !oauthDone && (
                 <img src="/meta-icon.svg" alt="" className="w-4 h-4 brightness-0 invert" />
               )}
-              {flfbDone
+              {oauthDone
                 ? 'Conectado!'
-                : flfbLoading
-                  ? FLFB_STEP_LABELS[flfbStep]
-                  : isConnected && isFLFBMethod
-                    ? 'Reconectar com Meta'
-                    : 'Conectar com Meta'
+                : oauthLoading
+                  ? OAUTH_STEP_LABELS[oauthStep]
+                  : isConnected
+                    ? 'Reconectar com Facebook'
+                    : 'Conectar com Facebook'
               }
             </button>
 
             {/* Barra de progresso em etapas */}
-            {flfbLoading && (
+            {oauthLoading && (
               <div className="mt-4 flex items-center gap-2">
                 <div className="flex gap-1">
-                  {(['redirecting', 'validating_token', 'fetching_accounts', 'saving'] as FLFBStep[]).map((step) => {
-                    const steps: FLFBStep[] = ['redirecting', 'validating_token', 'fetching_accounts', 'saving'];
-                    const currentIdx = steps.indexOf(flfbStep);
+                  {(['redirecting', 'exchanging_token', 'fetching_accounts', 'saving'] as OAuthStep[]).map((step) => {
+                    const steps: OAuthStep[] = ['redirecting', 'exchanging_token', 'fetching_accounts', 'saving'];
+                    const currentIdx = steps.indexOf(oauthStep);
                     const stepIdx = steps.indexOf(step);
                     return (
                       <div
@@ -854,18 +916,18 @@ export const MetaAdminPage: React.FC = () => {
                     );
                   })}
                 </div>
-                <p className="text-xs text-gray-500">{FLFB_STEP_LABELS[flfbStep]}</p>
+                <p className="text-xs text-gray-500">{OAUTH_STEP_LABELS[oauthStep]}</p>
               </div>
             )}
 
-            {/* Mensagem de erro do FLFB */}
-            {flfbStep === 'error' && flfbError && (
+            {/* Mensagem de erro do OAuth */}
+            {oauthStep === 'error' && oauthError && (
               <div className="mt-4 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
                 <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm text-red-700">{flfbError}</p>
+                  <p className="text-sm text-red-700">{oauthError}</p>
                   <button
-                    onClick={() => { setFlfbStep('idle'); setFlfbError(null); }}
+                    onClick={() => { setOauthStep('idle'); setOauthError(null); }}
                     className="mt-1 text-xs text-red-600 underline hover:text-red-700"
                   >
                     Fechar
@@ -881,7 +943,6 @@ export const MetaAdminPage: React.FC = () => {
           SECAO B: Formulario Manual (colapsavel)
           ====================================================== */}
       <div className="border border-gray-200 rounded-xl overflow-hidden">
-        {/* Cabecalho colapsavel */}
         <button
           onClick={() => setShowManualForm(!showManualForm)}
           className="w-full flex items-center justify-between px-5 py-4 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
@@ -889,7 +950,7 @@ export const MetaAdminPage: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <Shield className="w-4 h-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">
-              Conexao manual por System User (avancado)
+              Conexao avancada por System User (token permanente)
             </span>
           </div>
           {showManualForm
@@ -898,12 +959,11 @@ export const MetaAdminPage: React.FC = () => {
           }
         </button>
 
-        {/* Conteudo do formulario */}
         {showManualForm && (
           <div className="p-5 space-y-4 bg-white">
             <p className="text-sm text-gray-500">
-              Use este metodo se preferir inserir manualmente o Business Manager ID e o token de System User.
-              Para a maioria dos casos, o botao "Conectar com Meta" acima e mais simples.
+              Use este metodo se tem um System User com token permanente (nunca expira)
+              criado no Business Manager. Ideal para integracoes de longo prazo sem necessidade de renovacao.
             </p>
 
             <div>
@@ -924,14 +984,14 @@ export const MetaAdminPage: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Token do System User
+                Token do System User (permanente)
               </label>
               <div className="relative">
                 <input
                   type={showToken ? 'text' : 'password'}
                   value={systemUserToken}
                   onChange={(e) => setSystemUserToken(e.target.value)}
-                  placeholder="Cole o token aqui..."
+                  placeholder="Cole o token permanente aqui..."
                   className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <button
@@ -943,7 +1003,7 @@ export const MetaAdminPage: React.FC = () => {
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                Crie em: Business Settings &rarr; System Users &rarr; Generate Token
+                Crie em: Business Settings &rarr; System Users &rarr; Generate Token (selecione "Nunca expira")
               </p>
             </div>
 
@@ -982,7 +1042,7 @@ export const MetaAdminPage: React.FC = () => {
             {/* Instrucoes expansiveis */}
             <details className="mt-2">
               <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 select-none">
-                Como obter o Token do System User?
+                Como obter o Token permanente do System User?
               </summary>
               <ol className="mt-2 list-decimal list-inside space-y-1.5 text-xs text-gray-600 pl-1">
                 <li>
@@ -999,6 +1059,7 @@ export const MetaAdminPage: React.FC = () => {
                 <li>Va em Business Settings &rarr; System Users</li>
                 <li>Crie ou selecione um System User existente</li>
                 <li>Clique em "Generate New Token"</li>
+                <li>Em "Token expiry" selecione <strong>"Never"</strong> (nunca expira)</li>
                 <li>
                   Selecione: <strong>ads_read</strong> e <strong>business_management</strong>
                 </li>
@@ -1010,7 +1071,7 @@ export const MetaAdminPage: React.FC = () => {
       </div>
 
       {/* ======================================================
-          SECAO C1: Adicao manual de conta (exibida quando conectado com 0 contas)
+          SECAO C1: Adicao manual de conta (exibida quando conectado)
           ====================================================== */}
       {isConnected && (
         <Card>
@@ -1028,7 +1089,6 @@ export const MetaAdminPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Instrucoes de como encontrar o ID */}
           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-xs font-medium text-blue-800 mb-1">Como encontrar o ID da conta:</p>
             <ol className="text-xs text-blue-700 space-y-1 list-decimal list-inside">
@@ -1038,7 +1098,6 @@ export const MetaAdminPage: React.FC = () => {
             </ol>
           </div>
 
-          {/* Campo de entrada */}
           <div className="flex gap-3">
             <div className="flex-1">
               <div className="relative">
@@ -1076,7 +1135,6 @@ export const MetaAdminPage: React.FC = () => {
             </Button>
           </div>
 
-          {/* Feedback de erro */}
           {addAccountError && (
             <div className="mt-3 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
               <XCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
@@ -1084,7 +1142,6 @@ export const MetaAdminPage: React.FC = () => {
             </div>
           )}
 
-          {/* Feedback de sucesso */}
           {addAccountSuccess && (
             <div className="mt-3 flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
               <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
