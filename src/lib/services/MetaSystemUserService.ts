@@ -398,6 +398,51 @@ export async function getMetaSyncStatus(clientId?: string): Promise<SyncStatusRe
   return data;
 }
 
+// Interface para resposta da adicao manual de conta
+export interface AddAccountManualResponse {
+  success: boolean;
+  already_exists?: boolean;
+  account?: {
+    id: string;
+    meta_ad_account_id: string;
+    name: string;
+    currency?: string;
+    timezone_name?: string;
+    account_status?: string;
+  };
+  message?: string;
+  error?: string;
+  meta_error_code?: number;
+}
+
+/**
+ * Adiciona uma conta de anuncios Meta manualmente pelo ID.
+ * Util quando o fluxo FLFB nao encontra contas automaticamente.
+ */
+export async function addMetaAccountManual(
+  accountId: string
+): Promise<AddAccountManualResponse> {
+  const headers = await getAuthHeaders();
+
+  const response = await fetch(getEdgeFunctionUrl('meta-add-account-manual'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ account_id: accountId }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    return {
+      success: false,
+      error: data.error || 'Erro ao adicionar conta',
+      meta_error_code: data.meta_error_code,
+    };
+  }
+
+  return data;
+}
+
 /**
  * Extrai o valor de um action_type especifico do actions_json
  * O actions_json pode ser um array de objetos com {action_type, value} ou uma string JSON

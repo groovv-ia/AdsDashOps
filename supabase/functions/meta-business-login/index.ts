@@ -178,28 +178,60 @@ async function fetchRemainingFieldExpansionPages(
 }
 
 /**
+ * Gera um App Access Token no formato {APP_ID}|{APP_SECRET}.
+ * Este token e usado para chamar endpoints de BM que exigem permissao de app,
+ * como /{bm_id}/owned_ad_accounts e /{bm_id}/client_ad_accounts.
+ */
+function buildAppToken(appId: string, appSecret: string): string {
+  return `${appId}|${appSecret}`;
+}
+
+/**
  * Busca em cascata usando multiplos endpoints ate encontrar contas.
  *
  * Ordem de prioridade:
- * 1. /{bm_id}/owned_ad_accounts + client_ad_accounts (BMs validos)
- * 2. /me?fields=adaccounts{...} -- field expansion (funciona p/ BISUAT FLFB)
- * 3. /{system_user_id}/assigned_ad_accounts
- * 4. /me/adaccounts (fallback para tokens de usuario)
- * 5. /me/businesses -> tenta owned/client em cada BM alternativo
+ * 1. App Token + /{bm_id}/owned_ad_accounts + client_ad_accounts (metodo mais confiavel para BISUAT)
+ * 2. BISUAT + /{bm_id}/owned_ad_accounts + client_ad_accounts (fallback com token do usuario)
+ * 3. /me?fields=adaccounts{...} -- field expansion (contas selecionadas no consent FLFB)
+ * 4. /{system_user_id}/adaccounts -- endpoint direto pelo ID do system user
+ * 5. /{system_user_id}/assigned_ad_accounts
+ * 6. /me/adaccounts (fallback para tokens de usuario)
+ * 7. /me/businesses -> App Token em cada BM alternativo
  */
 async function findAdAccountsCascade(
   token: string,
   systemUserId: string,
   clientBusinessId: string | undefined,
-  meAdAccounts: MetaAdAccount[]
+  meAdAccounts: MetaAdAccount[],
+  appId?: string,
+  appSecret?: string
 ): Promise<{ accounts: MetaAdAccount[]; source: string; businessManagerId: string }> {
   const accountMap = new Map<string, MetaAdAccount>();
   const bmId = clientBusinessId || systemUserId;
+  const appToken = (appId && appSecret) ? buildAppToken(appId, appSecret) : null;
 
-  // --- Tentativa 1: endpoints do BM (owned + client) ---
-  // So tenta se temos um client_business_id real (nao o system user id)
+  // --- Tentativa 1: App Token + endpoints do BM ---
+  // O App Token tem acesso a owned/client quando o app esta instalado no BM
+  if (clientBusinessId && appToken) {
+    console.log(`[meta-business-login] [Cascata 1/7] App Token + BM ${bmId} owned/client_ad_accounts...`);
+    const [ownedAccounts, clientAccounts] = await Promise.all([
+      fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/owned_ad_accounts`, appToken, "app_bm_owned"),
+      fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/client_ad_accounts`, appToken, "app_bm_client"),
+    ]);
+    mergeAccountsIntoMap(accountMap, ownedAccounts);
+    mergeAccountsIntoMap(accountMap, clientAccounts);
+
+    if (accountMap.size > 0) {
+      console.log(`[meta-business-login] [Cascata 1/7] Sucesso: ${accountMap.size} contas via App Token + BM`);
+      return { accounts: Array.from(accountMap.values()), source: "app_token_bm", businessManagerId: bmId };
+    }
+  } else {
+    console.log(`[meta-business-login] [Cascata 1/7] Pulando -- sem client_business_id ou app token`);
+  }
+
+  // --- Tentativa 2: BISUAT + endpoints do BM ---
   if (clientBusinessId) {
-    console.log(`[meta-business-login] [Cascata 1/5] BM ${bmId} owned/client_ad_accounts...`);
+    console.log(`[meta-business-login] [Cascata 2/7] BISUAT + BM ${bmId} owned/client_ad_accounts...`);
     const [ownedAccounts, clientAccounts] = await Promise.all([
       fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/owned_ad_accounts`, token, "bm_owned"),
       fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/client_ad_accounts`, token, "bm_client"),
@@ -208,24 +240,39 @@ async function findAdAccountsCascade(
     mergeAccountsIntoMap(accountMap, clientAccounts);
 
     if (accountMap.size > 0) {
-      console.log(`[meta-business-login] [Cascata 1/5] Sucesso: ${accountMap.size} contas via BM owned/client`);
+      console.log(`[meta-business-login] [Cascata 2/7] Sucesso: ${accountMap.size} contas via BM owned/client`);
       return { accounts: Array.from(accountMap.values()), source: "bm_owned_client", businessManagerId: bmId };
     }
   } else {
-    console.log(`[meta-business-login] [Cascata 1/5] Pulando -- client_business_id nao disponivel`);
+    console.log(`[meta-business-login] [Cascata 2/7] Pulando -- client_business_id nao disponivel`);
   }
 
-  // --- Tentativa 2: contas ja obtidas via field expansion no /me ---
+  // --- Tentativa 3: contas ja obtidas via field expansion no /me ---
   // Estas sao as contas que o usuario selecionou durante o fluxo FLFB
   if (meAdAccounts.length > 0) {
     mergeAccountsIntoMap(accountMap, meAdAccounts);
-    console.log(`[meta-business-login] [Cascata 2/5] Sucesso: ${accountMap.size} contas via /me field expansion`);
+    console.log(`[meta-business-login] [Cascata 3/7] Sucesso: ${accountMap.size} contas via /me field expansion`);
     return { accounts: Array.from(accountMap.values()), source: "me_field_expansion", businessManagerId: bmId };
   }
-  console.log(`[meta-business-login] [Cascata 2/5] /me field expansion retornou 0 contas`);
+  console.log(`[meta-business-login] [Cascata 3/7] /me field expansion retornou 0 contas`);
 
-  // --- Tentativa 3: assigned_ad_accounts do System User ---
-  console.log(`[meta-business-login] [Cascata 3/5] /${systemUserId}/assigned_ad_accounts...`);
+  // --- Tentativa 4: /{system_user_id}/adaccounts -- endpoint direto pelo ID numerico ---
+  // Diferente de /me/adaccounts, usa o ID numerico e funciona com BISUAT
+  console.log(`[meta-business-login] [Cascata 4/7] /${systemUserId}/adaccounts...`);
+  const directUserAccounts = await fetchPaginatedAdAccounts(
+    `${GRAPH_API_BASE}/${systemUserId}/adaccounts`,
+    token,
+    "system_user_direct_adaccounts"
+  );
+  mergeAccountsIntoMap(accountMap, directUserAccounts);
+
+  if (accountMap.size > 0) {
+    console.log(`[meta-business-login] [Cascata 4/7] Sucesso: ${accountMap.size} contas via /${systemUserId}/adaccounts`);
+    return { accounts: Array.from(accountMap.values()), source: "system_user_direct", businessManagerId: bmId };
+  }
+
+  // --- Tentativa 5: assigned_ad_accounts do System User ---
+  console.log(`[meta-business-login] [Cascata 5/7] /${systemUserId}/assigned_ad_accounts...`);
   const assignedAccounts = await fetchPaginatedAdAccounts(
     `${GRAPH_API_BASE}/${systemUserId}/assigned_ad_accounts`,
     token,
@@ -234,12 +281,12 @@ async function findAdAccountsCascade(
   mergeAccountsIntoMap(accountMap, assignedAccounts);
 
   if (accountMap.size > 0) {
-    console.log(`[meta-business-login] [Cascata 3/5] Sucesso: ${accountMap.size} contas via assigned_ad_accounts`);
+    console.log(`[meta-business-login] [Cascata 5/7] Sucesso: ${accountMap.size} contas via assigned_ad_accounts`);
     return { accounts: Array.from(accountMap.values()), source: "assigned_ad_accounts", businessManagerId: bmId };
   }
 
-  // --- Tentativa 4: /me/adaccounts (endpoint separado, funciona para user tokens) ---
-  console.log(`[meta-business-login] [Cascata 4/5] /me/adaccounts...`);
+  // --- Tentativa 6: /me/adaccounts (endpoint separado, funciona para user tokens) ---
+  console.log(`[meta-business-login] [Cascata 6/7] /me/adaccounts...`);
   const meEndpointAccounts = await fetchPaginatedAdAccounts(
     `${GRAPH_API_BASE}/me/adaccounts`,
     token,
@@ -248,43 +295,50 @@ async function findAdAccountsCascade(
   mergeAccountsIntoMap(accountMap, meEndpointAccounts);
 
   if (accountMap.size > 0) {
-    console.log(`[meta-business-login] [Cascata 4/5] Sucesso: ${accountMap.size} contas via /me/adaccounts`);
+    console.log(`[meta-business-login] [Cascata 6/7] Sucesso: ${accountMap.size} contas via /me/adaccounts`);
     return { accounts: Array.from(accountMap.values()), source: "me_adaccounts", businessManagerId: bmId };
   }
 
-  // --- Tentativa 5: descobre BMs via /me/businesses e tenta owned/client ---
-  console.log(`[meta-business-login] [Cascata 5/5] /me/businesses...`);
+  // --- Tentativa 7: descobre BMs via /me/businesses e tenta com App Token ---
+  console.log(`[meta-business-login] [Cascata 7/7] /me/businesses...`);
   try {
+    // Tenta com App Token primeiro, depois BISUAT
+    const tokenForBiz = appToken || token;
     const bizResponse = await fetch(
-      `${GRAPH_API_BASE}/me/businesses?fields=id,name&limit=50&access_token=${token}`
+      `${GRAPH_API_BASE}/me/businesses?fields=id,name&limit=50&access_token=${tokenForBiz}`
     );
     const bizData: MetaBusinessesResponse = await bizResponse.json();
 
     if (bizData.data && bizData.data.length > 0) {
-      console.log(`[meta-business-login] [Cascata 5/5] ${bizData.data.length} BMs encontrados`);
+      console.log(`[meta-business-login] [Cascata 7/7] ${bizData.data.length} BMs encontrados`);
 
       for (const biz of bizData.data) {
         if (biz.id === bmId) continue;
 
-        console.log(`[meta-business-login] [Cascata 5/5] Tentando BM: ${biz.id} (${biz.name})`);
-        const [altOwned, altClient] = await Promise.all([
-          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/owned_ad_accounts`, token, `alt_${biz.id}_owned`),
-          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/client_ad_accounts`, token, `alt_${biz.id}_client`),
-        ]);
-        mergeAccountsIntoMap(accountMap, altOwned);
-        mergeAccountsIntoMap(accountMap, altClient);
+        console.log(`[meta-business-login] [Cascata 7/7] Tentando BM: ${biz.id} (${biz.name})`);
 
-        if (accountMap.size > 0) {
-          console.log(`[meta-business-login] [Cascata 5/5] Sucesso: ${accountMap.size} contas via BM ${biz.id}`);
-          return { accounts: Array.from(accountMap.values()), source: `alt_bm_${biz.id}`, businessManagerId: biz.id };
+        // Tenta com App Token e BISUAT em paralelo para cada BM alternativo
+        const tokensToTry = appToken ? [appToken, token] : [token];
+        for (const t of tokensToTry) {
+          const [altOwned, altClient] = await Promise.all([
+            fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/owned_ad_accounts`, t, `alt_${biz.id}_owned`),
+            fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/client_ad_accounts`, t, `alt_${biz.id}_client`),
+          ]);
+          mergeAccountsIntoMap(accountMap, altOwned);
+          mergeAccountsIntoMap(accountMap, altClient);
+
+          if (accountMap.size > 0) {
+            console.log(`[meta-business-login] [Cascata 7/7] Sucesso: ${accountMap.size} contas via BM ${biz.id}`);
+            return { accounts: Array.from(accountMap.values()), source: `alt_bm_${biz.id}`, businessManagerId: biz.id };
+          }
         }
       }
     }
   } catch (err) {
-    console.warn(`[meta-business-login] [Cascata 5/5] Erro:`, err);
+    console.warn(`[meta-business-login] [Cascata 7/7] Erro:`, err);
   }
 
-  console.warn(`[meta-business-login] Nenhuma conta encontrada em nenhum dos 5 metodos`);
+  console.warn(`[meta-business-login] Nenhuma conta encontrada em nenhum dos 7 metodos`);
   return { accounts: [], source: "none", businessManagerId: bmId };
 }
 
@@ -493,9 +547,10 @@ Deno.serve(async (req: Request) => {
 
     // -------------------------------------------------------
     // 5. Buscar ad accounts via cascata (usa meAdAccounts como prioridade)
+    // Passa appId e appSecret para tentar App Token nos endpoints de BM
     // -------------------------------------------------------
     const { accounts: allAdAccounts, source: accountSource, businessManagerId } =
-      await findAdAccountsCascade(bisuat, systemUserId, meData.client_business_id, meAdAccounts);
+      await findAdAccountsCascade(bisuat, systemUserId, meData.client_business_id, meAdAccounts, metaAppId, metaAppSecret);
 
     console.log(
       `[meta-business-login] Resultado: ${allAdAccounts.length} contas via "${accountSource}", BM: ${businessManagerId}`

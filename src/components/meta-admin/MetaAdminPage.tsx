@@ -25,6 +25,8 @@ import {
   Sparkles,
   ArrowRight,
   Trash2,
+  PlusCircle,
+  Search,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -32,6 +34,7 @@ import {
   validateMetaConnection,
   listMetaAdAccounts,
   getMetaSyncStatus,
+  addMetaAccountManual,
   AdAccount,
   SyncStatusResponse,
 } from '../../lib/services/MetaSystemUserService';
@@ -110,6 +113,12 @@ export const MetaAdminPage: React.FC = () => {
   // --- Confirmacao de desconexao ---
   const [disconnecting, setDisconnecting] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+
+  // --- Adicao manual de conta ---
+  const [manualAccountId, setManualAccountId] = useState('');
+  const [addingAccount, setAddingAccount] = useState(false);
+  const [addAccountError, setAddAccountError] = useState<string | null>(null);
+  const [addAccountSuccess, setAddAccountSuccess] = useState<string | null>(null);
 
   // Carrega status inicial e processa retorno do OAuth FLFB se houver code no localStorage
   useEffect(() => {
@@ -388,6 +397,46 @@ export const MetaAdminPage: React.FC = () => {
     await Promise.all([loadAdAccounts(), loadSyncStatus(), loadDirectAccountCount()]);
     setGlobalSuccess('Dados atualizados com sucesso!');
     setTimeout(() => setGlobalSuccess(null), 3000);
+  };
+
+  // ============================================================
+  // Adicao manual de conta de anuncios
+  // ============================================================
+
+  /**
+   * Envia o ID da conta para a edge function meta-add-account-manual,
+   * que valida na Meta API e salva no banco se valida.
+   */
+  const handleAddAccountManual = async () => {
+    if (!manualAccountId.trim()) {
+      setAddAccountError('Informe o ID da conta de anuncios.');
+      return;
+    }
+
+    setAddingAccount(true);
+    setAddAccountError(null);
+    setAddAccountSuccess(null);
+
+    try {
+      const result = await addMetaAccountManual(manualAccountId.trim());
+
+      if (result.success) {
+        const msg = result.already_exists
+          ? result.message || 'Conta ja vinculada ao workspace.'
+          : result.message || 'Conta adicionada com sucesso!';
+        setAddAccountSuccess(msg);
+        setManualAccountId('');
+        // Recarrega lista de contas e status
+        await Promise.all([loadAdAccounts(), loadSyncStatus(), loadDirectAccountCount()]);
+        setTimeout(() => setAddAccountSuccess(null), 5000);
+      } else {
+        setAddAccountError(result.error || 'Erro ao adicionar conta.');
+      }
+    } catch (err) {
+      setAddAccountError(err instanceof Error ? err.message : 'Erro inesperado.');
+    } finally {
+      setAddingAccount(false);
+    }
   };
 
   // ============================================================
@@ -959,6 +1008,91 @@ export const MetaAdminPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* ======================================================
+          SECAO C1: Adicao manual de conta (exibida quando conectado com 0 contas)
+          ====================================================== */}
+      {isConnected && (
+        <Card>
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+              <PlusCircle className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Adicionar Conta de Anuncios</h3>
+              <p className="text-sm text-gray-500">
+                {adAccounts.length === 0
+                  ? 'Nenhuma conta encontrada automaticamente. Adicione pelo ID da conta.'
+                  : 'Adicione mais contas de anuncios pelo ID.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Instrucoes de como encontrar o ID */}
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-xs font-medium text-blue-800 mb-1">Como encontrar o ID da conta:</p>
+            <ol className="text-xs text-blue-700 space-y-1 list-decimal list-inside">
+              <li>Acesse <strong>business.facebook.com</strong> e entre no seu Business Manager</li>
+              <li>Va em <strong>Configuracoes</strong> &gt; <strong>Contas de Anuncios</strong></li>
+              <li>Copie o ID numerico (ex: <span className="font-mono bg-blue-100 px-1 rounded">123456789</span>) ou o formato <span className="font-mono bg-blue-100 px-1 rounded">act_123456789</span></li>
+            </ol>
+          </div>
+
+          {/* Campo de entrada */}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={manualAccountId}
+                  onChange={(e) => {
+                    setManualAccountId(e.target.value);
+                    setAddAccountError(null);
+                  }}
+                  onKeyDown={(e) => e.key === 'Enter' && !addingAccount && handleAddAccountManual()}
+                  placeholder="ID da conta (ex: 123456789 ou act_123456789)"
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={addingAccount}
+                />
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              onClick={handleAddAccountManual}
+              disabled={addingAccount || !manualAccountId.trim()}
+            >
+              {addingAccount ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Verificando...
+                </>
+              ) : (
+                <>
+                  <PlusCircle className="w-4 h-4 mr-2" />
+                  Adicionar
+                </>
+              )}
+            </Button>
+          </div>
+
+          {/* Feedback de erro */}
+          {addAccountError && (
+            <div className="mt-3 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <XCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-700">{addAccountError}</p>
+            </div>
+          )}
+
+          {/* Feedback de sucesso */}
+          {addAccountSuccess && (
+            <div className="mt-3 flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+              <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-emerald-700">{addAccountSuccess}</p>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* ======================================================
           SECAO C: Lista de Ad Accounts
