@@ -1,25 +1,16 @@
 /**
  * Edge Function: meta-refresh-token
  *
- * Valida e renova tokens Meta conforme o tipo de conexao:
- *
- * - connection_method='manual': System User Token permanente.
- *   Apenas valida via /me. Nao suporta fb_exchange_token.
- *
- * - connection_method='user_token': User Access Token de 60 dias.
- *   Se o token expira em menos de 7 dias, renova automaticamente
- *   via fb_exchange_token para obter novo long-lived token.
- *
- * - connection_method='flfb': BISUAT permanente (legado).
- *   Mesma logica do manual -- apenas valida.
+ * Valida se o token de System User do Meta ainda esta ativo.
+ * System User tokens sao permanentes e NAO suportam o endpoint OAuth fb_exchange_token.
+ * Em vez de trocar o token, esta funcao verifica sua validade via /me endpoint.
  *
  * Fluxo:
  * 1. Autentica o usuario via JWT
  * 2. Busca o token atual da conexao Meta no banco
  * 3. Descriptografa e valida chamando /me na Graph API
- * 4. Se user_token e expirando em breve: renova via fb_exchange_token
- * 5. Se valido: atualiza status para 'connected'
- * 6. Se invalido/revogado: marca status como 'token_expired'
+ * 4. Se valido: atualiza token_expires_at e status para 'connected'
+ * 5. Se invalido/revogado: marca status como 'token_expired'
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -31,15 +22,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
-
-// Renova se o token expira em menos de 7 dias
-const RENEWAL_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
-
 interface RefreshTokenRequest {
   connection_id?: string;
 }
 
+// Resposta do endpoint /me da Meta Graph API
 interface MetaMeResponse {
   id: string;
   name?: string;
@@ -50,13 +37,6 @@ interface MetaMeResponse {
     error_subcode?: number;
     fbtrace_id?: string;
   };
-}
-
-interface MetaTokenResponse {
-  access_token?: string;
-  token_type?: string;
-  expires_in?: number;
-  error?: { message: string; code: number; type: string };
 }
 
 Deno.serve(async (req: Request) => {
@@ -85,6 +65,7 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
+    // Valida o usuario autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -134,7 +115,7 @@ Deno.serve(async (req: Request) => {
     // Busca a conexao Meta (filtra por connection_id se fornecido)
     let connectionQuery = supabaseAdmin
       .from("meta_connections")
-      .select("id, access_token_encrypted, status, token_expires_at, connection_method")
+      .select("id, access_token_encrypted, status, token_expires_at")
       .eq("workspace_id", workspaceId);
 
     if (body.connection_id) {
@@ -150,8 +131,6 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const connectionMethod = connection.connection_method || "manual";
-
     // Descriptografa o token atual usando a funcao RPC do banco
     const { data: decryptedToken } = await supabaseAdmin.rpc("decrypt_token", {
       p_encrypted_token: connection.access_token_encrypted,
@@ -166,11 +145,11 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    console.log(`[meta-refresh-token] Validando token (method=${connectionMethod}) workspace=${workspaceId}...`);
+    console.log(`[meta-refresh-token] Validando token de System User para workspace ${workspaceId}...`);
 
-    // Valida o token chamando /me na Graph API
+    // Valida o token chamando /me na Graph API (System User tokens nao suportam fb_exchange_token)
     const meResponse = await fetch(
-      `${GRAPH_API_BASE}/me?access_token=${currentToken}`
+      `https://graph.facebook.com/v21.0/me?access_token=${currentToken}`
     );
     const meData: MetaMeResponse = await meResponse.json();
 
@@ -181,6 +160,7 @@ Deno.serve(async (req: Request) => {
         meData.error.message,
       );
 
+      // Marca a conexao como necessitando reconexao manual
       await supabaseAdmin
         .from("meta_connections")
         .update({
@@ -202,92 +182,22 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Token valido! Atualiza token_expires_at para 10 anos (System User tokens sao permanentes)
+    const newExpiresAt = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
+
     console.log(
-      `[meta-refresh-token] Token valido (user: ${meData.name || meData.id})`,
+      `[meta-refresh-token] Token de System User validado com sucesso (user: ${meData.name || meData.id})`,
     );
 
-    // -------------------------------------------------------
-    // Renovacao automatica para user_token (60 dias)
-    // Se o token expira em menos de 7 dias, troca por novo long-lived
-    // -------------------------------------------------------
-    let finalToken = currentToken;
-    let newExpiresAt: string;
-    let wasRenewed = false;
-
-    if (connectionMethod === "user_token" && connection.token_expires_at) {
-      const expiresAt = new Date(connection.token_expires_at).getTime();
-      const now = Date.now();
-      const timeUntilExpiry = expiresAt - now;
-
-      if (timeUntilExpiry < RENEWAL_THRESHOLD_MS) {
-        console.log(`[meta-refresh-token] Token user_token expira em ${Math.round(timeUntilExpiry / 86400000)} dias, renovando...`);
-
-        const metaAppId = Deno.env.get("META_APP_ID");
-        const metaAppSecret = Deno.env.get("META_APP_SECRET");
-
-        if (metaAppId && metaAppSecret) {
-          try {
-            const renewUrl = new URL(`${GRAPH_API_BASE}/oauth/access_token`);
-            renewUrl.searchParams.set("grant_type", "fb_exchange_token");
-            renewUrl.searchParams.set("client_id", metaAppId);
-            renewUrl.searchParams.set("client_secret", metaAppSecret);
-            renewUrl.searchParams.set("fb_exchange_token", currentToken);
-
-            const renewResponse = await fetch(renewUrl.toString());
-            const renewData: MetaTokenResponse = await renewResponse.json();
-
-            if (renewData.access_token) {
-              finalToken = renewData.access_token;
-              const expiresIn = renewData.expires_in || 5184000;
-              newExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
-              wasRenewed = true;
-              console.log(`[meta-refresh-token] Token renovado com sucesso (expira em ${expiresIn}s)`);
-            } else {
-              console.warn("[meta-refresh-token] Renovacao falhou:", renewData.error?.message);
-              newExpiresAt = connection.token_expires_at;
-            }
-          } catch (err) {
-            console.warn("[meta-refresh-token] Erro ao renovar token:", err);
-            newExpiresAt = connection.token_expires_at;
-          }
-        } else {
-          console.warn("[meta-refresh-token] META_APP_ID/SECRET nao disponivel para renovacao");
-          newExpiresAt = connection.token_expires_at;
-        }
-      } else {
-        // Token ainda valido por mais de 7 dias, nao precisa renovar
-        newExpiresAt = connection.token_expires_at;
-      }
-    } else {
-      // System User tokens (manual/flfb) sao permanentes -- expiracao em 10 anos
-      newExpiresAt = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
-    }
-
-    // Se o token foi renovado, criptografa e salva o novo
-    const updatePayload: Record<string, unknown> = {
-      token_expires_at: newExpiresAt,
-      updated_at: new Date().toISOString(),
-      status: "connected",
-      last_validated_at: new Date().toISOString(),
-    };
-
-    if (wasRenewed) {
-      let encryptedNewToken = finalToken;
-      try {
-        const { data: encryptedData, error: encryptError } = await supabaseAdmin
-          .rpc("encrypt_token", { p_token: finalToken });
-        if (!encryptError && encryptedData) {
-          encryptedNewToken = encryptedData;
-        }
-      } catch {
-        // Sem criptografia disponivel
-      }
-      updatePayload.access_token_encrypted = encryptedNewToken;
-    }
-
+    // Atualiza status e data de expiracao no banco
     const { error: updateError } = await supabaseAdmin
       .from("meta_connections")
-      .update(updatePayload)
+      .update({
+        token_expires_at: newExpiresAt,
+        updated_at: new Date().toISOString(),
+        status: "connected",
+        last_validated_at: new Date().toISOString(),
+      })
       .eq("id", connection.id);
 
     if (updateError) {
@@ -302,13 +212,7 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         success: true,
         expires_at: newExpiresAt,
-        was_renewed: wasRenewed,
-        connection_method: connectionMethod,
-        message: wasRenewed
-          ? "Token renovado com sucesso"
-          : connectionMethod === "user_token"
-            ? "Token validado (renovacao nao necessaria)"
-            : "Token de System User validado com sucesso",
+        message: "Token de System User validado com sucesso",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

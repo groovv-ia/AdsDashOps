@@ -33,7 +33,7 @@ import type {
 // Constantes de configuração
 // ============================================
 
-const META_API_VERSION = 'v21.0';
+const META_API_VERSION = 'v19.0';
 const META_API_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 
 // Rate limiting

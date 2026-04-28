@@ -84,7 +84,7 @@ export const MetaAdsSetup: React.FC<MetaAdsSetupProps> = ({ onSuccess, onCancel 
       // Testa conexão real com a API
       logger.info('Validando credenciais Meta', { appId: credentials.appId });
 
-      const testUrl = `https://graph.facebook.com/v21.0/me?access_token=${credentials.accessToken}`;
+      const testUrl = `https://graph.facebook.com/v19.0/me?access_token=${credentials.accessToken}`;
       const response = await fetch(testUrl);
       const data = await response.json();
 

@@ -2,15 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Loader, CheckCircle, XCircle } from 'lucide-react';
 
 /**
- * Componente para processar o callback OAuth.
+ * Componente para processar o callback OAuth
  * Executa automaticamente quando a plataforma de anuncios redireciona de volta
- * apos a autorizacao do usuario.
+ * apos a autorizacao do usuario
  *
- * Plataformas suportadas (identificadas pelo prefixo do state):
- * - flfb_   → Facebook Login for Business (redireciona para /meta-admin)
- * - meta_   → Meta Ads OAuth classico (redireciona para /)
- * - google_ → Google Ads (redireciona para /google-admin)
- * - tiktok_ → TikTok Ads (redireciona para /)
+ * Suporta multiplas plataformas: Meta, Google, TikTok
+ * Identifica a plataforma pelo prefixo do state (meta_, google_, tiktok_)
  */
 export const OAuthCallback: React.FC = () => {
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
@@ -23,7 +20,7 @@ export const OAuthCallback: React.FC = () => {
 
   /**
    * Processa o callback OAuth extraindo parametros da URL
-   * e redirecionando de volta para a pagina correta com os dados
+   * e redirecionando de volta para o dashboard com os dados
    */
   const processCallback = () => {
     try {
@@ -48,15 +45,9 @@ export const OAuthCallback: React.FC = () => {
         state,
       });
 
-      // Identifica a plataforma pelo prefixo do state
-      // "meta_user_" = OAuth padrao com User Access Token (metodo principal)
-      // "flfb_" = Facebook Login for Business legado
+      // Identifica a plataforma pelo state (meta_, google_, tiktok_)
       let detectedPlatform = 'unknown';
-      if (state?.startsWith('meta_user_')) {
-        detectedPlatform = 'meta_user';
-      } else if (state?.startsWith('flfb_')) {
-        detectedPlatform = 'flfb';
-      } else if (state?.startsWith('meta_')) {
+      if (state?.startsWith('meta_')) {
         detectedPlatform = 'meta';
       } else if (state?.startsWith('google_')) {
         detectedPlatform = 'google';
@@ -83,15 +74,8 @@ export const OAuthCallback: React.FC = () => {
         // Salva erro no localStorage usando prefixo da plataforma
         localStorage.setItem(`${detectedPlatform}_oauth_error`, fullErrorMessage);
         localStorage.removeItem(`${detectedPlatform}_oauth_flow`);
-        // Limpa marcadores do fluxo OAuth Meta
-        if (detectedPlatform === 'meta_user') {
-          localStorage.removeItem('meta_user_oauth_flow');
-          localStorage.removeItem('meta_user_oauth_state');
-        } else if (detectedPlatform === 'flfb') {
-          localStorage.removeItem('flfb_oauth_flow');
-          localStorage.removeItem('flfb_oauth_state');
-        }
 
+        // Redireciona de volta para a pagina apropriada
         const redirectUrl = getRedirectUrl(detectedPlatform);
         console.log('[OAuth Callback] Redirecionando para:', redirectUrl);
 
@@ -116,19 +100,7 @@ export const OAuthCallback: React.FC = () => {
       localStorage.setItem(`${detectedPlatform}_oauth_platform`, detectedPlatform);
       localStorage.removeItem(`${detectedPlatform}_oauth_error`);
 
-      // Para o fluxo OAuth padrao, salva nas chaves que MetaAdminPage le
-      if (detectedPlatform === 'meta_user') {
-        localStorage.setItem('meta_user_oauth_code', code);
-        localStorage.removeItem('meta_user_oauth_flow');
-      }
-
-      // Para o fluxo FLFB legado
-      if (detectedPlatform === 'flfb') {
-        localStorage.setItem('flfb_oauth_code', code);
-        localStorage.removeItem('flfb_oauth_flow');
-      }
-
-      // Para compatibilidade com o fluxo OAuth classico do Meta
+      // Para compatibilidade com o codigo existente do Meta
       if (detectedPlatform === 'meta') {
         localStorage.setItem('meta_oauth_code', code);
         localStorage.setItem('meta_oauth_platform', 'meta');
@@ -136,6 +108,7 @@ export const OAuthCallback: React.FC = () => {
 
       console.log('[OAuth Callback] Dados salvos no localStorage');
 
+      // Redireciona de volta para a pagina apropriada
       const redirectUrl = getRedirectUrl(detectedPlatform);
       console.log('[OAuth Callback] Redirecionando para:', redirectUrl);
 
@@ -149,9 +122,11 @@ export const OAuthCallback: React.FC = () => {
       setStatus('error');
       setMessage(errorMessage);
 
+      // Salva erro no localStorage
       const detectedPlatform = platform || 'unknown';
       localStorage.setItem(`${detectedPlatform}_oauth_error`, errorMessage);
 
+      // Redireciona de volta apos 2 segundos
       setTimeout(() => {
         window.location.href = '/';
       }, 2000);
@@ -159,15 +134,10 @@ export const OAuthCallback: React.FC = () => {
   };
 
   /**
-   * Retorna a URL de redirecionamento apropriada para cada plataforma.
-   * FLFB redireciona para /meta-admin onde MetaAdminPage ira processar o code.
+   * Retorna a URL de redirecionamento apropriada para cada plataforma
    */
   const getRedirectUrl = (detectedPlatform: string): string => {
     switch (detectedPlatform) {
-      case 'meta_user':
-        return '/meta-admin';
-      case 'flfb':
-        return '/meta-admin';
       case 'google':
         return '/google-admin';
       case 'meta':
@@ -180,14 +150,10 @@ export const OAuthCallback: React.FC = () => {
   };
 
   /**
-   * Retorna o nome da plataforma para exibicao ao usuario
+   * Retorna o nome da plataforma para exibicao
    */
   const getPlatformName = (): string => {
     switch (platform) {
-      case 'meta_user':
-        return 'Meta Ads';
-      case 'flfb':
-        return 'Meta Ads (Business)';
       case 'google':
         return 'Google Ads';
       case 'meta':
@@ -199,6 +165,9 @@ export const OAuthCallback: React.FC = () => {
     }
   };
 
+  /**
+   * Renderiza estado visual do processamento
+   */
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">

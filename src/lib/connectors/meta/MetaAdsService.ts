@@ -21,7 +21,7 @@ export class MetaAdsService {
   private tokenManager: TokenManager;
   private rateLimiter: RateLimiter;
   private httpClient: AxiosInstance;
-  private baseUrl = 'https://graph.facebook.com/v21.0';
+  private baseUrl = 'https://graph.facebook.com/v19.0';
 
   constructor() {
     this.api = FacebookAdsApi.init('');

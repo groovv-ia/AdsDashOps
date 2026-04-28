@@ -208,7 +208,7 @@ export const SimpleMetaConnect: React.FC = () => {
     localStorage.setItem('meta_oauth_flow', 'connecting');
 
     // Constrói URL de autorização do Facebook
-    const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${state}`;
+    const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${state}`;
 
     console.log('🚀 [Meta Connect] URL de autorização construída');
     console.log('🚀 [Meta Connect] Tentando redirecionar para:', authUrl.substring(0, 100) + '...');
@@ -310,7 +310,7 @@ export const SimpleMetaConnect: React.FC = () => {
       console.log('📋 [Fetch Accounts] Buscando contas de anúncios do Meta');
       console.log('📋 [Fetch Accounts] Token length:', accessToken.length);
 
-      const apiUrl = `https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name,account_id,account_status,currency&access_token=${accessToken}`;
+      const apiUrl = `https://graph.facebook.com/v19.0/me/adaccounts?fields=id,name,account_id,account_status,currency&access_token=${accessToken}`;
       console.log('📋 [Fetch Accounts] Fazendo requisição para:', apiUrl.replace(accessToken, 'TOKEN_HIDDEN'));
 
       const response = await fetch(apiUrl);
