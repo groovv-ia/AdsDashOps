@@ -4,15 +4,11 @@
  * Processa o retorno do Facebook Login for Business (FLFB).
  *
  * Fluxo:
- * 1. Recebe o authorization `code` retornado pelo fluxo FLFB (redirect)
- * 2. Troca o code pelo BISUAT (Business Integration System User Access Token) via Graph API
- * 3. Valida o token e busca informacoes do System User via /me
- * 4. Busca ad accounts usando estrategia em cascata (4 tentativas):
- *    a) /{bm_id}/owned_ad_accounts + /{bm_id}/client_ad_accounts
- *    b) /{system_user_id}/assigned_ad_accounts
- *    c) /me/adaccounts (contas delegadas no fluxo FLFB)
- *    d) /me/businesses -> tenta owned/client em cada BM encontrado
- * 5. Salva/atualiza conexao e contas no banco com connection_method='flfb'
+ * 1. Recebe o authorization code retornado pelo fluxo FLFB (redirect)
+ * 2. Troca o code pelo BISUAT (Business Integration System User Access Token)
+ * 3. Chama /me com field expansion para obter System User + ad accounts delegadas
+ * 4. Se /me nao retornou contas, tenta cascata de endpoints alternativos
+ * 5. Salva conexao e contas no banco com connection_method='flfb'
  *
  * O BISUAT e permanente -- nao expira por tempo, apenas se revogado manualmente.
  */
@@ -44,14 +40,6 @@ interface MetaTokenResponse {
   error?: { message: string; code: number; type: string };
 }
 
-interface MetaMeResponse {
-  id: string;
-  name?: string;
-  // Para System Users: client_business_id e o BM/portfolio associado
-  client_business_id?: string;
-  error?: { message: string; code: number };
-}
-
 interface MetaAdAccount {
   id: string;
   name: string;
@@ -63,6 +51,18 @@ interface MetaAdAccount {
 interface MetaAdAccountsResponse {
   data: MetaAdAccount[];
   paging?: { cursors: { after: string }; next?: string };
+  error?: { message: string; code: number };
+}
+
+// Resposta do /me com field expansion incluindo adaccounts
+interface MetaMeExpandedResponse {
+  id: string;
+  name?: string;
+  client_business_id?: string;
+  adaccounts?: {
+    data: MetaAdAccount[];
+    paging?: { cursors: { after: string }; next?: string };
+  };
   error?: { message: string; code: number };
 }
 
@@ -92,7 +92,7 @@ function mapAccountStatus(status: number): string {
 
 /**
  * Busca ad accounts paginadas de um endpoint da Meta Graph API.
- * Retorna array vazio (sem throw) quando o endpoint nao existe ou nao tem permissao.
+ * Retorna array vazio (sem throw) quando o endpoint retorna erro.
  */
 async function fetchPaginatedAdAccounts(
   baseUrl: string,
@@ -128,9 +128,7 @@ async function fetchPaginatedAdAccounts(
   return accounts;
 }
 
-/**
- * Adiciona contas a um Map, evitando duplicatas pelo ID.
- */
+/** Adiciona contas a um Map, evitando duplicatas pelo ID */
 function mergeAccountsIntoMap(
   accountMap: Map<string, MetaAdAccount>,
   accounts: MetaAdAccount[]
@@ -143,33 +141,91 @@ function mergeAccountsIntoMap(
 }
 
 /**
- * Busca em cascata: tenta multiplos endpoints ate encontrar contas.
- * Retorna todas as contas encontradas e qual metodo obteve sucesso.
+ * Busca ad accounts paginadas dentro de um campo adaccounts retornado
+ * por field expansion no /me. Segue paginacao se houver mais paginas.
+ */
+async function fetchRemainingFieldExpansionPages(
+  nextUrl: string | undefined,
+  token: string
+): Promise<MetaAdAccount[]> {
+  if (!nextUrl) return [];
+
+  const accounts: MetaAdAccount[] = [];
+  let currentUrl: string | null = nextUrl;
+  let pageCount = 0;
+  const maxPages = 50;
+
+  while (currentUrl && pageCount < maxPages) {
+    pageCount++;
+    console.log(`[meta-business-login] me_field_expansion paginacao extra - pagina ${pageCount}...`);
+
+    const response = await fetch(currentUrl);
+    const data: MetaAdAccountsResponse = await response.json();
+
+    if (data.error) {
+      console.warn(`[meta-business-login] me_field_expansion paginacao erro:`, data.error.message);
+      break;
+    }
+
+    if (data.data?.length > 0) {
+      accounts.push(...data.data);
+    }
+
+    currentUrl = data.paging?.next || null;
+  }
+
+  return accounts;
+}
+
+/**
+ * Busca em cascata usando multiplos endpoints ate encontrar contas.
+ *
+ * Ordem de prioridade:
+ * 1. /{bm_id}/owned_ad_accounts + client_ad_accounts (BMs validos)
+ * 2. /me?fields=adaccounts{...} -- field expansion (funciona p/ BISUAT FLFB)
+ * 3. /{system_user_id}/assigned_ad_accounts
+ * 4. /me/adaccounts (fallback para tokens de usuario)
+ * 5. /me/businesses -> tenta owned/client em cada BM alternativo
  */
 async function findAdAccountsCascade(
   token: string,
   systemUserId: string,
-  clientBusinessId: string | undefined
+  clientBusinessId: string | undefined,
+  meAdAccounts: MetaAdAccount[]
 ): Promise<{ accounts: MetaAdAccount[]; source: string; businessManagerId: string }> {
   const accountMap = new Map<string, MetaAdAccount>();
   const bmId = clientBusinessId || systemUserId;
 
-  // --- Tentativa 1: endpoints do Business Manager (owned + client) ---
-  console.log(`[meta-business-login] [Cascata 1/4] Buscando via BM ${bmId} owned/client_ad_accounts...`);
-  const [ownedAccounts, clientAccounts] = await Promise.all([
-    fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/owned_ad_accounts`, token, "bm_owned"),
-    fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/client_ad_accounts`, token, "bm_client"),
-  ]);
-  mergeAccountsIntoMap(accountMap, ownedAccounts);
-  mergeAccountsIntoMap(accountMap, clientAccounts);
+  // --- Tentativa 1: endpoints do BM (owned + client) ---
+  // So tenta se temos um client_business_id real (nao o system user id)
+  if (clientBusinessId) {
+    console.log(`[meta-business-login] [Cascata 1/5] BM ${bmId} owned/client_ad_accounts...`);
+    const [ownedAccounts, clientAccounts] = await Promise.all([
+      fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/owned_ad_accounts`, token, "bm_owned"),
+      fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/client_ad_accounts`, token, "bm_client"),
+    ]);
+    mergeAccountsIntoMap(accountMap, ownedAccounts);
+    mergeAccountsIntoMap(accountMap, clientAccounts);
 
-  if (accountMap.size > 0) {
-    console.log(`[meta-business-login] [Cascata 1/4] Sucesso: ${accountMap.size} contas via BM owned/client`);
-    return { accounts: Array.from(accountMap.values()), source: "bm_owned_client", businessManagerId: bmId };
+    if (accountMap.size > 0) {
+      console.log(`[meta-business-login] [Cascata 1/5] Sucesso: ${accountMap.size} contas via BM owned/client`);
+      return { accounts: Array.from(accountMap.values()), source: "bm_owned_client", businessManagerId: bmId };
+    }
+  } else {
+    console.log(`[meta-business-login] [Cascata 1/5] Pulando -- client_business_id nao disponivel`);
   }
 
-  // --- Tentativa 2: contas atribuidas ao System User via assigned_ad_accounts ---
-  console.log(`[meta-business-login] [Cascata 2/4] Buscando via /${systemUserId}/assigned_ad_accounts...`);
+  // --- Tentativa 2: contas ja obtidas via field expansion no /me ---
+  // Estas sao as contas que o usuario selecionou durante o fluxo FLFB
+  if (meAdAccounts.length > 0) {
+    mergeAccountsIntoMap(accountMap, meAdAccounts);
+    console.log(`[meta-business-login] [Cascata 2/5] Sucesso: ${accountMap.size} contas via /me field expansion`);
+    return { accounts: Array.from(accountMap.values()), source: "me_field_expansion", businessManagerId: bmId };
+  }
+  console.log(`[meta-business-login] [Cascata 2/5] /me field expansion retornou 0 contas`);
+
+  // --- Tentativa 3: assigned_ad_accounts do System User ---
+  console.log(`[meta-business-login] [Cascata 3/5] /${systemUserId}/assigned_ad_accounts...`);
   const assignedAccounts = await fetchPaginatedAdAccounts(
     `${GRAPH_API_BASE}/${systemUserId}/assigned_ad_accounts`,
     token,
@@ -178,26 +234,26 @@ async function findAdAccountsCascade(
   mergeAccountsIntoMap(accountMap, assignedAccounts);
 
   if (accountMap.size > 0) {
-    console.log(`[meta-business-login] [Cascata 2/4] Sucesso: ${accountMap.size} contas via assigned_ad_accounts`);
+    console.log(`[meta-business-login] [Cascata 3/5] Sucesso: ${accountMap.size} contas via assigned_ad_accounts`);
     return { accounts: Array.from(accountMap.values()), source: "assigned_ad_accounts", businessManagerId: bmId };
   }
 
-  // --- Tentativa 3: /me/adaccounts (retorna contas delegadas no fluxo FLFB) ---
-  console.log(`[meta-business-login] [Cascata 3/4] Buscando via /me/adaccounts...`);
-  const meAccounts = await fetchPaginatedAdAccounts(
+  // --- Tentativa 4: /me/adaccounts (endpoint separado, funciona para user tokens) ---
+  console.log(`[meta-business-login] [Cascata 4/5] /me/adaccounts...`);
+  const meEndpointAccounts = await fetchPaginatedAdAccounts(
     `${GRAPH_API_BASE}/me/adaccounts`,
     token,
     "me_adaccounts"
   );
-  mergeAccountsIntoMap(accountMap, meAccounts);
+  mergeAccountsIntoMap(accountMap, meEndpointAccounts);
 
   if (accountMap.size > 0) {
-    console.log(`[meta-business-login] [Cascata 3/4] Sucesso: ${accountMap.size} contas via /me/adaccounts`);
+    console.log(`[meta-business-login] [Cascata 4/5] Sucesso: ${accountMap.size} contas via /me/adaccounts`);
     return { accounts: Array.from(accountMap.values()), source: "me_adaccounts", businessManagerId: bmId };
   }
 
-  // --- Tentativa 4: descobre outros BMs via /me/businesses e tenta owned/client neles ---
-  console.log(`[meta-business-login] [Cascata 4/4] Buscando BMs alternativos via /me/businesses...`);
+  // --- Tentativa 5: descobre BMs via /me/businesses e tenta owned/client ---
+  console.log(`[meta-business-login] [Cascata 5/5] /me/businesses...`);
   try {
     const bizResponse = await fetch(
       `${GRAPH_API_BASE}/me/businesses?fields=id,name&limit=50&access_token=${token}`
@@ -205,34 +261,30 @@ async function findAdAccountsCascade(
     const bizData: MetaBusinessesResponse = await bizResponse.json();
 
     if (bizData.data && bizData.data.length > 0) {
-      console.log(`[meta-business-login] [Cascata 4/4] ${bizData.data.length} BMs encontrados`);
+      console.log(`[meta-business-login] [Cascata 5/5] ${bizData.data.length} BMs encontrados`);
 
       for (const biz of bizData.data) {
-        // Pula o BM que ja tentamos na etapa 1
         if (biz.id === bmId) continue;
 
-        console.log(`[meta-business-login] [Cascata 4/4] Tentando BM alternativo: ${biz.id} (${biz.name})`);
+        console.log(`[meta-business-login] [Cascata 5/5] Tentando BM: ${biz.id} (${biz.name})`);
         const [altOwned, altClient] = await Promise.all([
-          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/owned_ad_accounts`, token, `alt_bm_${biz.id}_owned`),
-          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/client_ad_accounts`, token, `alt_bm_${biz.id}_client`),
+          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/owned_ad_accounts`, token, `alt_${biz.id}_owned`),
+          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/client_ad_accounts`, token, `alt_${biz.id}_client`),
         ]);
         mergeAccountsIntoMap(accountMap, altOwned);
         mergeAccountsIntoMap(accountMap, altClient);
 
         if (accountMap.size > 0) {
-          console.log(`[meta-business-login] [Cascata 4/4] Sucesso: ${accountMap.size} contas via BM alternativo ${biz.id}`);
+          console.log(`[meta-business-login] [Cascata 5/5] Sucesso: ${accountMap.size} contas via BM ${biz.id}`);
           return { accounts: Array.from(accountMap.values()), source: `alt_bm_${biz.id}`, businessManagerId: biz.id };
         }
       }
-    } else {
-      console.log(`[meta-business-login] [Cascata 4/4] Nenhum BM alternativo encontrado`);
     }
   } catch (err) {
-    console.warn(`[meta-business-login] [Cascata 4/4] Erro ao buscar /me/businesses:`, err);
+    console.warn(`[meta-business-login] [Cascata 5/5] Erro:`, err);
   }
 
-  // Nenhuma tentativa encontrou contas
-  console.warn(`[meta-business-login] Nenhuma conta encontrada em nenhum dos 4 metodos`);
+  console.warn(`[meta-business-login] Nenhuma conta encontrada em nenhum dos 5 metodos`);
   return { accounts: [], source: "none", businessManagerId: bmId };
 }
 
@@ -241,7 +293,6 @@ async function findAdAccountsCascade(
 // =====================================================
 
 Deno.serve(async (req: Request) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -269,7 +320,6 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verifica o usuario autenticado usando o token JWT do frontend
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -284,7 +334,6 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[meta-business-login] Usuario autenticado: ${user.id}`);
 
-    // Cliente admin para operacoes que precisam contornar RLS
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // -------------------------------------------------------
@@ -306,7 +355,7 @@ Deno.serve(async (req: Request) => {
     if (!metaAppId || !metaAppSecret) {
       console.error("[meta-business-login] META_APP_ID ou META_APP_SECRET nao configurados");
       return new Response(
-        JSON.stringify({ error: "Configuracao do servidor incompleta: META_APP_ID ou META_APP_SECRET ausentes" }),
+        JSON.stringify({ error: "Configuracao do servidor incompleta" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -320,7 +369,6 @@ Deno.serve(async (req: Request) => {
     tokenUrl.searchParams.set("client_id", metaAppId);
     tokenUrl.searchParams.set("client_secret", metaAppSecret);
     tokenUrl.searchParams.set("code", code);
-    // Inclui redirect_uri quando enviado pelo frontend (obrigatorio para fluxo redirect)
     if (body.redirect_uri) {
       tokenUrl.searchParams.set("redirect_uri", body.redirect_uri);
     }
@@ -329,7 +377,7 @@ Deno.serve(async (req: Request) => {
     const tokenData: MetaTokenResponse = await tokenResponse.json();
 
     if (tokenData.error || !tokenData.access_token) {
-      console.error("[meta-business-login] Erro ao trocar code por token:", tokenData.error);
+      console.error("[meta-business-login] Erro ao trocar code:", tokenData.error);
       return new Response(
         JSON.stringify({
           error: "Falha ao obter token de acesso",
@@ -343,12 +391,15 @@ Deno.serve(async (req: Request) => {
     console.log("[meta-business-login] BISUAT obtido com sucesso");
 
     // -------------------------------------------------------
-    // 4. Validar o BISUAT e obter dados do System User
+    // 4. Validar BISUAT e obter dados do System User + ad accounts
+    //    Usa field expansion para buscar adaccounts na mesma chamada
+    //    Ref: https://stackoverflow.com/questions/77471638
     // -------------------------------------------------------
+    const meFields = "id,name,client_business_id,adaccounts{id,name,account_status,currency,timezone_name}";
     const meResponse = await fetch(
-      `${GRAPH_API_BASE}/me?fields=id,name,client_business_id&access_token=${bisuat}`
+      `${GRAPH_API_BASE}/me?fields=${meFields}&access_token=${bisuat}`
     );
-    const meData: MetaMeResponse = await meResponse.json();
+    const meData: MetaMeExpandedResponse = await meResponse.json();
 
     if (meData.error) {
       console.error("[meta-business-login] Token invalido:", meData.error);
@@ -363,16 +414,33 @@ Deno.serve(async (req: Request) => {
 
     const systemUserId = meData.id;
     console.log(`[meta-business-login] System User: ${systemUserId} (${meData.name})`);
-    console.log(`[meta-business-login] Business Portfolio ID: ${meData.client_business_id || "nao disponivel"}`);
+    console.log(`[meta-business-login] client_business_id: ${meData.client_business_id || "nao disponivel"}`);
+
+    // Extrair ad accounts da field expansion do /me
+    let meAdAccounts: MetaAdAccount[] = [];
+    if (meData.adaccounts?.data && meData.adaccounts.data.length > 0) {
+      meAdAccounts = [...meData.adaccounts.data];
+      console.log(`[meta-business-login] /me field expansion: ${meAdAccounts.length} contas na primeira pagina`);
+
+      // Se houver paginacao, busca paginas adicionais
+      const nextPage = meData.adaccounts.paging?.next;
+      if (nextPage) {
+        const extraAccounts = await fetchRemainingFieldExpansionPages(nextPage, bisuat);
+        meAdAccounts.push(...extraAccounts);
+        console.log(`[meta-business-login] /me field expansion total (com paginacao): ${meAdAccounts.length} contas`);
+      }
+    } else {
+      console.log(`[meta-business-login] /me field expansion: 0 contas retornadas`);
+    }
 
     // -------------------------------------------------------
-    // 5. Buscar ad accounts via estrategia em cascata
+    // 5. Buscar ad accounts via cascata (usa meAdAccounts como prioridade)
     // -------------------------------------------------------
     const { accounts: allAdAccounts, source: accountSource, businessManagerId } =
-      await findAdAccountsCascade(bisuat, systemUserId, meData.client_business_id);
+      await findAdAccountsCascade(bisuat, systemUserId, meData.client_business_id, meAdAccounts);
 
     console.log(
-      `[meta-business-login] Resultado final: ${allAdAccounts.length} contas via metodo "${accountSource}", BM: ${businessManagerId}`
+      `[meta-business-login] Resultado: ${allAdAccounts.length} contas via "${accountSource}", BM: ${businessManagerId}`
     );
 
     // -------------------------------------------------------
@@ -389,7 +457,7 @@ Deno.serve(async (req: Request) => {
 
     if (ownedWorkspaces && ownedWorkspaces.length > 0) {
       workspaceId = ownedWorkspaces[0].id;
-      console.log(`[meta-business-login] Workspace encontrado (owner): ${workspaceId}`);
+      console.log(`[meta-business-login] Workspace (owner): ${workspaceId}`);
     } else {
       const { data: memberRecords } = await supabaseAdmin
         .from("workspace_members")
@@ -400,7 +468,7 @@ Deno.serve(async (req: Request) => {
 
       if (memberRecords && memberRecords.length > 0) {
         workspaceId = memberRecords[0].workspace_id;
-        console.log(`[meta-business-login] Workspace encontrado (membro): ${workspaceId}`);
+        console.log(`[meta-business-login] Workspace (membro): ${workspaceId}`);
       } else {
         const { data: newWorkspace, error: createError } = await supabaseAdmin
           .from("workspaces")
@@ -428,7 +496,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // -------------------------------------------------------
-    // 7. Criptografar o token (se disponivel)
+    // 7. Criptografar o token
     // -------------------------------------------------------
     let encryptedToken = bisuat;
     try {
@@ -436,15 +504,14 @@ Deno.serve(async (req: Request) => {
         .rpc("encrypt_token", { p_token: bisuat });
       if (!encryptError && encryptedData) {
         encryptedToken = encryptedData;
-        console.log("[meta-business-login] Token criptografado com sucesso");
+        console.log("[meta-business-login] Token criptografado");
       }
     } catch {
-      console.log("[meta-business-login] Criptografia nao disponivel, armazenando token raw");
+      console.log("[meta-business-login] Criptografia nao disponivel, armazenando raw");
     }
 
     // -------------------------------------------------------
-    // 8. Salvar ou atualizar conexao Meta no banco
-    //    BISUAT e permanente -- expiracao definida em 10 anos
+    // 8. Salvar ou atualizar conexao Meta
     // -------------------------------------------------------
     const tokenExpiresAt = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
     const connectionName = meData.name || `Meta FLFB - ${businessManagerId}`;
@@ -529,7 +596,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // -------------------------------------------------------
-    // 10. Salvar ad accounts no banco via upsert em batches
+    // 10. Salvar ad accounts via upsert em batches
     // -------------------------------------------------------
     let savedCount = 0;
 
@@ -553,7 +620,7 @@ Deno.serve(async (req: Request) => {
           .upsert(batch, { onConflict: "workspace_id,meta_ad_account_id", ignoreDuplicates: false });
 
         if (upsertError) {
-          console.error(`[meta-business-login] Erro no upsert batch ${Math.floor(i / batchSize) + 1}:`, upsertError);
+          console.error(`[meta-business-login] Upsert batch erro:`, upsertError);
         } else {
           savedCount += batch.length;
         }
@@ -561,7 +628,7 @@ Deno.serve(async (req: Request) => {
 
       console.log(`[meta-business-login] ${savedCount} contas salvas no banco`);
 
-      // Criar/atualizar sync_state para cada conta
+      // Criar/atualizar sync_state
       for (const acc of allAdAccounts) {
         await supabaseAdmin
           .from("meta_sync_state")
