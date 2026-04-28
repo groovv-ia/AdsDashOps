@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Sparkles,
   ArrowRight,
+  Trash2,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -105,6 +106,10 @@ export const MetaAdminPage: React.FC = () => {
 
   // --- Mensagem de sucesso global ---
   const [globalSuccess, setGlobalSuccess] = useState<string | null>(null);
+
+  // --- Confirmacao de desconexao ---
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
   // Carrega status inicial e processa retorno do OAuth FLFB se houver code no localStorage
   useEffect(() => {
@@ -312,6 +317,65 @@ export const MetaAdminPage: React.FC = () => {
       console.error('[MetaAdminPage] Erro ao listar contas:', err);
     } finally {
       setLoadingAccounts(false);
+    }
+  };
+
+  /**
+   * Remove a conexao Meta do workspace atual:
+   * - Deleta os registros de meta_connections
+   * - Deleta as meta_ad_accounts vinculadas
+   * - Deleta os meta_sync_state vinculados
+   * Apos isso, recarrega a pagina para refletir o estado desconectado.
+   */
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    setGlobalSuccess(null);
+    setManualError(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Descobre o workspace do usuario
+      const { data: ownedWs } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('owner_id', user.id)
+        .maybeSingle();
+
+      let workspaceId = ownedWs?.id || null;
+
+      if (!workspaceId) {
+        const { data: memberWs } = await supabase
+          .from('workspace_members')
+          .select('workspace_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        workspaceId = memberWs?.workspace_id || null;
+      }
+
+      if (!workspaceId) {
+        setManualError('Workspace nao encontrado.');
+        return;
+      }
+
+      // Remove sync state, ad accounts e conexao (nessa ordem por FK)
+      await supabase.from('meta_sync_state').delete().eq('workspace_id', workspaceId);
+      await supabase.from('meta_ad_accounts').delete().eq('workspace_id', workspaceId);
+      await supabase.from('meta_connections').delete().eq('workspace_id', workspaceId);
+
+      // Reseta estado local
+      setConnectionStatus(null);
+      setAdAccounts([]);
+      setSyncStatus(null);
+      setDbAccountCount(0);
+      setBusinessManagerId('');
+      setConfirmDisconnect(false);
+      setGlobalSuccess('Conexao removida com sucesso.');
+    } catch (err) {
+      setManualError(err instanceof Error ? err.message : 'Erro ao desconectar.');
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -570,17 +634,50 @@ export const MetaAdminPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Badge secundario de saude da sincronizacao */}
-            {syncStatus && isConnected && syncStatus.health_status !== 'error' && (
-              <div className="flex flex-col items-end gap-2">
+            {/* Lado direito: badge de saude + botao de desconectar */}
+            <div className="flex flex-col items-end gap-2">
+              {syncStatus && isConnected && syncStatus.health_status !== 'error' && (
                 <span className={`px-3 py-1.5 rounded-lg text-xs font-medium ${getSyncStatusColor(syncStatus.health_status)}`}>
                   {getSyncStatusLabel(syncStatus.health_status)}
                 </span>
-                {syncStatus.health_status === 'stale' && (
-                  <p className="text-xs text-amber-600">Acesse "Meta Ads Sync" para atualizar</p>
-                )}
-              </div>
-            )}
+              )}
+              {syncStatus?.health_status === 'stale' && (
+                <p className="text-xs text-amber-600">Acesse "Meta Ads Sync" para atualizar</p>
+              )}
+
+              {/* Botao de desconectar com confirmacao inline */}
+              {isConnected && !confirmDisconnect && (
+                <button
+                  onClick={() => setConfirmDisconnect(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Desconectar
+                </button>
+              )}
+
+              {/* Confirmacao de desconexao */}
+              {isConnected && confirmDisconnect && (
+                <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+                  <span className="text-xs text-red-700 font-medium">Confirmar?</span>
+                  <button
+                    onClick={handleDisconnect}
+                    disabled={disconnecting}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 transition-colors"
+                  >
+                    {disconnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                    Sim, remover
+                  </button>
+                  <button
+                    onClick={() => setConfirmDisconnect(false)}
+                    disabled={disconnecting}
+                    className="px-2.5 py-1 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Escopos concedidos */}
