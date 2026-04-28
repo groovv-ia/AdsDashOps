@@ -334,44 +334,40 @@ export const MetaAdminPage: React.FC = () => {
    * - Deleta os meta_sync_state vinculados
    * Apos isso, recarrega a pagina para refletir o estado desconectado.
    */
+  /**
+   * Chama a edge function meta-disconnect via service role para garantir
+   * que RLS nao bloqueie as delecoes de meta_connections, meta_ad_accounts
+   * e meta_sync_state do workspace atual.
+   */
   const handleDisconnect = async () => {
     setDisconnecting(true);
     setGlobalSuccess(null);
     setManualError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Descobre o workspace do usuario
-      const { data: ownedWs } = await supabase
-        .from('workspaces')
-        .select('id')
-        .eq('owner_id', user.id)
-        .maybeSingle();
-
-      let workspaceId = ownedWs?.id || null;
-
-      if (!workspaceId) {
-        const { data: memberWs } = await supabase
-          .from('workspace_members')
-          .select('workspace_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        workspaceId = memberWs?.workspace_id || null;
-      }
-
-      if (!workspaceId) {
-        setManualError('Workspace nao encontrado.');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setManualError('Sessao expirada. Faca login novamente.');
         return;
       }
 
-      // Remove sync state, ad accounts e conexao (nessa ordem por FK)
-      await supabase.from('meta_sync_state').delete().eq('workspace_id', workspaceId);
-      await supabase.from('meta_ad_accounts').delete().eq('workspace_id', workspaceId);
-      await supabase.from('meta_connections').delete().eq('workspace_id', workspaceId);
+      const response = await fetch(`${SUPABASE_FUNCTIONS_URL}/meta-disconnect`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+      });
 
-      // Reseta estado local
+      const data = await response.json();
+
+      if (!response.ok) {
+        setManualError(data.error || 'Erro ao desconectar. Tente novamente.');
+        return;
+      }
+
+      // Reseta estado local apos desconexao bem-sucedida
       setConnectionStatus(null);
       setAdAccounts([]);
       setSyncStatus(null);
