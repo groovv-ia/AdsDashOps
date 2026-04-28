@@ -1,11 +1,13 @@
 /**
  * Edge Function: meta-list-adaccounts
  *
- * Lista as Ad Accounts do Business Manager específico e salva no banco.
+ * Lista as Ad Accounts acessiveis pela conexao Meta e salva no banco.
  *
- * CORREÇÃO PRINCIPAL: Usa endpoints /{bm_id}/owned_ad_accounts e
- * /{bm_id}/client_ad_accounts ao invés de me/adaccounts, para retornar
- * SOMENTE as contas de anúncio do Business Manager configurado na conexão.
+ * Usa estrategia de busca em cascata para cobrir todos os cenarios:
+ * 1. /{bm_id}/owned_ad_accounts + /{bm_id}/client_ad_accounts
+ * 2. /{system_user_id}/assigned_ad_accounts (para tokens FLFB)
+ * 3. /me/adaccounts (contas delegadas no fluxo de autorizacao)
+ * 4. /me/businesses -> tenta owned/client em cada BM alternativo
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -16,6 +18,12 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
+
+const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
+
+// =====================================================
+// Tipos
+// =====================================================
 
 interface MetaAdAccount {
   id: string;
@@ -28,17 +36,20 @@ interface MetaAdAccount {
 
 interface MetaAdAccountsResponse {
   data: MetaAdAccount[];
-  paging?: {
-    cursors: { after: string };
-    next: string;
-  };
-  error?: {
-    message: string;
-    code: number;
-  };
+  paging?: { cursors: { after: string }; next: string };
+  error?: { message: string; code: number };
 }
 
-// Mapeia status numérico do Meta para texto
+interface MetaBusinessesResponse {
+  data: Array<{ id: string; name: string }>;
+  error?: { message: string; code: number };
+}
+
+// =====================================================
+// Helpers
+// =====================================================
+
+/** Mapeia status numerico do Meta para texto */
 function mapAccountStatus(status: number): string {
   const statusMap: Record<number, string> = {
     1: "ACTIVE",
@@ -56,14 +67,14 @@ function mapAccountStatus(status: number): string {
 }
 
 /**
- * Busca ad accounts paginadas de um endpoint específico da Meta API.
- * Usado para buscar owned_ad_accounts e client_ad_accounts separadamente.
+ * Busca ad accounts paginadas de um endpoint da Meta Graph API.
+ * Retorna array vazio (sem throw) quando o endpoint retorna erro.
  */
 async function fetchPaginatedAdAccounts(
   baseUrl: string,
   token: string,
   label: string
-): Promise<{ accounts: MetaAdAccount[]; error?: string }> {
+): Promise<MetaAdAccount[]> {
   const accounts: MetaAdAccount[] = [];
   let nextUrl: string | null =
     `${baseUrl}?fields=id,name,account_status,currency,timezone_name,amount_spent&limit=100&access_token=${token}`;
@@ -78,9 +89,8 @@ async function fetchPaginatedAdAccounts(
     const data: MetaAdAccountsResponse = await response.json();
 
     if (data.error) {
-      console.error(`[meta-list-adaccounts] ${label} error:`, data.error);
-      // Retorna o que já foi coletado sem interromper
-      return { accounts };
+      console.warn(`[meta-list-adaccounts] ${label} error:`, data.error.message);
+      break;
     }
 
     if (data.data && data.data.length > 0) {
@@ -91,11 +101,127 @@ async function fetchPaginatedAdAccounts(
     nextUrl = data.paging?.next || null;
   }
 
-  return { accounts };
+  return accounts;
 }
 
+/** Adiciona contas a um Map, evitando duplicatas pelo ID */
+function mergeAccountsIntoMap(
+  accountMap: Map<string, MetaAdAccount>,
+  accounts: MetaAdAccount[]
+): void {
+  for (const acc of accounts) {
+    if (!accountMap.has(acc.id)) {
+      accountMap.set(acc.id, acc);
+    }
+  }
+}
+
+/**
+ * Busca em cascata: tenta multiplos endpoints ate encontrar contas.
+ * Usa o token da conexao (obtido via FLFB ou manual) para buscar
+ * as contas que foram delegadas durante a autorizacao.
+ */
+async function findAdAccountsCascade(
+  token: string,
+  bmId: string
+): Promise<{ accounts: MetaAdAccount[]; source: string }> {
+  const accountMap = new Map<string, MetaAdAccount>();
+
+  // --- Tentativa 1: endpoints do Business Manager (owned + client) ---
+  console.log(`[meta-list-adaccounts] [Cascata 1/4] BM ${bmId} owned/client_ad_accounts...`);
+  const [ownedAccounts, clientAccounts] = await Promise.all([
+    fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/owned_ad_accounts`, token, "bm_owned"),
+    fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/client_ad_accounts`, token, "bm_client"),
+  ]);
+  mergeAccountsIntoMap(accountMap, ownedAccounts);
+  mergeAccountsIntoMap(accountMap, clientAccounts);
+
+  if (accountMap.size > 0) {
+    console.log(`[meta-list-adaccounts] [Cascata 1/4] Sucesso: ${accountMap.size} contas via BM owned/client`);
+    return { accounts: Array.from(accountMap.values()), source: "bm_owned_client" };
+  }
+
+  // --- Tentativa 2: descobrir System User ID via /me e buscar assigned_ad_accounts ---
+  console.log(`[meta-list-adaccounts] [Cascata 2/4] Buscando /me para System User ID...`);
+  try {
+    const meResponse = await fetch(`${GRAPH_API_BASE}/me?fields=id&access_token=${token}`);
+    const meData = await meResponse.json();
+
+    if (meData.id && !meData.error) {
+      const systemUserId = meData.id;
+      console.log(`[meta-list-adaccounts] [Cascata 2/4] System User: ${systemUserId}, buscando assigned_ad_accounts...`);
+
+      const assignedAccounts = await fetchPaginatedAdAccounts(
+        `${GRAPH_API_BASE}/${systemUserId}/assigned_ad_accounts`,
+        token,
+        "assigned_ad_accounts"
+      );
+      mergeAccountsIntoMap(accountMap, assignedAccounts);
+
+      if (accountMap.size > 0) {
+        console.log(`[meta-list-adaccounts] [Cascata 2/4] Sucesso: ${accountMap.size} contas via assigned_ad_accounts`);
+        return { accounts: Array.from(accountMap.values()), source: "assigned_ad_accounts" };
+      }
+    }
+  } catch (err) {
+    console.warn(`[meta-list-adaccounts] [Cascata 2/4] Erro ao buscar /me:`, err);
+  }
+
+  // --- Tentativa 3: /me/adaccounts (contas delegadas no fluxo FLFB) ---
+  console.log(`[meta-list-adaccounts] [Cascata 3/4] Buscando /me/adaccounts...`);
+  const meAccounts = await fetchPaginatedAdAccounts(
+    `${GRAPH_API_BASE}/me/adaccounts`,
+    token,
+    "me_adaccounts"
+  );
+  mergeAccountsIntoMap(accountMap, meAccounts);
+
+  if (accountMap.size > 0) {
+    console.log(`[meta-list-adaccounts] [Cascata 3/4] Sucesso: ${accountMap.size} contas via /me/adaccounts`);
+    return { accounts: Array.from(accountMap.values()), source: "me_adaccounts" };
+  }
+
+  // --- Tentativa 4: /me/businesses -> tenta owned/client em BMs alternativos ---
+  console.log(`[meta-list-adaccounts] [Cascata 4/4] Buscando BMs alternativos via /me/businesses...`);
+  try {
+    const bizResponse = await fetch(
+      `${GRAPH_API_BASE}/me/businesses?fields=id,name&limit=50&access_token=${token}`
+    );
+    const bizData: MetaBusinessesResponse = await bizResponse.json();
+
+    if (bizData.data && bizData.data.length > 0) {
+      console.log(`[meta-list-adaccounts] [Cascata 4/4] ${bizData.data.length} BMs encontrados`);
+
+      for (const biz of bizData.data) {
+        if (biz.id === bmId) continue;
+
+        console.log(`[meta-list-adaccounts] [Cascata 4/4] Tentando BM alternativo: ${biz.id} (${biz.name})`);
+        const [altOwned, altClient] = await Promise.all([
+          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/owned_ad_accounts`, token, `alt_${biz.id}_owned`),
+          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/client_ad_accounts`, token, `alt_${biz.id}_client`),
+        ]);
+        mergeAccountsIntoMap(accountMap, altOwned);
+        mergeAccountsIntoMap(accountMap, altClient);
+
+        if (accountMap.size > 0) {
+          console.log(`[meta-list-adaccounts] [Cascata 4/4] Sucesso: ${accountMap.size} contas via BM alternativo ${biz.id}`);
+          return { accounts: Array.from(accountMap.values()), source: `alt_bm_${biz.id}` };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[meta-list-adaccounts] [Cascata 4/4] Erro ao buscar /me/businesses:`, err);
+  }
+
+  console.warn(`[meta-list-adaccounts] Nenhuma conta encontrada em nenhum dos 4 metodos`);
+  return { accounts: [], source: "none" };
+}
+
+// =====================================================
+// Handler principal
+// =====================================================
+
 Deno.serve(async (req: Request) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -108,7 +234,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Verifica autenticação
+    // Verifica autenticacao
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -121,7 +247,6 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verifica usuário autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -137,16 +262,13 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[meta-list-adaccounts] User authenticated: ${user.id}`);
 
-    // Cliente admin para bypass de RLS
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // =====================================================
-    // BUSCA O WORKSPACE DO USUÁRIO (OWNER OU MEMBRO)
-    // Usa .order().limit(1) para evitar erro com múltiplos workspaces
+    // Busca workspace do usuario (owner ou membro)
     // =====================================================
     let workspaceId: string | null = null;
 
-    // 1. Tenta buscar como owner direto (pega o mais antigo se houver múltiplos)
     const { data: ownedWorkspaces, error: ownerError } = await supabaseAdmin
       .from("workspaces")
       .select("id")
@@ -162,7 +284,6 @@ Deno.serve(async (req: Request) => {
       workspaceId = ownedWorkspaces[0].id;
       console.log(`[meta-list-adaccounts] Found workspace as owner: ${workspaceId}`);
     } else {
-      // 2. Se não é owner, busca como membro (pega o mais antigo)
       console.log("[meta-list-adaccounts] User is not owner, checking membership...");
 
       const { data: memberRecords, error: memberError } = await supabaseAdmin
@@ -191,7 +312,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // BUSCA A CONEXÃO META DO WORKSPACE
+    // Busca conexao Meta do workspace
     // =====================================================
     const { data: metaConnection, error: connError } = await supabaseAdmin
       .from("meta_connections")
@@ -216,11 +337,10 @@ Deno.serve(async (req: Request) => {
     console.log(`[meta-list-adaccounts] Found connection: ${metaConnection.id}, BM: ${bmId}`);
 
     // =====================================================
-    // DESCRIPTOGRAFA O TOKEN
+    // Descriptografa o token
     // =====================================================
     let accessToken = metaConnection.access_token_encrypted;
 
-    // Tenta descriptografar (pode não estar criptografado)
     const { data: decryptedToken, error: decryptError } = await supabaseAdmin
       .rpc("decrypt_token", { p_encrypted_token: metaConnection.access_token_encrypted });
 
@@ -232,42 +352,21 @@ Deno.serve(async (req: Request) => {
     }
 
     // =====================================================
-    // BUSCA AD ACCOUNTS DO BUSINESS MANAGER ESPECÍFICO
-    // Usa owned_ad_accounts + client_ad_accounts ao invés de me/adaccounts
-    // para retornar SOMENTE contas deste BM
+    // Busca ad accounts via estrategia em cascata
     // =====================================================
-    const bmBaseUrl = `https://graph.facebook.com/v21.0/${bmId}`;
+    const { accounts: allAdAccounts, source: accountSource } =
+      await findAdAccountsCascade(accessToken, bmId);
 
-    // Busca contas próprias do BM (owned)
-    const { accounts: ownedAccounts } = await fetchPaginatedAdAccounts(
-      `${bmBaseUrl}/owned_ad_accounts`,
-      accessToken,
-      "owned_ad_accounts"
-    );
-
-    // Busca contas de clientes gerenciados pelo BM (client)
-    const { accounts: clientAccounts } = await fetchPaginatedAdAccounts(
-      `${bmBaseUrl}/client_ad_accounts`,
-      accessToken,
-      "client_ad_accounts"
-    );
-
-    // Combina e remove duplicatas pelo ID da conta
-    const accountMap = new Map<string, MetaAdAccount>();
-    for (const acc of [...ownedAccounts, ...clientAccounts]) {
-      if (!accountMap.has(acc.id)) {
-        accountMap.set(acc.id, acc);
-      }
-    }
-    const allAdAccounts = Array.from(accountMap.values());
-
-    console.log(`[meta-list-adaccounts] BM ${bmId}: ${ownedAccounts.length} owned + ${clientAccounts.length} client = ${allAdAccounts.length} unique accounts`);
+    console.log(`[meta-list-adaccounts] Resultado: ${allAdAccounts.length} contas via "${accountSource}"`);
 
     // =====================================================
-    // SALVA AS CONTAS NO BANCO DE DADOS
+    // Salva contas no banco de dados
     // =====================================================
+    let savedCount = 0;
+    let errorCount = 0;
+
     if (allAdAccounts.length > 0) {
-      // Limpa contas antigas que não pertencem mais ao BM
+      // Remove contas antigas que nao aparecem mais
       const validAccountIds = allAdAccounts.map((acc) => acc.id);
       const { error: deleteError, count: deletedCount } = await supabaseAdmin
         .from("meta_ad_accounts")
@@ -278,10 +377,10 @@ Deno.serve(async (req: Request) => {
       if (deleteError) {
         console.error("[meta-list-adaccounts] Error cleaning old accounts:", deleteError);
       } else if (deletedCount && deletedCount > 0) {
-        console.log(`[meta-list-adaccounts] Cleaned ${deletedCount} old ad accounts from workspace`);
+        console.log(`[meta-list-adaccounts] Cleaned ${deletedCount} old ad accounts`);
       }
 
-      // Prepara os dados para upsert
+      // Upsert em batches
       const adAccountsToUpsert = allAdAccounts.map((acc) => ({
         workspace_id: workspaceId,
         meta_ad_account_id: acc.id,
@@ -293,11 +392,7 @@ Deno.serve(async (req: Request) => {
         updated_at: new Date().toISOString(),
       }));
 
-      // Divide em batches de 100 para evitar timeout
       const batchSize = 100;
-      let savedCount = 0;
-      let errorCount = 0;
-
       for (let i = 0; i < adAccountsToUpsert.length; i += batchSize) {
         const batch = adAccountsToUpsert.slice(i, i + batchSize);
 
@@ -317,11 +412,11 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      console.log(`[meta-list-adaccounts] TOTAL SAVED: ${savedCount} accounts, ERRORS: ${errorCount}`);
+      console.log(`[meta-list-adaccounts] TOTAL SAVED: ${savedCount}, ERRORS: ${errorCount}`);
     }
 
     // =====================================================
-    // RETORNA AS CONTAS PARA O FRONTEND
+    // Retorna contas para o frontend
     // =====================================================
     const formattedAccounts = allAdAccounts.map((acc) => ({
       id: acc.id,
@@ -338,8 +433,7 @@ Deno.serve(async (req: Request) => {
         total: formattedAccounts.length,
         workspace_id: workspaceId,
         business_manager_id: bmId,
-        owned_accounts: ownedAccounts.length,
-        client_accounts: clientAccounts.length,
+        adaccounts_source: accountSource,
         saved_to_db: true,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

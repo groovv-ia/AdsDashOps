@@ -4,12 +4,15 @@
  * Processa o retorno do Facebook Login for Business (FLFB).
  *
  * Fluxo:
- * 1. Recebe o authorization `code` retornado pelo FB SDK
+ * 1. Recebe o authorization `code` retornado pelo fluxo FLFB (redirect)
  * 2. Troca o code pelo BISUAT (Business Integration System User Access Token) via Graph API
- * 3. Valida o token e busca informacoes do System User
- * 4. Busca o Business Portfolio (client_business_id) associado ao System User
- * 5. Busca todas as ad accounts do portfolio (owned + client)
- * 6. Salva/atualiza conexao e contas no banco com connection_method='flfb'
+ * 3. Valida o token e busca informacoes do System User via /me
+ * 4. Busca ad accounts usando estrategia em cascata (4 tentativas):
+ *    a) /{bm_id}/owned_ad_accounts + /{bm_id}/client_ad_accounts
+ *    b) /{system_user_id}/assigned_ad_accounts
+ *    c) /me/adaccounts (contas delegadas no fluxo FLFB)
+ *    d) /me/businesses -> tenta owned/client em cada BM encontrado
+ * 5. Salva/atualiza conexao e contas no banco com connection_method='flfb'
  *
  * O BISUAT e permanente -- nao expira por tempo, apenas se revogado manualmente.
  */
@@ -22,6 +25,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
+
+const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
 
 // =====================================================
 // Tipos
@@ -42,7 +47,7 @@ interface MetaTokenResponse {
 interface MetaMeResponse {
   id: string;
   name?: string;
-  // Para System Users: client_business_id e o BM associado
+  // Para System Users: client_business_id e o BM/portfolio associado
   client_business_id?: string;
   error?: { message: string; code: number };
 }
@@ -58,6 +63,11 @@ interface MetaAdAccount {
 interface MetaAdAccountsResponse {
   data: MetaAdAccount[];
   paging?: { cursors: { after: string }; next?: string };
+  error?: { message: string; code: number };
+}
+
+interface MetaBusinessesResponse {
+  data: Array<{ id: string; name: string }>;
   error?: { message: string; code: number };
 }
 
@@ -81,8 +91,8 @@ function mapAccountStatus(status: number): string {
 }
 
 /**
- * Busca todas as ad accounts de um endpoint paginado da Meta Graph API.
- * Usado para buscar owned_ad_accounts e client_ad_accounts de um Business Manager.
+ * Busca ad accounts paginadas de um endpoint da Meta Graph API.
+ * Retorna array vazio (sem throw) quando o endpoint nao existe ou nao tem permissao.
  */
 async function fetchPaginatedAdAccounts(
   baseUrl: string,
@@ -104,7 +114,6 @@ async function fetchPaginatedAdAccounts(
 
     if (data.error) {
       console.warn(`[meta-business-login] ${label} erro:`, data.error.message);
-      // Nao interrompe -- o endpoint pode nao existir para alguns tipos de BM
       break;
     }
 
@@ -117,6 +126,114 @@ async function fetchPaginatedAdAccounts(
 
   console.log(`[meta-business-login] ${label}: ${accounts.length} contas encontradas`);
   return accounts;
+}
+
+/**
+ * Adiciona contas a um Map, evitando duplicatas pelo ID.
+ */
+function mergeAccountsIntoMap(
+  accountMap: Map<string, MetaAdAccount>,
+  accounts: MetaAdAccount[]
+): void {
+  for (const acc of accounts) {
+    if (!accountMap.has(acc.id)) {
+      accountMap.set(acc.id, acc);
+    }
+  }
+}
+
+/**
+ * Busca em cascata: tenta multiplos endpoints ate encontrar contas.
+ * Retorna todas as contas encontradas e qual metodo obteve sucesso.
+ */
+async function findAdAccountsCascade(
+  token: string,
+  systemUserId: string,
+  clientBusinessId: string | undefined
+): Promise<{ accounts: MetaAdAccount[]; source: string; businessManagerId: string }> {
+  const accountMap = new Map<string, MetaAdAccount>();
+  const bmId = clientBusinessId || systemUserId;
+
+  // --- Tentativa 1: endpoints do Business Manager (owned + client) ---
+  console.log(`[meta-business-login] [Cascata 1/4] Buscando via BM ${bmId} owned/client_ad_accounts...`);
+  const [ownedAccounts, clientAccounts] = await Promise.all([
+    fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/owned_ad_accounts`, token, "bm_owned"),
+    fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${bmId}/client_ad_accounts`, token, "bm_client"),
+  ]);
+  mergeAccountsIntoMap(accountMap, ownedAccounts);
+  mergeAccountsIntoMap(accountMap, clientAccounts);
+
+  if (accountMap.size > 0) {
+    console.log(`[meta-business-login] [Cascata 1/4] Sucesso: ${accountMap.size} contas via BM owned/client`);
+    return { accounts: Array.from(accountMap.values()), source: "bm_owned_client", businessManagerId: bmId };
+  }
+
+  // --- Tentativa 2: contas atribuidas ao System User via assigned_ad_accounts ---
+  console.log(`[meta-business-login] [Cascata 2/4] Buscando via /${systemUserId}/assigned_ad_accounts...`);
+  const assignedAccounts = await fetchPaginatedAdAccounts(
+    `${GRAPH_API_BASE}/${systemUserId}/assigned_ad_accounts`,
+    token,
+    "assigned_ad_accounts"
+  );
+  mergeAccountsIntoMap(accountMap, assignedAccounts);
+
+  if (accountMap.size > 0) {
+    console.log(`[meta-business-login] [Cascata 2/4] Sucesso: ${accountMap.size} contas via assigned_ad_accounts`);
+    return { accounts: Array.from(accountMap.values()), source: "assigned_ad_accounts", businessManagerId: bmId };
+  }
+
+  // --- Tentativa 3: /me/adaccounts (retorna contas delegadas no fluxo FLFB) ---
+  console.log(`[meta-business-login] [Cascata 3/4] Buscando via /me/adaccounts...`);
+  const meAccounts = await fetchPaginatedAdAccounts(
+    `${GRAPH_API_BASE}/me/adaccounts`,
+    token,
+    "me_adaccounts"
+  );
+  mergeAccountsIntoMap(accountMap, meAccounts);
+
+  if (accountMap.size > 0) {
+    console.log(`[meta-business-login] [Cascata 3/4] Sucesso: ${accountMap.size} contas via /me/adaccounts`);
+    return { accounts: Array.from(accountMap.values()), source: "me_adaccounts", businessManagerId: bmId };
+  }
+
+  // --- Tentativa 4: descobre outros BMs via /me/businesses e tenta owned/client neles ---
+  console.log(`[meta-business-login] [Cascata 4/4] Buscando BMs alternativos via /me/businesses...`);
+  try {
+    const bizResponse = await fetch(
+      `${GRAPH_API_BASE}/me/businesses?fields=id,name&limit=50&access_token=${token}`
+    );
+    const bizData: MetaBusinessesResponse = await bizResponse.json();
+
+    if (bizData.data && bizData.data.length > 0) {
+      console.log(`[meta-business-login] [Cascata 4/4] ${bizData.data.length} BMs encontrados`);
+
+      for (const biz of bizData.data) {
+        // Pula o BM que ja tentamos na etapa 1
+        if (biz.id === bmId) continue;
+
+        console.log(`[meta-business-login] [Cascata 4/4] Tentando BM alternativo: ${biz.id} (${biz.name})`);
+        const [altOwned, altClient] = await Promise.all([
+          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/owned_ad_accounts`, token, `alt_bm_${biz.id}_owned`),
+          fetchPaginatedAdAccounts(`${GRAPH_API_BASE}/${biz.id}/client_ad_accounts`, token, `alt_bm_${biz.id}_client`),
+        ]);
+        mergeAccountsIntoMap(accountMap, altOwned);
+        mergeAccountsIntoMap(accountMap, altClient);
+
+        if (accountMap.size > 0) {
+          console.log(`[meta-business-login] [Cascata 4/4] Sucesso: ${accountMap.size} contas via BM alternativo ${biz.id}`);
+          return { accounts: Array.from(accountMap.values()), source: `alt_bm_${biz.id}`, businessManagerId: biz.id };
+        }
+      }
+    } else {
+      console.log(`[meta-business-login] [Cascata 4/4] Nenhum BM alternativo encontrado`);
+    }
+  } catch (err) {
+    console.warn(`[meta-business-login] [Cascata 4/4] Erro ao buscar /me/businesses:`, err);
+  }
+
+  // Nenhuma tentativa encontrou contas
+  console.warn(`[meta-business-login] Nenhuma conta encontrada em nenhum dos 4 metodos`);
+  return { accounts: [], source: "none", businessManagerId: bmId };
 }
 
 // =====================================================
@@ -196,16 +313,14 @@ Deno.serve(async (req: Request) => {
 
     // -------------------------------------------------------
     // 3. Trocar o authorization code pelo BISUAT
-    //    O redirect_uri deve ser vazio para FLFB (popup mode)
     // -------------------------------------------------------
     console.log("[meta-business-login] Trocando authorization code pelo BISUAT...");
 
-    const tokenUrl = new URL("https://graph.facebook.com/v21.0/oauth/access_token");
+    const tokenUrl = new URL(`${GRAPH_API_BASE}/oauth/access_token`);
     tokenUrl.searchParams.set("client_id", metaAppId);
     tokenUrl.searchParams.set("client_secret", metaAppSecret);
     tokenUrl.searchParams.set("code", code);
-    // FLFB via popup nao usa redirect_uri -- deve ser omitido ou string vazia
-    // Se o frontend enviou um redirect_uri, inclui
+    // Inclui redirect_uri quando enviado pelo frontend (obrigatorio para fluxo redirect)
     if (body.redirect_uri) {
       tokenUrl.searchParams.set("redirect_uri", body.redirect_uri);
     }
@@ -229,10 +344,9 @@ Deno.serve(async (req: Request) => {
 
     // -------------------------------------------------------
     // 4. Validar o BISUAT e obter dados do System User
-    //    O campo client_business_id e o ID do Business Portfolio
     // -------------------------------------------------------
     const meResponse = await fetch(
-      `https://graph.facebook.com/v21.0/me?fields=id,name,client_business_id&access_token=${bisuat}`
+      `${GRAPH_API_BASE}/me?fields=id,name,client_business_id&access_token=${bisuat}`
     );
     const meData: MetaMeResponse = await meResponse.json();
 
@@ -247,33 +361,18 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log(`[meta-business-login] System User: ${meData.id} (${meData.name})`);
+    const systemUserId = meData.id;
+    console.log(`[meta-business-login] System User: ${systemUserId} (${meData.name})`);
     console.log(`[meta-business-login] Business Portfolio ID: ${meData.client_business_id || "nao disponivel"}`);
 
-    // O business_manager_id pode vir do client_business_id ou precisar ser descoberto
-    const businessManagerId = meData.client_business_id || meData.id;
-
     // -------------------------------------------------------
-    // 5. Buscar ad accounts do Business Portfolio
+    // 5. Buscar ad accounts via estrategia em cascata
     // -------------------------------------------------------
-    const bmBaseUrl = `https://graph.facebook.com/v21.0/${businessManagerId}`;
-
-    const [ownedAccounts, clientAccounts] = await Promise.all([
-      fetchPaginatedAdAccounts(`${bmBaseUrl}/owned_ad_accounts`, bisuat, "owned_ad_accounts"),
-      fetchPaginatedAdAccounts(`${bmBaseUrl}/client_ad_accounts`, bisuat, "client_ad_accounts"),
-    ]);
-
-    // Remove duplicatas pelo ID da conta
-    const accountMap = new Map<string, MetaAdAccount>();
-    for (const acc of [...ownedAccounts, ...clientAccounts]) {
-      if (!accountMap.has(acc.id)) {
-        accountMap.set(acc.id, acc);
-      }
-    }
-    const allAdAccounts = Array.from(accountMap.values());
+    const { accounts: allAdAccounts, source: accountSource, businessManagerId } =
+      await findAdAccountsCascade(bisuat, systemUserId, meData.client_business_id);
 
     console.log(
-      `[meta-business-login] Total: ${ownedAccounts.length} owned + ${clientAccounts.length} client = ${allAdAccounts.length} contas unicas`
+      `[meta-business-login] Resultado final: ${allAdAccounts.length} contas via metodo "${accountSource}", BM: ${businessManagerId}`
     );
 
     // -------------------------------------------------------
@@ -303,7 +402,6 @@ Deno.serve(async (req: Request) => {
         workspaceId = memberRecords[0].workspace_id;
         console.log(`[meta-business-login] Workspace encontrado (membro): ${workspaceId}`);
       } else {
-        // Cria novo workspace automaticamente
         const { data: newWorkspace, error: createError } = await supabaseAdmin
           .from("workspaces")
           .insert({ name: `Workspace de ${user.email}`, owner_id: user.id })
@@ -346,7 +444,7 @@ Deno.serve(async (req: Request) => {
 
     // -------------------------------------------------------
     // 8. Salvar ou atualizar conexao Meta no banco
-    //    BISUAT e permanente -- expiracoa definida em 10 anos
+    //    BISUAT e permanente -- expiracao definida em 10 anos
     // -------------------------------------------------------
     const tokenExpiresAt = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
     const connectionName = meData.name || `Meta FLFB - ${businessManagerId}`;
@@ -419,7 +517,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // -------------------------------------------------------
-    // 9. Remover contas antigas que nao pertencem mais ao BM
+    // 9. Remover contas antigas que nao pertencem mais
     // -------------------------------------------------------
     if (allAdAccounts.length > 0) {
       const validAccountIds = allAdAccounts.map((acc) => acc.id);
@@ -488,11 +586,10 @@ Deno.serve(async (req: Request) => {
         connection_method: "flfb",
         workspace_id: workspaceId,
         business_manager_id: businessManagerId,
-        system_user_id: meData.id,
+        system_user_id: systemUserId,
         system_user_name: meData.name,
         adaccounts_count: allAdAccounts.length,
-        owned_accounts: ownedAccounts.length,
-        client_accounts: clientAccounts.length,
+        adaccounts_source: accountSource,
         saved_to_db: savedCount > 0 || allAdAccounts.length === 0,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
