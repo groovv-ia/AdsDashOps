@@ -74,13 +74,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Busca o workspace do usuário
-    const { data: workspace } = await supabaseAdmin
+    // Busca workspace do usuario (pega o mais antigo se houver multiplos)
+    const { data: workspacesList } = await supabaseAdmin
       .from("workspaces")
       .select("id")
       .eq("owner_id", user.id)
-      .maybeSingle();
+      .order("created_at", { ascending: true })
+      .limit(1);
 
+    const workspace = workspacesList?.[0] || null;
     if (!workspace) {
       return new Response(
         JSON.stringify({ error: "No workspace found" }),

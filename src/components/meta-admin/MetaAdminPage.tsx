@@ -28,6 +28,7 @@ import {
   SyncStatusResponse,
 } from '../../lib/services/MetaSystemUserService';
 import { supabase } from '../../lib/supabase';
+import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { forceSessionRefresh, isRLSError } from '../../utils/sessionRefresh';
 
 interface ConnectionStatus {
@@ -40,6 +41,9 @@ interface ConnectionStatus {
 }
 
 export const MetaAdminPage: React.FC = () => {
+  // Workspace ativo do contexto global
+  const { currentWorkspace } = useWorkspace();
+
   // Estado do formulario
   const [businessManagerId, setBusinessManagerId] = useState('');
   const [systemUserToken, setSystemUserToken] = useState('');
@@ -62,69 +66,28 @@ export const MetaAdminPage: React.FC = () => {
   // Contagem direta do banco
   const [dbAccountCount, setDbAccountCount] = useState<number | null>(null);
 
-  // Carrega status inicial
+  // Carrega status inicial e recarrega quando workspace muda
   useEffect(() => {
     loadSyncStatus();
     loadDirectAccountCount();
-  }, []);
+  }, [currentWorkspace?.id]);
 
   /**
-   * Busca diretamente do banco de dados o número real de contas salvas
-   * Isso nos dá visibilidade sobre o que realmente está armazenado
+   * Busca diretamente do banco de dados o numero real de contas salvas
+   * Usa o workspace ativo do contexto global para evitar problemas com multiplos workspaces
    */
   const loadDirectAccountCount = async () => {
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-      if (userError) {
-        console.error('[MetaAdminPage] Erro ao buscar usuário:', userError);
-        return;
-      }
-
-      if (!user) {
-        console.log('[MetaAdminPage] Usuário não autenticado');
-        return;
-      }
-
-      console.log('[MetaAdminPage] Buscando workspace para usuário:', user.email);
-
-      // Busca workspace do usuário (como owner)
-      const { data: workspaceOwner, error: workspaceOwnerError } = await supabase
-        .from('workspaces')
-        .select('id')
-        .eq('owner_id', user.id)
-        .maybeSingle();
-
-      if (workspaceOwnerError) {
-        console.error('[MetaAdminPage] Erro ao buscar workspace como owner:', workspaceOwnerError);
-      }
-
-      // Se não encontrou como owner, busca como membro
-      let workspaceId: string | null = workspaceOwner?.id || null;
+      // Usa o workspace do contexto global (ja resolvido corretamente)
+      const workspaceId = currentWorkspace?.id;
 
       if (!workspaceId) {
-        console.log('[MetaAdminPage] Workspace não encontrado como owner, buscando como membro...');
-        const { data: workspaceMember, error: workspaceMemberError } = await supabase
-          .from('workspace_members')
-          .select('workspace_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (workspaceMemberError) {
-          console.error('[MetaAdminPage] Erro ao buscar workspace como membro:', workspaceMemberError);
-        }
-
-        workspaceId = workspaceMember?.workspace_id || null;
-      }
-
-      if (!workspaceId) {
-        console.error('[MetaAdminPage] ⚠️ Workspace não encontrado para usuário:', user.email);
-        console.error('[MetaAdminPage] Verifique se o workspace foi criado corretamente');
+        console.log('[MetaAdminPage] Workspace ainda nao carregado no contexto');
         setDbAccountCount(0);
         return;
       }
 
-      console.log('[MetaAdminPage] ✓ Workspace encontrado:', workspaceId);
+      console.log('[MetaAdminPage] Contando contas para workspace:', workspaceId);
 
       // Conta quantas contas existem no banco
       const { count, error } = await supabase
@@ -133,48 +96,34 @@ export const MetaAdminPage: React.FC = () => {
         .eq('workspace_id', workspaceId);
 
       if (error) {
-        console.error('[MetaAdminPage] ❌ Erro ao contar contas no banco:', error);
-        console.error('[MetaAdminPage] Código do erro:', error.code);
-        console.error('[MetaAdminPage] Mensagem:', error.message);
-        console.error('[MetaAdminPage] Detalhes:', error.details);
+        console.error('[MetaAdminPage] Erro ao contar contas no banco:', error);
 
-        // Se o erro for de RLS (permissão negada), tenta renovar sessão automaticamente
+        // Se o erro for de RLS, tenta renovar sessao automaticamente
         if (isRLSError(error)) {
-          console.error('[MetaAdminPage] 🔒 ERRO DE RLS DETECTADO - Tentando renovar sessão...');
-
           const refreshed = await forceSessionRefresh();
 
           if (refreshed) {
-            console.log('[MetaAdminPage] ✓ Sessão renovada, tentando contar novamente...');
-            // Aguarda 500ms para garantir que o novo token foi propagado
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            // Tenta contar novamente com o novo token
             const { count: retryCount, error: retryError } = await supabase
               .from('meta_ad_accounts')
               .select('*', { count: 'exact', head: true })
               .eq('workspace_id', workspaceId);
 
-            if (retryError) {
-              console.error('[MetaAdminPage] ❌ Ainda com erro após refresh:', retryError);
-              setDbAccountCount(null);
-            } else {
-              console.log(`[MetaAdminPage] ✓✓ SUCESSO após refresh! Contas: ${retryCount}`);
+            if (!retryError) {
               setDbAccountCount(retryCount);
-              return; // Sai da função com sucesso
+              return;
             }
-          } else {
-            console.error('[MetaAdminPage] ❌ Falha ao renovar sessão');
           }
         }
 
         setDbAccountCount(null);
       } else {
-        console.log(`[MetaAdminPage] ✓ Contas no banco de dados: ${count}`);
+        console.log(`[MetaAdminPage] Contas no banco de dados: ${count}`);
         setDbAccountCount(count);
       }
     } catch (err) {
-      console.error('[MetaAdminPage] ❌ Erro ao buscar contagem direta:', err);
+      console.error('[MetaAdminPage] Erro ao buscar contagem direta:', err);
     }
   };
 

@@ -135,24 +135,27 @@ Deno.serve(async (req: Request) => {
     let workspaceId: string | null = null;
     let workspaceName: string = "Workspace";
 
-    // Tenta buscar como owner
-    const { data: ownedWorkspace } = await supabaseAdmin
+    // Tenta buscar como owner (pega o mais antigo se houver multiplos)
+    const { data: ownedWorkspaces } = await supabaseAdmin
       .from("workspaces")
       .select("id, name")
       .eq("owner_id", user.id)
-      .maybeSingle();
+      .order("created_at", { ascending: true })
+      .limit(1);
 
-    if (ownedWorkspace) {
-      workspaceId = ownedWorkspace.id;
-      workspaceName = ownedWorkspace.name || "Workspace";
+    if (ownedWorkspaces && ownedWorkspaces.length > 0) {
+      workspaceId = ownedWorkspaces[0].id;
+      workspaceName = ownedWorkspaces[0].name || "Workspace";
     } else {
-      // Busca como membro
-      const { data: memberRecord } = await supabaseAdmin
+      // Busca como membro (pega o mais antigo)
+      const { data: memberRecords } = await supabaseAdmin
         .from("workspace_members")
         .select("workspace_id")
         .eq("user_id", user.id)
-        .maybeSingle();
+        .order("created_at", { ascending: true })
+        .limit(1);
 
+      const memberRecord = memberRecords?.[0] || null;
       if (memberRecord) {
         workspaceId = memberRecord.workspace_id;
 

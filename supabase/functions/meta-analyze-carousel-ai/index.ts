@@ -248,12 +248,14 @@ Deno.serve(async (req: Request) => {
     
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
     
-    const { data: workspace } = await supabaseAdmin
+    const { data: workspacesList } = await supabaseAdmin
       .from("workspaces")
       .select("id")
       .eq("owner_id", user.id)
-      .maybeSingle();
-    
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    const workspace = workspacesList?.[0] || null;
     if (!workspace) {
       return new Response(
         JSON.stringify({ error: "No workspace found" }),

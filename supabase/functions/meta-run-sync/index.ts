@@ -147,7 +147,9 @@ Deno.serve(async (req: Request) => {
     const body: SyncPayload = await req.json();
     const { mode = "intraday", client_id, meta_ad_account_id, days_back = 7, levels = ["campaign", "adset", "ad"], sync_creatives = false } = body;
 
-    const { data: workspace } = await supabaseAdmin.from("workspaces").select("id").eq("owner_id", user.id).maybeSingle();
+    // Busca workspace do usuario (pega o mais antigo se houver multiplos)
+    const { data: workspaces } = await supabaseAdmin.from("workspaces").select("id").eq("owner_id", user.id).order("created_at", { ascending: true }).limit(1);
+    const workspace = workspaces?.[0] || null;
     if (!workspace) {
       return new Response(JSON.stringify({ error: "No workspace found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }

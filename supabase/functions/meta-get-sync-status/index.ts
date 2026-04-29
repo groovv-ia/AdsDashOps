@@ -60,29 +60,32 @@ Deno.serve(async (req: Request) => {
     const clientId = url.searchParams.get("client_id");
 
     // Busca workspace do usuario (primeiro como owner, depois como membro)
+    // Usa .order().limit(1) para funcionar com multiplos workspaces
     console.log(`[meta-get-sync-status] Buscando workspace para user_id: ${user.id}`);
 
     let workspace = null;
 
-    // Tenta buscar como owner direto
-    const { data: ownedWorkspace } = await supabaseAdmin
+    // Tenta buscar como owner direto (pega o mais antigo se houver multiplos)
+    const { data: ownedWorkspaces } = await supabaseAdmin
       .from("workspaces")
       .select("id, name")
       .eq("owner_id", user.id)
-      .maybeSingle();
+      .order("created_at", { ascending: true })
+      .limit(1);
 
-    if (ownedWorkspace) {
-      workspace = ownedWorkspace;
+    if (ownedWorkspaces && ownedWorkspaces.length > 0) {
+      workspace = ownedWorkspaces[0];
     } else {
-      // Se nao e owner, busca como membro
-      const { data: memberWorkspace } = await supabaseAdmin
+      // Se nao e owner, busca como membro (pega o mais antigo)
+      const { data: memberRecords } = await supabaseAdmin
         .from("workspace_members")
         .select("workspace_id, workspaces!inner(id, name)")
         .eq("user_id", user.id)
-        .maybeSingle();
+        .order("created_at", { ascending: true })
+        .limit(1);
 
-      if (memberWorkspace && memberWorkspace.workspaces) {
-        workspace = memberWorkspace.workspaces;
+      if (memberRecords && memberRecords.length > 0 && memberRecords[0].workspaces) {
+        workspace = memberRecords[0].workspaces;
       }
     }
 
