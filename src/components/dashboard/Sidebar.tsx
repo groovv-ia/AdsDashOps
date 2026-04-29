@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3, TrendingUp } from 'lucide-react';
+import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3 } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 
 interface SidebarProps {
@@ -17,6 +17,15 @@ const MetaIcon: React.FC<{ className?: string }> = ({ className }) => (
 // Componente para renderizar o icone do Google Ads
 const GoogleIcon: React.FC<{ className?: string }> = ({ className }) => (
   <img src="/google-ads-icon.svg" alt="Google Ads" className={className} />
+);
+
+// Icone do Instagram em SVG inline, seguindo o mesmo padrao dos demais icones customizados
+const InstagramIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
+    <circle cx="17.5" cy="6.5" r="1" fill="currentColor" />
+  </svg>
 );
 
 // Tipo para os itens do menu - suporta icones Lucide ou imagens customizadas
@@ -45,7 +54,7 @@ const menuSections: MenuSection[] = [
     items: [
       { icon: Link, label: 'Conexao Meta', page: 'meta-admin' },
       { icon: RefreshCw, label: 'Meta Ads Sync', page: 'meta-sync' },
-      { icon: TrendingUp, label: 'Redes Sociais', page: 'social-growth' },
+      { icon: InstagramIcon, label: 'Redes Sociais', page: 'social-growth' },
     ],
   },
   {
