@@ -116,6 +116,11 @@ interface KPIs {
   roas: number;
 }
 
+// Presets de periodo exclusivos para sincronizacao (sem hoje/ontem, com opcoes longas)
+const SYNC_PERIOD_PRESETS = DEFAULT_PERIOD_PRESETS.filter((p) =>
+  ['last_7', 'last_14', 'last_30', 'last_90', 'last_180', 'last_365'].includes(p.id)
+);
+
 // Niveis de entidade disponiveis com icones
 const LEVELS = [
   { label: 'Campanhas', value: 'campaign', icon: Target },
@@ -473,7 +478,7 @@ export const MetaAdsSyncPage: React.FC = () => {
       const daysBack = calculateDaysBack(selectedPeriod);
 
       const result = await runMetaSync({
-        mode: selectedPeriod === 'today' ? 'intraday' : 'backfill',
+        mode: 'backfill',
         clientId: selectedClient?.id,
         metaAdAccountId: account.meta_id,
         daysBack,
@@ -559,7 +564,7 @@ export const MetaAdsSyncPage: React.FC = () => {
       const daysBack = calculateDaysBack(selectedPeriod);
 
       const result = await runMetaSync({
-        mode: selectedPeriod === 'today' ? 'intraday' : 'backfill',
+        mode: 'backfill',
         clientId: selectedClient?.id,
         metaAdAccountId: account.meta_id,
         daysBack,
@@ -1385,18 +1390,24 @@ export const MetaAdsSyncPage: React.FC = () => {
           </Card>
         )}
 
-        {/* Seletor de Periodo */}
+        {/* Seletor de Periodo de Sincronizacao */}
         <Card className="bg-gradient-to-r from-gray-50 to-white">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h3 className="font-medium text-gray-900">Periodo de Analise</h3>
-              <p className="text-sm text-gray-500">
-                Selecione o periodo para extrair metricas
-              </p>
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 p-1.5 rounded-lg bg-blue-50">
+                <RefreshCw className="w-4 h-4 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="font-medium text-gray-900">Periodo de Sincronizacao</h3>
+                <p className="text-sm text-gray-500">
+                  Define quantos dias de dados serao baixados da API do Meta
+                </p>
+              </div>
             </div>
             <PeriodButtons
               selectedPeriod={selectedPeriod}
               onPeriodChange={handlePeriodChange}
+              presets={SYNC_PERIOD_PRESETS}
             />
           </div>
         </Card>
