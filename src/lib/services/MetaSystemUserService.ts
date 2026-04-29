@@ -135,6 +135,7 @@ export interface SyncStatusResponse {
     business_manager_id: string;
     granted_scopes: string[];
     last_validated_at: string;
+    saved_token?: string | null;
   } | null;
   health_status: 'healthy' | 'stale' | 'error' | 'disconnected' | 'pending_first_sync';
   ad_accounts: Array<{

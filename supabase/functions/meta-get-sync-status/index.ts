@@ -96,12 +96,25 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 1. Status da conexao Meta
+    // 1. Status da conexao Meta (inclui token encriptado para exibicao mascarada no frontend)
     const { data: metaConnection } = await supabaseAdmin
       .from("meta_connections")
-      .select("id, status, granted_scopes, last_validated_at, business_manager_id")
+      .select("id, status, granted_scopes, last_validated_at, business_manager_id, access_token_encrypted")
       .eq("workspace_id", workspace.id)
       .maybeSingle();
+
+    // Descriptografa o token salvo para retornar ao frontend (usuario autenticado + dono do workspace)
+    let savedToken: string | null = null;
+    if (metaConnection?.access_token_encrypted) {
+      try {
+        const { data: decrypted } = await supabaseAdmin.rpc("decrypt_token", {
+          p_encrypted_token: metaConnection.access_token_encrypted,
+        });
+        savedToken = decrypted || metaConnection.access_token_encrypted;
+      } catch {
+        savedToken = metaConnection.access_token_encrypted;
+      }
+    }
 
     // 2. Busca ad accounts
     const { data: adAccounts, error: adAccountsError } = await supabaseAdmin
@@ -379,6 +392,7 @@ Deno.serve(async (req: Request) => {
         business_manager_id: metaConnection.business_manager_id,
         granted_scopes: metaConnection.granted_scopes,
         last_validated_at: metaConnection.last_validated_at,
+        saved_token: savedToken,
       } : null,
       health_status: healthStatus,
       ad_accounts: adAccounts?.map((acc) => {

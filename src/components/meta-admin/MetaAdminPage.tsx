@@ -48,6 +48,10 @@ export const MetaAdminPage: React.FC = () => {
   const [businessManagerId, setBusinessManagerId] = useState('');
   const [systemUserToken, setSystemUserToken] = useState('');
   const [showToken, setShowToken] = useState(false);
+  // Token salvo no banco (completo, para enviar na validacao)
+  const [savedToken, setSavedToken] = useState<string | null>(null);
+  // Indica se o usuario esta usando o token salvo ou digitou um novo
+  const [usingStoredToken, setUsingStoredToken] = useState(false);
 
   // Estado da conexao
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null);
@@ -65,6 +69,12 @@ export const MetaAdminPage: React.FC = () => {
 
   // Contagem direta do banco
   const [dbAccountCount, setDbAccountCount] = useState<number | null>(null);
+
+  // Mascara o token para exibicao segura (ex: "EAABx...7f2k")
+  const maskToken = (token: string): string => {
+    if (token.length <= 10) return '****';
+    return `${token.slice(0, 5)}...${token.slice(-4)}`;
+  };
 
   // Carrega status inicial e recarrega quando workspace muda
   useEffect(() => {
@@ -150,6 +160,13 @@ export const MetaAdminPage: React.FC = () => {
             adAccountsCount: status.totals.ad_accounts,
           });
           setBusinessManagerId(status.connection.business_manager_id || '');
+
+          // Pre-preenche o token salvo para que o usuario nao precise gera-lo novamente
+          if (status.connection.saved_token) {
+            setSavedToken(status.connection.saved_token);
+            setSystemUserToken(status.connection.saved_token);
+            setUsingStoredToken(true);
+          }
         }
 
         if (status.ad_accounts.length > 0) {
@@ -204,7 +221,9 @@ export const MetaAdminPage: React.FC = () => {
         setSuccess(
           `Conexao validada com sucesso! ${result.adaccounts_count} contas de anuncios encontradas.`
         );
-        setSystemUserToken('');
+        // Apos sucesso, mantem o token salvo para reutilizacao futura
+        setSavedToken(systemUserToken);
+        setUsingStoredToken(true);
 
         // Aguarda 2 segundos para garantir que as contas foram salvas no banco
         console.log('[MetaAdminPage] Aguardando 2s para sincronização do banco...');
@@ -516,14 +535,33 @@ export const MetaAdminPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Token do System User
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">
+                Token do System User
+              </label>
+              {usingStoredToken && savedToken && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+                  <CheckCircle className="w-3 h-3" />
+                  Token salvo
+                </span>
+              )}
+            </div>
             <div className="relative">
               <input
                 type={showToken ? 'text' : 'password'}
-                value={systemUserToken}
-                onChange={(e) => setSystemUserToken(e.target.value)}
+                value={usingStoredToken && !showToken ? maskToken(savedToken || '') : systemUserToken}
+                onChange={(e) => {
+                  // Quando o usuario edita, desativa o token salvo e usa o novo valor
+                  setUsingStoredToken(false);
+                  setSystemUserToken(e.target.value);
+                }}
+                onFocus={() => {
+                  // Ao focar, se estava usando token salvo, limpa para permitir colar novo
+                  if (usingStoredToken) {
+                    setUsingStoredToken(false);
+                    setSystemUserToken('');
+                  }
+                }}
                 placeholder="Cole o token aqui..."
                 className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
@@ -535,9 +573,15 @@ export const MetaAdminPage: React.FC = () => {
                 {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Crie em: Business Settings &rarr; System Users &rarr; Generate Token
-            </p>
+            {usingStoredToken && savedToken ? (
+              <p className="text-xs text-green-600 mt-1">
+                Usando token salvo. Clique no campo para substituir por um novo.
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500 mt-1">
+                Crie em: Business Settings &rarr; System Users &rarr; Generate Token
+              </p>
+            )}
           </div>
 
           {error && (
@@ -556,7 +600,7 @@ export const MetaAdminPage: React.FC = () => {
 
           <Button
             onClick={handleValidateConnection}
-            disabled={validating || !businessManagerId.trim() || !systemUserToken.trim()}
+            disabled={validating || !businessManagerId.trim() || (!systemUserToken.trim() && !usingStoredToken)}
             className="w-full"
           >
             {validating ? (
