@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3 } from 'lucide-react';
+import { Settings, Headphones, Building2, ChevronDown, Link, RefreshCw, BarChart3, TrendingUp } from 'lucide-react';
 import { WorkspaceSelector } from '../workspaces/WorkspaceSelector';
 
 interface SidebarProps {
@@ -37,6 +37,15 @@ interface MenuSection {
 
 // Itens do menu organizados por secao
 const menuSections: MenuSection[] = [
+  {
+    id: 'social',
+    title: 'Redes Sociais',
+    icon: TrendingUp,
+    accentColor: 'cyan',
+    items: [
+      { icon: BarChart3, label: 'Crescimento & Presenca', page: 'social-growth' },
+    ],
+  },
   {
     id: 'meta',
     title: 'Meta Ads',
@@ -78,6 +87,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Estado para controlar quais secoes estao expandidas
   // Google Ads inicia recolhida para economizar espaco vertical
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    social: true,
     meta: true,
     google: false,
   });
@@ -208,6 +218,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 ${isItemActive
                                   ? section.id === 'meta'
                                     ? 'bg-blue-50 text-blue-700 font-medium'
+                                    : section.id === 'social'
+                                    ? 'bg-cyan-50 text-cyan-700 font-medium'
                                     : 'bg-[#EEEFF9] text-[#4C53F7] font-medium'
                                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                                 }
@@ -216,7 +228,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               <item.icon className={`
                                 w-[18px] h-[18px] flex-shrink-0
                                 ${isItemActive
-                                  ? section.id === 'meta' ? 'text-blue-500' : 'text-[#4C53F7]'
+                                  ? section.id === 'meta'
+                                    ? 'text-blue-500'
+                                    : section.id === 'social'
+                                    ? 'text-cyan-600'
+                                    : 'text-[#4C53F7]'
                                   : 'text-slate-400'
                                 }
                               `} />

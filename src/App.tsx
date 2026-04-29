@@ -24,6 +24,7 @@ import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtrac
 import { WorkspacesPage } from './components/workspaces/WorkspacesPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
 import { GoogleAdminPage, GoogleAdsSyncPage, GoogleCampaignsPage, GoogleCampaignDetailPage } from './components/google-admin';
+import { SocialGrowthPage } from './components/social-growth/SocialGrowthPage';
 import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
@@ -405,6 +406,8 @@ function AppContent() {
         return <SupportPage />;
       case 'workspaces':
         return <WorkspacesPage />;
+      case 'social-growth':
+        return <SocialGrowthPage />;
       default:
         return <MetaAdminPage />;
     }
