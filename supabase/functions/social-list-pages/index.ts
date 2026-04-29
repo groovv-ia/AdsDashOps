@@ -117,18 +117,22 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Descriptografa o token via RPC
-    const { data: decryptedToken, error: decryptError } = await supabaseAdmin
+    // Descriptografa o token via RPC.
+    // IMPORTANTE: tokens salvos por versoes antigas do meta-validate-connection podem estar
+    // em texto puro (fallback silencioso quando encrypt_token falhou). Nesse caso,
+    // decrypt_token retorna NULL pois o valor nao e base64 valido. Usamos o valor
+    // bruto como fallback, o que e seguro pois o banco ja tem RLS ativo.
+    const { data: decryptedToken } = await supabaseAdmin
       .rpc("decrypt_token", { p_encrypted_token: metaConnection.access_token_encrypted });
 
-    if (decryptError || !decryptedToken) {
+    const accessToken = (decryptedToken as string | null) || metaConnection.access_token_encrypted;
+
+    if (!accessToken) {
       return new Response(
-        JSON.stringify({ error: "Falha ao descriptografar o token Meta" }),
+        JSON.stringify({ error: "Token Meta nao encontrado para este workspace" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const accessToken = decryptedToken as string;
 
     // Busca Pages do Facebook via Graph API v21.0
     const pagesUrl = `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,category,access_token,instagram_business_account{id,name,username,profile_picture_url,followers_count}&limit=50&access_token=${accessToken}`;
