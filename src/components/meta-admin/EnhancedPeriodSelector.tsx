@@ -164,7 +164,7 @@ export const EnhancedPeriodSelector: React.FC<EnhancedPeriodSelectorProps> = ({
 
           {/* Dropdown de categorias */}
           {isDropdownOpen && (
-            <div className="absolute z-50 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200">
+            <div className="absolute z-50 mt-2 right-0 w-80 bg-white rounded-xl shadow-xl border border-gray-200">
               <div className="p-2 max-h-[420px] overflow-y-auto">
                 {periodCategories.map((category, catIdx) => {
                   const Icon = category.icon;
@@ -244,7 +244,7 @@ export const EnhancedPeriodSelector: React.FC<EnhancedPeriodSelectorProps> = ({
 
           {/* Calendário duplo flutuante */}
           {isPickerOpen && (
-            <div className="absolute z-50 mt-2 left-0">
+            <div className="absolute z-50 mt-2 right-0">
               <CustomDateRangePicker
                 initialRange={
                   effectiveDateRange
