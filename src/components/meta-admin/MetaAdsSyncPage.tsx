@@ -572,10 +572,14 @@ export const MetaAdsSyncPage: React.FC = () => {
       const duration = Date.now() - startTime;
 
       if (result.errors.length > 0) {
+        // Erros de permissao sao classificados como 'permission_denied' para tratamento especifico
+        const isPermissionError = result.errors.some(e =>
+          e.includes('Sem permissao') || e.includes('#200') || e.includes('ads_management or ads_read')
+        );
         return {
           accountId: account.id,
           accountName: account.name,
-          status: 'error',
+          status: isPermissionError ? 'permission_denied' : 'error',
           error: result.errors.join('; '),
           duration,
           insightsSynced: result.insights_synced,
@@ -707,7 +711,7 @@ export const MetaAdsSyncPage: React.FC = () => {
           totalSuccess++;
           totalInsightsCount += result.insightsSynced || 0;
           totalCreativesCount += result.creativesSynced || 0;
-        } else if (result.status === 'error') {
+        } else if (result.status === 'error' || result.status === 'permission_denied') {
           totalFailed++;
         }
       }

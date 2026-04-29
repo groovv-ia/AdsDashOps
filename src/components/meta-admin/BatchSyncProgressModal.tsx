@@ -28,7 +28,7 @@ import {
 import { Button } from '../ui/Button';
 
 // Status possiveis para cada conta na sincronizacao em lote
-export type BatchSyncStatus = 'pending' | 'syncing' | 'success' | 'error' | 'skipped';
+export type BatchSyncStatus = 'pending' | 'syncing' | 'success' | 'error' | 'skipped' | 'permission_denied';
 
 // Resultado de sincronizacao de uma conta
 export interface BatchSyncResult {
@@ -78,6 +78,8 @@ const StatusIcon: React.FC<{ status: BatchSyncStatus }> = ({ status }) => {
       return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
     case 'error':
       return <XCircle className="w-5 h-5 text-red-500" />;
+    case 'permission_denied':
+      return <AlertTriangle className="w-5 h-5 text-amber-500" />;
     case 'skipped':
       return <SkipForward className="w-5 h-5 text-gray-400" />;
     default:
@@ -126,9 +128,9 @@ export const BatchSyncProgressModal: React.FC<BatchSyncProgressModalProps> = ({
     return Date.now() - stats.startTime;
   }, [stats.startTime, stats.completed]);
 
-  // Filtra resultados com erro
+  // Filtra resultados com erro (inclui erros de permissao)
   const failedResults = useMemo(() => {
-    return results.filter(r => r.status === 'error');
+    return results.filter(r => r.status === 'error' || r.status === 'permission_denied');
   }, [results]);
 
   // Calcula porcentagem de progresso
@@ -329,6 +331,7 @@ export const BatchSyncProgressModal: React.FC<BatchSyncProgressModalProps> = ({
                       result.status === 'syncing' ? 'text-blue-900' :
                       result.status === 'success' ? 'text-emerald-900' :
                       result.status === 'error' ? 'text-red-900' :
+                      result.status === 'permission_denied' ? 'text-amber-900' :
                       'text-gray-900'
                     }`}>
                       {result.accountName}
@@ -336,6 +339,11 @@ export const BatchSyncProgressModal: React.FC<BatchSyncProgressModalProps> = ({
                     {result.status === 'error' && result.error && (
                       <p className="text-xs text-red-600 mt-0.5 max-w-md truncate">
                         {result.error}
+                      </p>
+                    )}
+                    {result.status === 'permission_denied' && (
+                      <p className="text-xs text-amber-700 mt-0.5 max-w-md">
+                        System User sem permissao nesta conta. Adicione no Meta Business Manager.
                       </p>
                     )}
                     {result.status === 'success' && (
@@ -401,11 +409,25 @@ export const BatchSyncProgressModal: React.FC<BatchSyncProgressModalProps> = ({
             {showErrors && (
               <ul className="mt-3 space-y-2">
                 {failedResults.map((r) => (
-                  <li key={r.accountId} className="flex items-start gap-2 p-2 bg-white/60 rounded-lg">
-                    <XCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
+                  <li key={r.accountId} className={`flex items-start gap-2 p-2 rounded-lg ${
+                    r.status === 'permission_denied' ? 'bg-amber-50/80' : 'bg-white/60'
+                  }`}>
+                    {r.status === 'permission_denied' ? (
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
+                    )}
                     <div className="flex-1 min-w-0">
-                      <span className="text-xs font-medium text-red-800 block truncate">{r.accountName}</span>
-                      <span className="text-xs text-red-600 block truncate">{r.error || 'Erro desconhecido'}</span>
+                      <span className={`text-xs font-medium block truncate ${
+                        r.status === 'permission_denied' ? 'text-amber-800' : 'text-red-800'
+                      }`}>{r.accountName}</span>
+                      <span className={`text-xs block ${
+                        r.status === 'permission_denied' ? 'text-amber-700' : 'text-red-600 truncate'
+                      }`}>
+                        {r.status === 'permission_denied'
+                          ? 'Adicione o System User com permissao ads_read no Meta Business Manager'
+                          : (r.error || 'Erro desconhecido')}
+                      </span>
                     </div>
                   </li>
                 ))}

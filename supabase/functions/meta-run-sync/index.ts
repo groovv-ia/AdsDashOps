@@ -103,15 +103,28 @@ async function fetchInsightsWithRetry(url: string, maxRetries: number = 3): Prom
       const response = await fetch(url);
       const data = await response.json();
       if (data.error) {
+        // Erro de permissao: nao faz retry pois nao vai resolver
+        if (data.error.code === 200) {
+          throw new Error(`(#200) ${data.error.message}`);
+        }
+        // Erro de token expirado: nao faz retry
+        if (data.error.code === 190) {
+          throw new Error(`(#190) ${data.error.message}`);
+        }
+        // Rate limiting: faz retry com backoff exponencial
         if (data.error.code === 17 || data.error.code === 4) {
           await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 1000));
           continue;
         }
-        throw new Error(data.error.message);
+        throw new Error(`(#${data.error.code}) ${data.error.message}`);
       }
       return data;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("Unknown error");
+      // Se for erro de permissao ou token, nao retenta
+      if (lastError.message.startsWith('(#200)') || lastError.message.startsWith('(#190)')) {
+        throw lastError;
+      }
       await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 1000));
     }
   }
@@ -310,7 +323,13 @@ Deno.serve(async (req: Request) => {
               totalRows++;
             }
           } catch (levelError) {
-            syncResult.errors.push(`Level ${level} error: ${levelError instanceof Error ? levelError.message : "Unknown"}`);
+            const errorMsg = levelError instanceof Error ? levelError.message : "Unknown";
+            // Erro de permissao: interrompe todos os levels desta conta
+            if (errorMsg.startsWith('(#200)')) {
+              syncResult.errors.push(`Sem permissao: o System User nao tem acesso ads_read nesta conta. Adicione o System User com permissao no Meta Business Manager.`);
+              break;
+            }
+            syncResult.errors.push(`Level ${level} error: ${errorMsg}`);
           }
         }
 
