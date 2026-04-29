@@ -403,6 +403,8 @@ Deno.serve(async (req: Request) => {
           last_sync_at: syncState?.last_success_at || lastJobMetrics?.ended_at || null,
           last_sync_duration: lastJobMetrics?.duration_seconds || null,
           last_sync_records_count: lastJobMetrics?.total_records_synced || null,
+          // Ultimo erro de sincronizacao (null se a ultima sync foi bem sucedida)
+          last_error: syncState?.last_error || null,
           // Contagem de entidades (campanhas, adsets, ads) com total e ativos
           entity_counts: entityCountsForAccount,
           // Data mais recente dos dados sincronizados

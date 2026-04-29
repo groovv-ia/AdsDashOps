@@ -338,8 +338,23 @@ Deno.serve(async (req: Request) => {
           await supabaseAdmin.from("meta_sync_jobs").update({ status: syncResult.errors.length > 0 ? "failed" : "completed", fetched_rows: totalRows, total_records_synced: totalRows, duration_seconds: durationSeconds, error_message: syncResult.errors.join("; ") || null, ended_at: new Date().toISOString() }).eq("id", syncJob.id);
         }
 
-        await supabaseAdmin.from("meta_sync_state").upsert({ workspace_id: workspace.id, client_id: client_id || null, meta_ad_account_id: adAccount.meta_ad_account_id, last_daily_date_synced: mode === "daily" ? dateTo : undefined, last_intraday_synced_at: mode === "intraday" ? new Date().toISOString() : undefined, last_success_at: new Date().toISOString(), last_error: syncResult.errors.length > 0 ? syncResult.errors.join("; ") : null, updated_at: new Date().toISOString() }, { onConflict: "workspace_id,meta_ad_account_id" });
-        syncResult.accounts_synced++;
+        // Atualiza sync_state: last_success_at so e gravado quando NAO ha erros
+        const hasErrors = syncResult.errors.length > 0;
+        const syncStateUpdate: Record<string, unknown> = {
+          workspace_id: workspace.id,
+          client_id: client_id || null,
+          meta_ad_account_id: adAccount.meta_ad_account_id,
+          last_error: hasErrors ? syncResult.errors.join("; ") : null,
+          updated_at: new Date().toISOString(),
+        };
+        if (!hasErrors) {
+          syncStateUpdate.last_success_at = new Date().toISOString();
+          if (mode === "daily") syncStateUpdate.last_daily_date_synced = dateTo;
+          if (mode === "intraday") syncStateUpdate.last_intraday_synced_at = new Date().toISOString();
+        }
+        await supabaseAdmin.from("meta_sync_state").upsert(syncStateUpdate, { onConflict: "workspace_id,meta_ad_account_id" });
+
+        if (!hasErrors) syncResult.accounts_synced++;
         syncResult.insights_synced += totalRows;
       } catch (accountError) {
         syncResult.errors.push(`Account ${adAccount.meta_ad_account_id} error: ${accountError instanceof Error ? accountError.message : "Unknown"}`);

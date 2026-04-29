@@ -148,6 +148,7 @@ export interface SyncStatusResponse {
     last_sync_at: string | null;
     last_sync_duration: number | null;
     last_sync_records_count: number | null;
+    last_error: string | null;
     // Novos campos para indicadores de entidades
     entity_counts: EntityCounts | null;
     latest_data_date: string | null;

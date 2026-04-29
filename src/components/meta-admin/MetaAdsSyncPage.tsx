@@ -990,25 +990,27 @@ export const MetaAdsSyncPage: React.FC = () => {
     }
 
     return syncStatus.ad_accounts.map((acc) => {
-      // Determina status de sincronizacao com thresholds melhorados:
-      // - just_synced: sincronizado nos ultimos 5 minutos
-      // - synced: sincronizado nas ultimas 24 horas
-      // - stale: mais de 24 horas desde a ultima sincronizacao
-      // - never: nunca sincronizado
+      // Determina status de sincronizacao:
+      // - error: ultima tentativa de sync falhou
+      // - just_synced: sincronizado com sucesso nos ultimos 5 minutos
+      // - synced: sincronizado com sucesso nas ultimas 24 horas
+      // - stale: mais de 24 horas desde a ultima sincronizacao bem-sucedida
+      // - never: nunca sincronizado com sucesso
       let syncStatusValue: SyncStatus = 'never';
-      if (acc.last_sync_at) {
+
+      // Se a conta tem erro na ultima tentativa, mostra como erro
+      if (acc.last_error) {
+        syncStatusValue = 'error';
+      } else if (acc.last_sync_at) {
         const lastSync = new Date(acc.last_sync_at);
         const minutesSince = (Date.now() - lastSync.getTime()) / (1000 * 60);
         const hoursSince = minutesSince / 60;
 
         if (minutesSince < 5) {
-          // Sincronizado nos ultimos 5 minutos - mostra "Atualizado agora"
           syncStatusValue = 'just_synced';
         } else if (hoursSince < 24) {
-          // Sincronizado nas ultimas 24 horas - mostra "Sincronizado"
           syncStatusValue = 'synced';
         } else {
-          // Mais de 24 horas - mostra "Desatualizado"
           syncStatusValue = 'stale';
         }
       }
