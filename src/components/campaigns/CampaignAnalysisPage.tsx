@@ -49,6 +49,8 @@ import {
 } from '../../lib/services/MetaInsightsDataService';
 import { useClient } from '../../contexts/ClientContext';
 import { logger } from '../../lib/utils/logger';
+import { useWorkspacePeriod } from '../../hooks/useWorkspacePeriod';
+import { EnhancedPeriodSelector } from '../meta-admin/EnhancedPeriodSelector';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
 import { AdCreativeThumbnail, AdDetailModal } from '../ad-analysis';
 import type { MetaAdCreative } from '../../types/adAnalysis';
@@ -83,8 +85,10 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
 
   // Estados da UI
   const [selectedMetric, setSelectedMetric] = useState<string>('spend');
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('last_30');
   const [activeTab, setActiveTab] = useState<'overview' | 'adsets' | 'ads'>('overview');
+
+  // Período de análise persistido por workspace
+  const { selectedPeriod, dateRange: periodDateRange, setPeriod } = useWorkspacePeriod();
 
   // Estados do modal de detalhes do anuncio
   const [selectedAd, setSelectedAd] = useState<MetaCampaignData | null>(null);
@@ -111,22 +115,8 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
     updateCreative,
   } = useAdCreativesBatch(activeTab === 'ads' ? adsForCreatives : []);
 
-  /**
-   * Calcula datas baseado no preset selecionado
-   */
-  const getDateRange = useCallback(() => {
-    const today = new Date();
-    const preset = DATE_PRESETS.find((p) => p.value === selectedPeriod);
-    const days = preset?.days || 30;
-
-    const dateFrom = new Date();
-    dateFrom.setDate(dateFrom.getDate() - days);
-
-    return {
-      dateFrom: dateFrom.toISOString().split('T')[0],
-      dateTo: today.toISOString().split('T')[0],
-    };
-  }, [selectedPeriod]);
+  /** Retorna o dateRange do hook de período */
+  const getDateRange = useCallback(() => periodDateRange, [periodDateRange]);
 
   /**
    * Carrega todos os dados da campanha
@@ -327,18 +317,12 @@ export const CampaignAnalysisPage: React.FC<CampaignAnalysisPageProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
-          <select
-            value={selectedPeriod}
-            onChange={(e) => setSelectedPeriod(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            {DATE_PRESETS.map((preset) => (
-              <option key={preset.value} value={preset.value}>
-                {preset.label}
-              </option>
-            ))}
-          </select>
+        <div className="flex items-center gap-3 flex-wrap">
+          <EnhancedPeriodSelector
+            selectedPeriod={selectedPeriod}
+            onPeriodChange={(id, range) => setPeriod(id, range)}
+            dateRange={periodDateRange}
+          />
           <Button variant="secondary" size="sm" onClick={loadCampaignData}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Atualizar

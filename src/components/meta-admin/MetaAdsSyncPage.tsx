@@ -57,6 +57,7 @@ import {
   TokenStatusInfo,
 } from '../../lib/services/TokenRefreshService';
 import { useClient } from '../../contexts/ClientContext';
+import { useWorkspacePeriod } from '../../hooks/useWorkspacePeriod';
 import { AdDetailModal, AdCreativeThumbnail } from '../ad-analysis';
 import type { AdDetailModalState, MetaAdCreative } from '../../types/adAnalysis';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
@@ -184,11 +185,8 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Filtros
   const [selectedLevel, setSelectedLevel] = useState<string>('campaign');
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('last_7');
-  const [dateRange, setDateRange] = useState<{ dateFrom: string; dateTo: string }>(() => {
-    const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === 'last_7');
-    return preset ? preset.getDateRange() : { dateFrom: '', dateTo: '' };
-  });
+  // Período de análise persistido por workspace
+  const { selectedPeriod, dateRange, setPeriod } = useWorkspacePeriod();
 
   // Filtros de busca e ordenacao de contas
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -930,10 +928,9 @@ export const MetaAdsSyncPage: React.FC = () => {
     setSelectedLevel('adset');
   };
 
-  // Handler de mudanca de periodo
+  // Handler de mudanca de periodo — persiste no Supabase via hook
   const handlePeriodChange = (periodId: string, newDateRange: { dateFrom: string; dateTo: string }) => {
-    setSelectedPeriod(periodId);
-    setDateRange(newDateRange);
+    setPeriod(periodId, newDateRange);
   };
 
   // ============================================================
@@ -1649,6 +1646,7 @@ export const MetaAdsSyncPage: React.FC = () => {
             <EnhancedPeriodSelector
               selectedPeriod={selectedPeriod}
               onPeriodChange={handlePeriodChange}
+              dateRange={dateRange}
             />
           </div>
 

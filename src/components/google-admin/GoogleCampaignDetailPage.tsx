@@ -45,6 +45,8 @@ import {
   GoogleDailyMetric,
 } from '../../lib/services/GoogleInsightsDataService';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
+import { useWorkspacePeriod } from '../../hooks/useWorkspacePeriod';
+import { EnhancedPeriodSelector } from '../meta-admin/EnhancedPeriodSelector';
 
 interface GoogleCampaignDetailPageProps {
   campaignId: string;
@@ -78,28 +80,16 @@ export const GoogleCampaignDetailPage: React.FC<GoogleCampaignDetailPageProps> =
 
   // Estado da UI
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [selectedPeriod, setSelectedPeriod] = useState('last_30');
   const [expandedAdGroup, setExpandedAdGroup] = useState<string | null>(null);
+
+  // Período de análise persistido por workspace
+  const { selectedPeriod, dateRange: periodDateRange, setPeriod } = useWorkspacePeriod();
 
   // Servico de dados
   const dataService = new GoogleInsightsDataService();
 
-  /**
-   * Calcula datas baseado no preset selecionado
-   */
-  const getDateRange = useCallback(() => {
-    const today = new Date();
-    const preset = DATE_PRESETS.find((p) => p.value === selectedPeriod);
-    const days = preset?.days || 30;
-
-    const dateFrom = new Date();
-    dateFrom.setDate(dateFrom.getDate() - days);
-
-    return {
-      dateFrom: dateFrom.toISOString().split('T')[0],
-      dateTo: today.toISOString().split('T')[0],
-    };
-  }, [selectedPeriod]);
+  /** Retorna o dateRange do hook de período */
+  const getDateRange = useCallback(() => periodDateRange, [periodDateRange]);
 
   /**
    * Carrega dados da campanha
@@ -274,18 +264,12 @@ export const GoogleCampaignDetailPage: React.FC<GoogleCampaignDetailPageProps> =
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <select
-            value={selectedPeriod}
-            onChange={(e) => setSelectedPeriod(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
-          >
-            {DATE_PRESETS.map((preset) => (
-              <option key={preset.value} value={preset.value}>
-                {preset.label}
-              </option>
-            ))}
-          </select>
+        <div className="flex items-center gap-3 flex-wrap">
+          <EnhancedPeriodSelector
+            selectedPeriod={selectedPeriod}
+            onPeriodChange={(id, range) => setPeriod(id, range)}
+            dateRange={periodDateRange}
+          />
           <Button variant="secondary" size="sm" onClick={loadData}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>

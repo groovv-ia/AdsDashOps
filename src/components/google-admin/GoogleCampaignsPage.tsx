@@ -39,6 +39,8 @@ import {
 } from '../../lib/services/GoogleInsightsDataService';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useWorkspacePeriod } from '../../hooks/useWorkspacePeriod';
+import { EnhancedPeriodSelector } from '../meta-admin/EnhancedPeriodSelector';
 
 interface GoogleCampaignsPageProps {
   onNavigateToCampaignDetail: (campaignId: string) => void;
@@ -85,8 +87,10 @@ export const GoogleCampaignsPage: React.FC<GoogleCampaignsPageProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAccount, setSelectedAccount] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('last_30');
   const [sortBy, setSortBy] = useState<string>('cost_desc');
+
+  // Período de análise persistido por workspace
+  const { selectedPeriod, dateRange: periodDateRange, setPeriod } = useWorkspacePeriod();
 
   // Estados da UI
   const [showFilters, setShowFilters] = useState(true);
@@ -97,32 +101,8 @@ export const GoogleCampaignsPage: React.FC<GoogleCampaignsPageProps> = ({
   // Servico de dados
   const dataService = new GoogleInsightsDataService();
 
-  /**
-   * Calcula datas baseado no preset selecionado
-   */
-  const getDateRange = useCallback(() => {
-    const today = new Date();
-    let dateFrom: Date;
-    const dateTo: Date = today;
-
-    const preset = DATE_PRESETS.find((p) => p.value === selectedPeriod);
-    if (!preset) {
-      dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - 30);
-    } else if (preset.value === 'today') {
-      dateFrom = new Date(today);
-    } else if (preset.value === 'this_month') {
-      dateFrom = new Date(today.getFullYear(), today.getMonth(), 1);
-    } else {
-      dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - preset.days);
-    }
-
-    return {
-      dateFrom: dateFrom.toISOString().split('T')[0],
-      dateTo: dateTo.toISOString().split('T')[0],
-    };
-  }, [selectedPeriod]);
+  /** Retorna o dateRange do hook de período */
+  const getDateRange = useCallback(() => periodDateRange, [periodDateRange]);
 
   /**
    * Carrega dados das campanhas
@@ -437,18 +417,12 @@ export const GoogleCampaignsPage: React.FC<GoogleCampaignsPageProps> = ({
             </div>
 
             {/* Periodo */}
-            <div>
-              <select
-                value={selectedPeriod}
-                onChange={(e) => setSelectedPeriod(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {DATE_PRESETS.map((preset) => (
-                  <option key={preset.value} value={preset.value}>
-                    {preset.label}
-                  </option>
-                ))}
-              </select>
+            <div className="col-span-full">
+              <EnhancedPeriodSelector
+                selectedPeriod={selectedPeriod}
+                onPeriodChange={(id, range) => setPeriod(id, range)}
+                dateRange={periodDateRange}
+              />
             </div>
           </div>
 

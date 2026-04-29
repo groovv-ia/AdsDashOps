@@ -388,3 +388,62 @@ export const toISODateString = (date: Date | string | number): string => {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+/**
+ * Interpreta um periodId e retorna o dateRange correspondente.
+ * Suporta IDs de presets definidos em DEFAULT_PERIOD_PRESETS e o formato
+ * personalizado "custom_YYYYMMDD_YYYYMMDD".
+ *
+ * @param periodId - ID do período (ex: "last_7", "custom_20260101_20260415")
+ * @param presets - Lista de presets disponíveis (importar DEFAULT_PERIOD_PRESETS)
+ * @returns Objeto com dateFrom e dateTo no formato YYYY-MM-DD, ou null se inválido
+ */
+export const parsePeriodId = (
+  periodId: string,
+  presets: Array<{ id: string; getDateRange: () => { dateFrom: string; dateTo: string } }>
+): { dateFrom: string; dateTo: string } | null => {
+  // Tenta preset padrão
+  const preset = presets.find((p) => p.id === periodId);
+  if (preset) return preset.getDateRange();
+
+  // Tenta formato personalizado: custom_YYYYMMDD_YYYYMMDD
+  const customMatch = periodId.match(/^custom_(\d{8})_(\d{8})$/);
+  if (customMatch) {
+    const parseYMD = (s: string) =>
+      `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+    return { dateFrom: parseYMD(customMatch[1]), dateTo: parseYMD(customMatch[2]) };
+  }
+
+  return null;
+};
+
+/**
+ * Gera o rótulo de exibição para um período.
+ * Para presets conhecidos retorna o label do preset.
+ * Para períodos personalizados retorna as datas formatadas.
+ *
+ * @param periodId - ID do período
+ * @param dateRange - Intervalo de datas efetivo
+ * @returns String descritiva em português
+ */
+export const formatPeriodLabel = (
+  periodId: string,
+  dateRange: { dateFrom: string; dateTo: string } | null
+): string => {
+  if (!dateRange) return 'Período não definido';
+
+  // Período personalizado
+  if (periodId === 'custom' || periodId.startsWith('custom_')) {
+    const fmt = (iso: string) =>
+      new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    return dateRange.dateFrom === dateRange.dateTo
+      ? fmt(dateRange.dateFrom)
+      : `${fmt(dateRange.dateFrom)} – ${fmt(dateRange.dateTo)}`;
+  }
+
+  return 'Período personalizado';
+};

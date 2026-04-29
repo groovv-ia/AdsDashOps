@@ -40,6 +40,8 @@ import { useClient } from '../../contexts/ClientContext';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { useDebounce } from '../../hooks/useDebounce';
 import { logger } from '../../lib/utils/logger';
+import { useWorkspacePeriod } from '../../hooks/useWorkspacePeriod';
+import { EnhancedPeriodSelector } from '../meta-admin/EnhancedPeriodSelector';
 
 interface CampaignsPageProps {
   onNavigateToAnalysis: (campaignId: string) => void;
@@ -73,8 +75,10 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
   // Estados dos filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('last_30');
   const [sortBy, setSortBy] = useState<string>('spend');
+
+  // Período de análise persistido por workspace
+  const { selectedPeriod, dateRange: periodDateRange, setPeriod } = useWorkspacePeriod();
 
   // Estados da UI
   const [showFilters, setShowFilters] = useState(true);
@@ -85,32 +89,8 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
   // Servico de dados
   const metaInsightsService = new MetaInsightsDataService();
 
-  /**
-   * Calcula datas baseado no preset selecionado
-   */
-  const getDateRange = useCallback(() => {
-    const today = new Date();
-    let dateFrom: Date;
-    const dateTo: Date = today;
-
-    const preset = DATE_PRESETS.find((p) => p.value === selectedPeriod);
-    if (!preset) {
-      dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - 30);
-    } else if (preset.value === 'today') {
-      dateFrom = new Date();
-    } else if (preset.value === 'this_month') {
-      dateFrom = new Date(today.getFullYear(), today.getMonth(), 1);
-    } else {
-      dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - preset.days);
-    }
-
-    return {
-      dateFrom: dateFrom.toISOString().split('T')[0],
-      dateTo: dateTo.toISOString().split('T')[0],
-    };
-  }, [selectedPeriod]);
+  /** Retorna o dateRange do hook de período */
+  const getDateRange = useCallback(() => periodDateRange, [periodDateRange]);
 
   /**
    * Carrega campanhas do Meta Insights
@@ -426,22 +406,16 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
             </div>
 
             {/* Filtro por periodo */}
-            <div>
+            <div className="col-span-full">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <Calendar className="inline h-4 w-4 mr-1" />
-                Periodo
+                Periodo de Analise
               </label>
-              <select
-                value={selectedPeriod}
-                onChange={(e) => setSelectedPeriod(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                {DATE_PRESETS.map((preset) => (
-                  <option key={preset.value} value={preset.value}>
-                    {preset.label}
-                  </option>
-                ))}
-              </select>
+              <EnhancedPeriodSelector
+                selectedPeriod={selectedPeriod}
+                onPeriodChange={(id, range) => setPeriod(id, range)}
+                dateRange={periodDateRange}
+              />
             </div>
 
             {/* Filtro por status */}
@@ -541,7 +515,7 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
               <span className="font-medium">{campaigns.length}</span> campanhas
             </p>
             <p className="text-xs text-gray-500">
-              Periodo: {DATE_PRESETS.find((p) => p.value === selectedPeriod)?.label}
+              Periodo: {periodDateRange.dateFrom} até {periodDateRange.dateTo}
             </p>
           </div>
 
