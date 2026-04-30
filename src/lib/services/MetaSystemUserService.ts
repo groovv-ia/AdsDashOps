@@ -458,24 +458,31 @@ function extractMessagingConversationsFromActions(actionsJson: unknown): number 
 }
 
 /**
- * Processa as metricas de acoes de uma linha de insights
- * Extrai leads, seguidores, conversas e calcula totais
+ * Processa as metricas de acoes de uma linha de insights.
+ *
+ * Para leads: usa a coluna `leads` ja calculada no sync (que segue o mesmo criterio
+ * do Gerenciador de Anuncios — prioriza onsite_conversion.lead_grouped para Lead Ads).
+ * Nao re-extrai do actions_json para evitar dupla contagem.
+ *
+ * Para page_likes e messaging: extrai do actions_json pois nao tem coluna dedicada.
  */
 function processRowActions(row: Record<string, unknown>) {
   const actionsJson = row.actions_json;
-  const leads = extractLeadsFromActions(actionsJson);
-  const lead_grouped = extractLeadGroupedFromActions(actionsJson);
+
+  // Usa o valor de leads ja calculado e salvo pelo sync — fiel ao Gerenciador de Anuncios
+  const leads = typeof row.leads === 'number' ? row.leads : (parseInt(String(row.leads ?? '0'), 10) || 0);
+
+  // page_likes e messaging nao tem colunas dedicadas, extrai do JSON
   const page_likes = extractPageLikesFromActions(actionsJson);
   const messaging_conversations_started = extractMessagingConversationsFromActions(actionsJson);
 
   return {
     ...row,
     leads,
-    lead_grouped,
+    // lead_grouped exposto separadamente para uso em detalhes se necessario
+    lead_grouped: extractLeadGroupedFromActions(actionsJson),
     page_likes,
     messaging_conversations_started,
-    // Conversions = leads diretos + leads de formulario + conversas iniciadas
-    conversions: leads + lead_grouped + messaging_conversations_started,
   };
 }
 

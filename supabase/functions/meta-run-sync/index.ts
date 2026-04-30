@@ -72,16 +72,54 @@ function getDateRange(mode: string, daysBack: number = 7): { dateFrom: string; d
   }
 }
 
+/**
+ * Extrai leads do array de actions da API do Meta.
+ *
+ * Usa APENAS 'onsite_conversion.lead_grouped' — que e o valor que o Gerenciador
+ * de Anuncios exibe como "Resultados" para campanhas de formulario.
+ * NAO soma 'lead' + 'lead_grouped' pois representam o mesmo evento em janelas
+ * de atribuicao diferentes, causando dupla contagem.
+ *
+ * Para campanhas que nao tem 'onsite_conversion.lead_grouped' (ex: pixel de lead),
+ * usa 'offsite_conversion.fb_pixel_lead' como fallback.
+ */
 function extractLeads(actions?: Array<{ action_type: string; value: string }>): number {
   if (!actions || !Array.isArray(actions)) return 0;
-  const leadTypes = ['lead', 'onsite_conversion.lead_grouped'];
-  return actions.filter((a) => leadTypes.includes(a.action_type)).reduce((sum, a) => sum + parseInt(a.value || '0', 10), 0);
+
+  // Prioridade 1: lead de formulario nativo (Lead Ads) — valor oficial do Gerenciador
+  const leadGrouped = actions.find((a) => a.action_type === 'onsite_conversion.lead_grouped');
+  if (leadGrouped) return parseInt(leadGrouped.value || '0', 10);
+
+  // Prioridade 2: lead de pixel offsite (para campanhas com pixel externo)
+  const pixelLead = actions.find((a) => a.action_type === 'offsite_conversion.fb_pixel_lead');
+  if (pixelLead) return parseInt(pixelLead.value || '0', 10);
+
+  // Prioridade 3: lead generico (fallback para outros objetivos)
+  const genericLead = actions.find((a) => a.action_type === 'lead');
+  if (genericLead) return parseInt(genericLead.value || '0', 10);
+
+  return 0;
 }
 
+/**
+ * Extrai total de conversoes.
+ *
+ * Usa o mesmo criterio de prioridade que extractLeads para leads,
+ * acrescentando compras. Evita somar 'lead' + 'lead_grouped' (dupla contagem).
+ */
 function extractConversions(actions?: Array<{ action_type: string; value: string }>): number {
   if (!actions || !Array.isArray(actions)) return 0;
-  const conversionTypes = ['lead', 'purchase', 'complete_registration', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase', 'offsite_conversion.fb_pixel_lead'];
-  return actions.filter((a) => conversionTypes.includes(a.action_type)).reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
+
+  // Pega o valor de lead sem duplicar (mesma logica do extractLeads)
+  const leadValue = extractLeads(actions);
+
+  // Soma compras (purchase) — tipos distintos, sem sobreposicao
+  const purchaseTypes = ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase'];
+  const purchaseValue = actions
+    .filter((a) => purchaseTypes.includes(a.action_type))
+    .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
+
+  return leadValue + purchaseValue;
 }
 
 function extractConversionValue(actionValues?: Array<{ action_type: string; value: string }>): number {
@@ -284,7 +322,9 @@ Deno.serve(async (req: Request) => {
         for (const level of levels) {
           try {
             const baseUrl = `https://graph.facebook.com/v21.0/${adAccount.meta_ad_account_id}/insights`;
-            const params = new URLSearchParams({ level: level === "adset" ? "adset" : level, fields: insightFields, time_range: JSON.stringify({ since: dateFrom, until: dateTo }), time_increment: "1", limit: "500", access_token: accessToken });
+            // use_account_attribution_setting=true garante que a janela de atribuicao
+            // usada e exatamente a mesma configurada na conta — identica ao Gerenciador de Anuncios.
+            const params = new URLSearchParams({ level: level === "adset" ? "adset" : level, fields: insightFields, time_range: JSON.stringify({ since: dateFrom, until: dateTo }), time_increment: "1", use_account_attribution_setting: "true", limit: "500", access_token: accessToken });
             let url: string | null = `${baseUrl}?${params.toString()}`;
             const allInsights: MetaInsightRow[] = [];
 

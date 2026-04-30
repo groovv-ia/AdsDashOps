@@ -1214,21 +1214,29 @@ export const MetaAdsSyncPage: React.FC = () => {
             spend: 0,
             impressions: 0,
             clicks: 0,
-            reach: 0,
+            // reach NAO e incluido: nao e aditivo entre dias (a mesma pessoa pode ser
+            // contada em varios dias, inflar o total). O KPI de alcance usa query separada.
+            leads: 0,
+            conversions: 0,
+            page_likes: 0,
           };
         }
         acc[key].spend += row.spend || 0;
         acc[key].impressions += row.impressions || 0;
         acc[key].clicks += row.clicks || 0;
-        acc[key].reach += row.reach || 0;
+        // leads: usa coluna dedicada salva no sync — fiel ao Gerenciador de Anuncios
+        acc[key].leads += row.leads || 0;
+        acc[key].conversions += row.conversions || 0;
+        acc[key].page_likes += row.page_likes || 0;
         return acc;
       },
-      {} as Record<string, { entity_id: string; entity_name: string; spend: number; impressions: number; clicks: number; reach: number }>
+      {} as Record<string, { entity_id: string; entity_name: string; spend: number; impressions: number; clicks: number; leads: number; conversions: number; page_likes: number }>
     );
 
     return Object.values(grouped)
       .map((item) => ({
         ...item,
+        // CTR/CPC/CPM recalculados dos totais somados — formula identica ao Gerenciador
         ctr: item.impressions > 0 ? (item.clicks / item.impressions) * 100 : 0,
         cpc: item.clicks > 0 ? item.spend / item.clicks : 0,
         cpm: item.impressions > 0 ? (item.spend / item.impressions) * 1000 : 0,
@@ -2129,8 +2137,11 @@ export const MetaAdsSyncPage: React.FC = () => {
                   const loadingState = isAdRow ? getLoadingState(row.entity_id) : { isLoading: false, hasError: false };
 
                   // Metricas de engajamento desta linha
+                  // page_likes vem do tableData (ja agregado)
                   const rowPageLikes = (row as InsightRow & { page_likes?: number }).page_likes || 0;
-                  const rowLeads = (row.leads || 0) + ((row as InsightRow & { lead_grouped?: number }).lead_grouped || 0);
+                  // leads: usa apenas o campo `leads` do tableData — ja calculado corretamente
+                  // no sync (fiel ao Gerenciador de Anuncios). Nao soma lead_grouped por cima.
+                  const rowLeads = row.leads || 0;
 
                   return (
                     <tr
