@@ -32,6 +32,8 @@ import {
   Key,
   ShieldAlert,
   X,
+  Users,
+  FileText,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -48,6 +50,7 @@ import {
   getMetaSyncStatus,
   getInsightsFromDatabase,
   getAdInsightsByAdset,
+  getInsightsByCampaign,
   SyncStatusResponse,
   SyncResult,
 } from '../../lib/services/MetaSystemUserService';
@@ -93,8 +96,10 @@ interface InsightRow {
   ctr: number;
   cpc: number;
   cpm: number;
-  // Campos de conversao para ROAS
+  // Campos de conversao e engajamento
   leads?: number;
+  lead_grouped?: number;       // Leads de formulario (onsite_conversion.lead_grouped)
+  page_likes?: number;         // Seguidores de pagina (action_type = 'like')
   messaging_conversations_started?: number;
   conversions?: number;
   conversion_value?: number;
@@ -109,8 +114,10 @@ interface KPIs {
   avgCtr: number;
   avgCpc: number;
   avgCpm: number;
-  // Metricas de conversao
+  // Metricas de conversao e engajamento
   totalLeads: number;
+  totalLeadGrouped: number;    // Leads de formulario
+  totalPageLikes: number;      // Seguidores de pagina
   totalConversions: number;
   totalConversionValue: number;
   roas: number;
@@ -183,6 +190,8 @@ export const MetaAdsSyncPage: React.FC = () => {
     avgCpc: 0,
     avgCpm: 0,
     totalLeads: 0,
+    totalLeadGrouped: 0,
+    totalPageLikes: 0,
     totalConversions: 0,
     totalConversionValue: 0,
     roas: 0,
@@ -260,11 +269,15 @@ export const MetaAdsSyncPage: React.FC = () => {
     if (
       syncStatus?.connection?.status === 'connected' &&
       navigationState.selectedAccountId &&
-      (navigationState.currentView === 'account-detail' || navigationState.currentView === 'adset-detail')
+      (
+        navigationState.currentView === 'account-detail' ||
+        navigationState.currentView === 'campaign-detail' ||
+        navigationState.currentView === 'adset-detail'
+      )
     ) {
       loadInsights();
     }
-  }, [selectedLevel, selectedPeriod, navigationState.selectedAccountId, navigationState.currentView, navigationState.selectedAdsetId]);
+  }, [selectedLevel, selectedPeriod, navigationState.selectedAccountId, navigationState.currentView, navigationState.selectedAdsetId, navigationState.selectedCampaignId]);
 
   // Simula progresso da sincronizacao de forma realista
   useEffect(() => {
@@ -327,15 +340,17 @@ export const MetaAdsSyncPage: React.FC = () => {
   );
 
   // Carrega insights do banco de dados
-  // Se estiver na view adset-detail, busca apenas anuncios do adset selecionado
+  // - adset-detail: anuncios do adset selecionado
+  // - campaign-detail: conjuntos do adset (adsets) da campanha selecionada
+  // - account-detail: entidades do nivel selecionado (campaign/adset/ad)
   const loadInsights = async () => {
     if (!navigationState.selectedAccountId) return;
 
     try {
       let result;
 
-      // Se estiver visualizando anuncios de um adset especifico
       if (navigationState.currentView === 'adset-detail' && navigationState.selectedAdsetId) {
+        // Anuncios dentro de um adset especifico
         result = await getAdInsightsByAdset({
           clientId: selectedClient?.id,
           metaAdAccountId: navigationState.selectedAccountId,
@@ -344,8 +359,18 @@ export const MetaAdsSyncPage: React.FC = () => {
           dateTo: dateRange.dateTo,
           limit: 1000,
         });
+      } else if (navigationState.currentView === 'campaign-detail' && navigationState.selectedCampaignId) {
+        // Conjuntos de anuncios de uma campanha especifica
+        result = await getInsightsByCampaign({
+          clientId: selectedClient?.id,
+          metaAdAccountId: navigationState.selectedAccountId,
+          campaignId: navigationState.selectedCampaignId,
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
+          limit: 1000,
+        });
       } else {
-        // Busca normal por nivel
+        // Busca normal por nivel (campanhas, conjuntos ou anuncios da conta)
         result = await getInsightsFromDatabase({
           clientId: selectedClient?.id,
           metaAdAccountId: navigationState.selectedAccountId,
@@ -361,8 +386,8 @@ export const MetaAdsSyncPage: React.FC = () => {
         return;
       }
 
-      setInsights(result.data);
-      calculateKPIs(result.data);
+      setInsights(result.data as InsightRow[]);
+      calculateKPIs(result.data as InsightRow[]);
     } catch (err) {
       console.error('Erro ao carregar insights:', err);
     }
@@ -370,22 +395,13 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Calcula KPIs a partir dos dados
   const calculateKPIs = (data: InsightRow[]) => {
-    if (data.length === 0) {
-      setKpis({
-        totalSpend: 0,
-        totalImpressions: 0,
-        totalClicks: 0,
-        totalReach: 0,
-        avgCtr: 0,
-        avgCpc: 0,
-        avgCpm: 0,
-        totalLeads: 0,
-        totalConversions: 0,
-        totalConversionValue: 0,
-        roas: 0,
-      });
-      return;
-    }
+    const empty: KPIs = {
+      totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: 0,
+      avgCtr: 0, avgCpc: 0, avgCpm: 0,
+      totalLeads: 0, totalLeadGrouped: 0, totalPageLikes: 0,
+      totalConversions: 0, totalConversionValue: 0, roas: 0,
+    };
+    if (data.length === 0) { setKpis(empty); return; }
 
     const totals = data.reduce(
       (acc, row) => ({
@@ -394,13 +410,14 @@ export const MetaAdsSyncPage: React.FC = () => {
         clicks: acc.clicks + (row.clicks || 0),
         reach: acc.reach + (row.reach || 0),
         leads: acc.leads + (row.leads || 0),
+        leadGrouped: acc.leadGrouped + (row.lead_grouped || 0),
+        pageLikes: acc.pageLikes + (row.page_likes || 0),
         conversions: acc.conversions + (row.conversions || 0),
         conversionValue: acc.conversionValue + (row.conversion_value || 0),
       }),
-      { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, conversions: 0, conversionValue: 0 }
+      { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, leadGrouped: 0, pageLikes: 0, conversions: 0, conversionValue: 0 }
     );
 
-    // Calcula ROAS: receita / gasto
     const roas = totals.spend > 0 ? totals.conversionValue / totals.spend : 0;
 
     setKpis({
@@ -412,9 +429,11 @@ export const MetaAdsSyncPage: React.FC = () => {
       avgCpc: totals.clicks > 0 ? totals.spend / totals.clicks : 0,
       avgCpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0,
       totalLeads: totals.leads,
+      totalLeadGrouped: totals.leadGrouped,
+      totalPageLikes: totals.pageLikes,
       totalConversions: totals.conversions,
       totalConversionValue: totals.conversionValue,
-      roas: roas,
+      roas,
     });
   };
 
@@ -870,6 +889,20 @@ export const MetaAdsSyncPage: React.FC = () => {
     });
   };
 
+  // Seleciona uma campanha e navega para ver os conjuntos dessa campanha
+  const handleSelectCampaign = (campaignId: string, campaignName: string) => {
+    setNavigationState((prev) => ({
+      ...prev,
+      currentView: 'campaign-detail',
+      selectedCampaignId: campaignId,
+      selectedCampaignName: campaignName,
+      selectedAdsetId: null,
+      selectedAdsetName: null,
+    }));
+    // Ao entrar no drill-down de campanha, exibe os conjuntos de anuncios
+    setSelectedLevel('adset');
+  };
+
   // Seleciona um adset e navega para ver os anuncios dentro dele
   const handleSelectAdset = (adsetId: string, adsetName: string) => {
     setNavigationState((prev) => ({
@@ -895,10 +928,21 @@ export const MetaAdsSyncPage: React.FC = () => {
       });
       setInsights([]);
     } else if (item.type === 'account') {
-      // Volta para detalhes da conta (sai da visualizacao de adset)
+      // Volta para detalhes da conta (limpa campanha e adset)
       setNavigationState((prev) => ({
         ...prev,
         currentView: 'account-detail',
+        selectedCampaignId: null,
+        selectedCampaignName: null,
+        selectedAdsetId: null,
+        selectedAdsetName: null,
+      }));
+      setSelectedLevel('campaign');
+    } else if (item.type === 'campaign') {
+      // Volta para detalhe da campanha (sai da visualizacao de adset)
+      setNavigationState((prev) => ({
+        ...prev,
+        currentView: 'campaign-detail',
         selectedAdsetId: null,
         selectedAdsetName: null,
       }));
@@ -922,15 +966,31 @@ export const MetaAdsSyncPage: React.FC = () => {
     setError(null);
   };
 
-  // Volta para visualizacao de adsets (sai da visualizacao de anuncios do adset)
+  // Volta para visualizacao de adsets:
+  // - se veio de uma campanha, volta para campaign-detail
+  // - caso contrario, volta para account-detail
   const handleBackToAdsets = () => {
+    const hasCampaign = !!navigationState.selectedCampaignId;
     setNavigationState((prev) => ({
       ...prev,
-      currentView: 'account-detail',
+      currentView: hasCampaign ? 'campaign-detail' : 'account-detail',
       selectedAdsetId: null,
       selectedAdsetName: null,
     }));
     setSelectedLevel('adset');
+  };
+
+  // Volta para lista de campanhas da conta (sai do drill-down de campanha)
+  const handleBackToCampaigns = () => {
+    setNavigationState((prev) => ({
+      ...prev,
+      currentView: 'account-detail',
+      selectedCampaignId: null,
+      selectedCampaignName: null,
+      selectedAdsetId: null,
+      selectedAdsetName: null,
+    }));
+    setSelectedLevel('campaign');
   };
 
   // Handler de mudanca de periodo — persiste no Supabase via hook
@@ -1831,6 +1891,50 @@ export const MetaAdsSyncPage: React.FC = () => {
             </div>
           </div>
         </Card>
+
+        {/* Seguidores de pagina - visivel apenas quando ha dados */}
+        {kpis.totalPageLikes > 0 && (
+          <Card className="bg-gradient-to-br from-violet-50 to-white border-violet-100">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-violet-600">Seguidores</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {formatCompact(kpis.totalPageLikes)}
+                </p>
+                {kpis.totalSpend > 0 && (
+                  <p className="text-xs text-violet-500 mt-1">
+                    Custo/Seguidor: {formatCurrency(kpis.totalSpend / kpis.totalPageLikes)}
+                  </p>
+                )}
+              </div>
+              <div className="p-2 bg-violet-100 rounded-lg">
+                <Users className="w-5 h-5 text-violet-600" />
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Leads de formulario - visivel apenas quando ha dados */}
+        {(kpis.totalLeads > 0 || kpis.totalLeadGrouped > 0) && (
+          <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-emerald-600">Leads</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {formatCompact(kpis.totalLeads + kpis.totalLeadGrouped)}
+                </p>
+                {kpis.totalSpend > 0 && (
+                  <p className="text-xs text-emerald-500 mt-1">
+                    CPL: {formatCurrency(kpis.totalSpend / (kpis.totalLeads + kpis.totalLeadGrouped))}
+                  </p>
+                )}
+              </div>
+              <div className="p-2 bg-emerald-100 rounded-lg">
+                <FileText className="w-5 h-5 text-emerald-600" />
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Graficos */}
@@ -1916,7 +2020,7 @@ export const MetaAdsSyncPage: React.FC = () => {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div>
-            {/* Mostra titulo diferente se estiver dentro de um adset */}
+            {/* Titulo contextual baseado na view atual */}
             {navigationState.currentView === 'adset-detail' ? (
               <>
                 <div className="flex items-center gap-2 mb-1">
@@ -1927,6 +2031,16 @@ export const MetaAdsSyncPage: React.FC = () => {
                   {navigationState.selectedAdsetName} ({tableData.length})
                 </h3>
               </>
+            ) : navigationState.currentView === 'campaign-detail' ? (
+              <>
+                <div className="flex items-center gap-2 mb-1">
+                  <Target className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm text-gray-500">Conjuntos da campanha:</span>
+                </div>
+                <h3 className="font-semibold text-gray-900">
+                  {navigationState.selectedCampaignName} ({tableData.length})
+                </h3>
+              </>
             ) : (
               <h3 className="font-semibold text-gray-900">
                 {LEVELS.find((l) => l.value === selectedLevel)?.label} ({tableData.length})
@@ -1935,11 +2049,19 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Botao para voltar para lista de adsets quando estiver em adset-detail */}
+            {/* Botao para voltar para campanhas quando estiver em campaign-detail */}
+            {navigationState.currentView === 'campaign-detail' && (
+              <Button variant="outline" size="sm" onClick={handleBackToCampaigns}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Voltar para Campanhas
+              </Button>
+            )}
+
+            {/* Botao para voltar para conjuntos quando estiver em adset-detail */}
             {navigationState.currentView === 'adset-detail' && (
               <Button variant="outline" size="sm" onClick={handleBackToAdsets}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Voltar para Conjuntos
+                {navigationState.selectedCampaignId ? 'Voltar para Campanha' : 'Voltar para Conjuntos'}
               </Button>
             )}
 
@@ -1967,8 +2089,15 @@ export const MetaAdsSyncPage: React.FC = () => {
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CTR</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPC</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPM</th>
-                {/* Mostra coluna de acoes para ads ou adsets */}
-                {(selectedLevel === 'ad' || selectedLevel === 'adset' || navigationState.currentView === 'adset-detail') && (
+                {/* Colunas de engajamento: seguidores (page_like) e leads de formulario */}
+                {kpis.totalPageLikes > 0 && (
+                  <th className="text-right py-3 px-4 text-sm font-medium text-purple-600">Seguidores</th>
+                )}
+                {(kpis.totalLeads > 0 || kpis.totalLeadGrouped > 0) && (
+                  <th className="text-right py-3 px-4 text-sm font-medium text-emerald-600">Leads</th>
+                )}
+                {/* Coluna de acoes (campanhas, adsets e ads) */}
+                {(selectedLevel === 'campaign' || selectedLevel === 'ad' || selectedLevel === 'adset' || navigationState.currentView === 'adset-detail') && (
                   <th className="text-center py-3 px-4 text-sm font-medium text-gray-700">Acoes</th>
                 )}
               </tr>
@@ -1990,25 +2119,32 @@ export const MetaAdsSyncPage: React.FC = () => {
                 </tr>
               ) : (
                 tableData.map((row) => {
-                  // Determina se a linha e clicavel (ads ou adsets)
+                  // Determina o tipo da linha para comportamento de clique
                   const isAdRow = selectedLevel === 'ad' || navigationState.currentView === 'adset-detail';
                   const isAdsetRow = selectedLevel === 'adset' && navigationState.currentView !== 'adset-detail';
+                  const isCampaignRow = selectedLevel === 'campaign' && navigationState.currentView !== 'campaign-detail';
 
-                  // Busca criativo e estado de loading para ads
+                  // Busca criativo e estado de loading apenas para ads
                   const creative = isAdRow ? getCreative(row.entity_id) : null;
                   const loadingState = isAdRow ? getLoadingState(row.entity_id) : { isLoading: false, hasError: false };
+
+                  // Metricas de engajamento desta linha
+                  const rowPageLikes = (row as InsightRow & { page_likes?: number }).page_likes || 0;
+                  const rowLeads = (row.leads || 0) + ((row as InsightRow & { lead_grouped?: number }).lead_grouped || 0);
 
                   return (
                     <tr
                       key={row.entity_id}
                       className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                        isAdRow || isAdsetRow ? 'cursor-pointer' : ''
+                        isAdRow || isAdsetRow || isCampaignRow ? 'cursor-pointer' : ''
                       }`}
                       onClick={() => {
                         if (isAdRow) {
                           handleOpenAdDetail(row);
                         } else if (isAdsetRow) {
                           handleSelectAdset(row.entity_id, row.entity_name);
+                        } else if (isCampaignRow) {
+                          handleSelectCampaign(row.entity_id, row.entity_name);
                         }
                       }}
                     >
@@ -2031,6 +2167,10 @@ export const MetaAdsSyncPage: React.FC = () => {
                           {/* Icone indicando que e um adset clicavel */}
                           {isAdsetRow && (
                             <Layers className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          )}
+                          {/* Icone indicando que e uma campanha clicavel */}
+                          {isCampaignRow && (
+                            <Target className="w-4 h-4 text-blue-400 flex-shrink-0" />
                           )}
                           <div>
                             <span className="text-sm font-medium text-gray-900">{row.entity_name}</span>
@@ -2056,6 +2196,37 @@ export const MetaAdsSyncPage: React.FC = () => {
                       <td className="text-right py-3 px-4 text-sm text-gray-600">
                         {formatCurrency(row.cpm)}
                       </td>
+
+                      {/* Coluna de Seguidores (visivel apenas quando ha dados de page_like) */}
+                      {kpis.totalPageLikes > 0 && (
+                        <td className="text-right py-3 px-4 text-sm text-purple-700 font-medium">
+                          {rowPageLikes > 0 ? formatNumber(rowPageLikes) : <span className="text-gray-300">—</span>}
+                        </td>
+                      )}
+
+                      {/* Coluna de Leads (visivel quando ha leads diretos ou de formulario) */}
+                      {(kpis.totalLeads > 0 || kpis.totalLeadGrouped > 0) && (
+                        <td className="text-right py-3 px-4 text-sm text-emerald-700 font-medium">
+                          {rowLeads > 0 ? formatNumber(rowLeads) : <span className="text-gray-300">—</span>}
+                        </td>
+                      )}
+
+                      {/* Coluna de acoes para campanhas - botao para ver conjuntos */}
+                      {isCampaignRow && (
+                        <td className="text-center py-3 px-4">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectCampaign(row.entity_id, row.entity_name);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Ver conjuntos de anuncios desta campanha"
+                          >
+                            Ver Conjuntos
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      )}
 
                       {/* Coluna de acoes para adsets - botao para ver anuncios */}
                       {isAdsetRow && (

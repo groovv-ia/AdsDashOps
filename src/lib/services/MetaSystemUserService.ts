@@ -434,11 +434,49 @@ function extractLeadsFromActions(actionsJson: unknown): number {
 }
 
 /**
+ * Extrai leads de formulario agrupados do actions_json
+ * (action_type = 'onsite_conversion.lead_grouped') - campanha de Lead Generation
+ */
+function extractLeadGroupedFromActions(actionsJson: unknown): number {
+  return extractActionValue(actionsJson, 'onsite_conversion.lead_grouped');
+}
+
+/**
+ * Extrai curtidas/seguidores de pagina do actions_json
+ * (action_type = 'like') - campanha de Seguidores
+ */
+function extractPageLikesFromActions(actionsJson: unknown): number {
+  return extractActionValue(actionsJson, 'like');
+}
+
+/**
  * Extrai conversas iniciadas do actions_json
  * (action_type = 'onsite_conversion.messaging_conversation_started_7d')
  */
 function extractMessagingConversationsFromActions(actionsJson: unknown): number {
   return extractActionValue(actionsJson, 'onsite_conversion.messaging_conversation_started_7d');
+}
+
+/**
+ * Processa as metricas de acoes de uma linha de insights
+ * Extrai leads, seguidores, conversas e calcula totais
+ */
+function processRowActions(row: Record<string, unknown>) {
+  const actionsJson = row.actions_json;
+  const leads = extractLeadsFromActions(actionsJson);
+  const lead_grouped = extractLeadGroupedFromActions(actionsJson);
+  const page_likes = extractPageLikesFromActions(actionsJson);
+  const messaging_conversations_started = extractMessagingConversationsFromActions(actionsJson);
+
+  return {
+    ...row,
+    leads,
+    lead_grouped,
+    page_likes,
+    messaging_conversations_started,
+    // Conversions = leads diretos + leads de formulario + conversas iniciadas
+    conversions: leads + lead_grouped + messaging_conversations_started,
+  };
 }
 
 /**
@@ -487,19 +525,74 @@ export async function getInsightsFromDatabase(options: {
     return { data: [], error: error.message };
   }
 
-  // Processa os dados para extrair metricas do actions_json
-  const processedData = (data || []).map((row) => {
-    const leads = extractLeadsFromActions(row.actions_json);
-    const messaging_conversations_started = extractMessagingConversationsFromActions(row.actions_json);
+  // Processa os dados para extrair todas as metricas do actions_json
+  const processedData = (data || []).map(processRowActions);
 
-    return {
-      ...row,
-      leads,
-      messaging_conversations_started,
-      // Calcula conversions como soma de leads + conversas iniciadas
-      conversions: leads + messaging_conversations_started,
-    };
-  });
+  return { data: processedData };
+}
+
+/**
+ * Busca IDs de adsets que pertencem a uma campanha especifica
+ * Utiliza a tabela meta_insights_raw onde o campaign_id esta no payload JSONB
+ */
+export async function getAdsetIdsByCampaign(campaignId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('meta_insights_raw')
+    .select('entity_id')
+    .eq('level', 'adset')
+    .filter('payload->>campaign_id', 'eq', campaignId);
+
+  if (error || !data) {
+    console.error('Erro ao buscar adsets por campanha:', error);
+    return [];
+  }
+
+  // Remove duplicatas (multiplas datas para o mesmo adset)
+  return [...new Set(data.map((row: { entity_id: string }) => row.entity_id))];
+}
+
+/**
+ * Busca insights de adsets filtrados por campanha
+ * Utiliza getAdsetIdsByCampaign para descobrir os adsets da campanha
+ * e entao busca os insights apenas para esses adsets
+ */
+export async function getInsightsByCampaign(options: {
+  clientId?: string;
+  metaAdAccountId?: string;
+  campaignId: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+}): Promise<{ data: unknown[]; error?: string }> {
+  // Descobre os adsets que pertencem a essa campanha
+  const adsetIds = await getAdsetIdsByCampaign(options.campaignId);
+
+  if (adsetIds.length === 0) {
+    return { data: [] };
+  }
+
+  // Busca insights de adset para esses IDs
+  let query = supabase
+    .from('meta_insights_daily')
+    .select('*')
+    .eq('level', 'adset')
+    .in('entity_id', adsetIds)
+    .order('date', { ascending: false });
+
+  if (options.clientId) query = query.eq('client_id', options.clientId);
+  if (options.metaAdAccountId) query = query.eq('meta_ad_account_id', options.metaAdAccountId);
+  if (options.dateFrom) query = query.gte('date', options.dateFrom);
+  if (options.dateTo) query = query.lte('date', options.dateTo);
+  if (options.limit) query = query.limit(options.limit);
+
+  const { data, error } = await query;
+
+  if (error) {
+    return { data: [], error: error.message };
+  }
+
+  // Processa metricas de acoes incluindo seguidores e leads de formulario
+  const processedData = (data || []).map(processRowActions);
 
   return { data: processedData };
 }
@@ -578,17 +671,21 @@ export async function getAdInsightsByAdset(options: {
     return { data: [], error: error.message };
   }
 
-  // Processa os dados para extrair metricas do actions_json
+  // Processa os dados para extrair todas as metricas do actions_json
   const processedData = (data || []).map((row) => {
     const leads = extractLeadsFromActions(row.actions_json);
+    const lead_grouped = extractLeadGroupedFromActions(row.actions_json);
+    const page_likes = extractPageLikesFromActions(row.actions_json);
     const messaging_conversations_started = extractMessagingConversationsFromActions(row.actions_json);
 
     return {
       ...row,
       leads,
+      lead_grouped,
+      page_likes,
       messaging_conversations_started,
-      // Calcula conversions como soma de leads + conversas iniciadas
-      conversions: leads + messaging_conversations_started,
+      // Calcula conversions como soma de leads + leads de formulario + conversas iniciadas
+      conversions: leads + lead_grouped + messaging_conversations_started,
     };
   });
 

@@ -87,7 +87,7 @@ export const BreadcrumbNav: React.FC<BreadcrumbNavProps> = ({
  * Suporta navegacao hierarquica: Contas > Conta > Adset > Anuncios
  */
 export interface NavigationState {
-  currentView: 'accounts' | 'account-detail' | 'adset-detail';
+  currentView: 'accounts' | 'account-detail' | 'campaign-detail' | 'adset-detail';
   selectedAccountId: string | null;
   selectedAccountName: string | null;
   selectedCampaignId: string | null;
