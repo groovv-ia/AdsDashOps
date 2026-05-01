@@ -16,6 +16,7 @@ import { DataDeletionPolicy } from './components/legal/DataDeletionPolicy';
 import { CookiePreferencesModal } from './components/legal/CookiePreferencesModal';
 import { CookieSettingsButton } from './components/legal/CookieSettingsButton';
 import { CookieConsentProvider } from './contexts/CookieConsentContext';
+import { CaptaloLanding } from './components/landing/CaptaloLanding';
 import { ClientProvider } from './contexts/ClientContext';
 import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { CampaignsPage } from './components/campaigns/CampaignsPage';
@@ -254,6 +255,11 @@ function AppContent() {
   const isAuthCallbackPage = currentPath === '/auth/callback';
   const isOAuthCallbackPage = currentPath === '/oauth-callback';
   const isResetPasswordPage = currentPath === '/reset-password';
+  const isCaptaloLandingPage = currentPath === '/captalo' || currentPath === '/landing';
+
+  if (isCaptaloLandingPage) {
+    return <CaptaloLanding />;
+  }
 
   // Renderiza página de callback OAuth (Meta, Google, TikTok)
   if (isOAuthCallbackPage) {

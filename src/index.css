@@ -332,3 +332,174 @@ body {
 .peer-focus\:ring-blue-300:focus {
   box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3) !important;
 }
+
+/* ============================================== */
+/* Captalo Landing Page – Premium Design System    */
+/* ============================================== */
+
+@keyframes captalo-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-18px) rotate(1.5deg); }
+}
+@keyframes captalo-float-slow {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(-1deg); }
+}
+@keyframes captalo-float-x {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(12px); }
+}
+@keyframes captalo-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(40px, -30px) scale(1.08); }
+  66% { transform: translate(-30px, 25px) scale(0.95); }
+}
+@keyframes captalo-gradient {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@keyframes captalo-pulse-ring {
+  0% { transform: scale(0.85); opacity: 0.7; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+@keyframes captalo-shine {
+  0% { transform: translateX(-100%) skewX(-20deg); }
+  100% { transform: translateX(220%) skewX(-20deg); }
+}
+@keyframes captalo-orbit {
+  from { transform: rotate(0deg) translateX(80px) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(80px) rotate(-360deg); }
+}
+@keyframes captalo-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes captalo-fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes captalo-tilt {
+  0%, 100% { transform: perspective(800px) rotateY(-6deg) rotateX(2deg); }
+  50% { transform: perspective(800px) rotateY(6deg) rotateX(-2deg); }
+}
+@keyframes captalo-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes captalo-bar {
+  0% { height: 30%; }
+  50% { height: 90%; }
+  100% { height: 55%; }
+}
+
+.captalo-anim-float { animation: captalo-float 6s ease-in-out infinite; }
+.captalo-anim-float-slow { animation: captalo-float-slow 8s ease-in-out infinite; }
+.captalo-anim-float-x { animation: captalo-float-x 7s ease-in-out infinite; }
+.captalo-anim-blob { animation: captalo-blob 18s ease-in-out infinite; }
+.captalo-anim-gradient {
+  background-size: 200% 200%;
+  animation: captalo-gradient 10s ease infinite;
+}
+.captalo-anim-pulse-ring { animation: captalo-pulse-ring 2.4s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; }
+.captalo-anim-shine { animation: captalo-shine 3.5s ease-in-out infinite; }
+.captalo-anim-orbit { animation: captalo-orbit 14s linear infinite; }
+.captalo-anim-marquee { animation: captalo-marquee 35s linear infinite; }
+.captalo-anim-tilt { animation: captalo-tilt 9s ease-in-out infinite; transform-style: preserve-3d; }
+.captalo-anim-spin-slow { animation: captalo-spin-slow 22s linear infinite; }
+.captalo-anim-fade-up { animation: captalo-fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.captalo-anim-bar { animation: captalo-bar 2.4s ease-in-out infinite alternate; transform-origin: bottom; }
+
+.captalo-glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+.captalo-glass-dark {
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.captalo-grid-bg {
+  background-image:
+    linear-gradient(rgba(20, 184, 166, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 184, 166, 0.08) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 60% 60% at 50% 40%, black 30%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 40%, black 30%, transparent 80%);
+}
+
+.captalo-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E");
+}
+
+.captalo-text-gradient {
+  background: linear-gradient(120deg, #0d9488 0%, #14b8a6 35%, #06b6d4 65%, #6366f1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.captalo-card-3d {
+  transform-style: preserve-3d;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.5s ease;
+}
+.captalo-card-3d:hover {
+  transform: perspective(1000px) rotateX(4deg) rotateY(-6deg) translateY(-6px);
+  box-shadow: 0 30px 60px -20px rgba(13, 148, 136, 0.35);
+}
+
+.captalo-glow {
+  box-shadow:
+    0 0 0 1px rgba(20, 184, 166, 0.15),
+    0 10px 30px -10px rgba(13, 148, 136, 0.45),
+    0 30px 80px -20px rgba(99, 102, 241, 0.25);
+}
+.captalo-glow-strong {
+  box-shadow:
+    0 0 0 1px rgba(20, 184, 166, 0.25),
+    0 20px 50px -10px rgba(13, 148, 136, 0.55),
+    0 40px 120px -20px rgba(6, 182, 212, 0.45);
+}
+
+.captalo-conic {
+  background:
+    conic-gradient(from 180deg at 50% 50%,
+      #14b8a6 0deg,
+      #06b6d4 90deg,
+      #6366f1 180deg,
+      #14b8a6 360deg);
+}
+
+.captalo-stagger > * { opacity: 0; animation: captalo-fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.captalo-stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.captalo-stagger > *:nth-child(2) { animation-delay: 0.15s; }
+.captalo-stagger > *:nth-child(3) { animation-delay: 0.25s; }
+.captalo-stagger > *:nth-child(4) { animation-delay: 0.35s; }
+.captalo-stagger > *:nth-child(5) { animation-delay: 0.45s; }
+.captalo-stagger > *:nth-child(6) { animation-delay: 0.55s; }
+
+.captalo-mesh {
+  background-color: #f0fdfa;
+  background-image:
+    radial-gradient(at 12% 18%, rgba(20, 184, 166, 0.35) 0px, transparent 50%),
+    radial-gradient(at 88% 22%, rgba(99, 102, 241, 0.25) 0px, transparent 50%),
+    radial-gradient(at 50% 90%, rgba(6, 182, 212, 0.30) 0px, transparent 50%),
+    radial-gradient(at 80% 80%, rgba(236, 72, 153, 0.18) 0px, transparent 50%);
+}
+.captalo-mesh-dark {
+  background-color: #0b1220;
+  background-image:
+    radial-gradient(at 10% 10%, rgba(20, 184, 166, 0.35) 0px, transparent 50%),
+    radial-gradient(at 90% 20%, rgba(99, 102, 241, 0.30) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(6, 182, 212, 0.30) 0px, transparent 50%),
+    radial-gradient(at 80% 70%, rgba(236, 72, 153, 0.16) 0px, transparent 50%);
+}
+
+@media (max-width: 768px) {
+  .captalo-card-3d:hover {
+    transform: translateY(-3px);
+  }
+}
