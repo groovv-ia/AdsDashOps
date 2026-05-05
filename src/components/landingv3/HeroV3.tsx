@@ -1,3 +1,5 @@
+import { motion } from 'motion/react';
+
 export function HeroV3() {
   return (
     <header className="relative pt-[140px] pb-20 overflow-hidden bg-background-soft">
@@ -21,29 +23,49 @@ export function HeroV3() {
       <div className="relative max-w-[1280px] mx-auto px-5 sm:px-8 grid grid-cols-1 lg:grid-cols-[1.05fr_1fr] gap-16 items-center">
         {/* ===== Copy ===== */}
         <div>
-          <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-xs font-semibold text-secondary lv3-mono">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-xs font-semibold text-secondary lv3-mono"
+          >
             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-secondary text-[10px] font-bold">
               RP
             </span>
             <span>
               <b>Captalo · 0.1</b> · feita em São José do Rio Preto
             </span>
-          </div>
+          </motion.div>
 
-          <h1 className="font-outfit font-bold mt-7 text-[clamp(48px,7vw,92px)] leading-[0.95] tracking-[-0.03em] text-secondary">
+          <motion.h1
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="font-outfit font-bold mt-7 text-[clamp(48px,7vw,92px)] leading-[0.95] tracking-[-0.03em] text-secondary"
+          >
             Toda boa
             <br />
             captação
             <br />
             <em className="lv3-serif italic font-normal text-primary-600">conversa</em>
             <span className="lv3-stroke">.</span>
-          </h1>
+          </motion.h1>
 
-          <p className="mt-7 text-lg text-secondary/65 leading-relaxed max-w-[480px]">
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="mt-7 text-lg text-secondary/65 leading-relaxed max-w-[480px]"
+          >
             A primeira rede colaborativa de imóveis de Rio Preto. Capte, conecte e feche — com a confiança de uma rede real de corretores.
-          </p>
+          </motion.p>
 
-          <div className="mt-8 flex flex-col sm:flex-row gap-3">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+            className="mt-8 flex flex-col sm:flex-row gap-3"
+          >
             <button
               onClick={() => { window.location.href = '/auth/account-type'; }}
               className="group inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-[15px] font-bold text-secondary transition-all hover:-translate-y-0.5"
@@ -74,20 +96,28 @@ export function HeroV3() {
               </svg>
               Ver demo · 90s
             </button>
-          </div>
+          </motion.div>
 
-          <div className="mt-12 flex items-center gap-6 flex-wrap">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.5 }}
+            className="mt-12 flex items-center gap-6 flex-wrap"
+          >
             <Stat value="+1.200" label="Corretores ativos" />
             <Divider />
             <Stat value="R$ 84M" label="Em captações" />
             <Divider />
             <Stat value="48h" label="Tempo médio · match → visita" />
-          </div>
+          </motion.div>
         </div>
 
         {/* ===== Visual / hero photo composition ===== */}
         <div className="relative h-[560px] hidden lg:block">
-          <div
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
             className="absolute inset-0 rounded-[28px] overflow-hidden shadow-[0_30px_80px_-20px_rgba(1,28,38,0.3)]"
             style={{
               background:
@@ -106,10 +136,15 @@ export function HeroV3() {
                   'radial-gradient(70% 60% at 50% 100%, rgba(17,202,230,.18), transparent 60%)',
               }}
             />
-          </div>
+          </motion.div>
 
           {/* Float card 1 — chat */}
-          <div className="absolute top-8 -left-6 w-[280px] bg-white rounded-2xl p-4 shadow-[0_20px_40px_-12px_rgba(1,28,38,0.25)] border border-secondary/5">
+          <motion.div
+            initial={{ opacity: 0, x: -16, y: -16 }}
+            animate={{ opacity: 1, x: 0, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.7 }}
+            className="absolute top-8 -left-6 w-[280px] bg-white rounded-2xl p-4 shadow-[0_20px_40px_-12px_rgba(1,28,38,0.25)] border border-secondary/5"
+          >
             <div className="flex items-center gap-2.5 mb-3">
               <div
                 className="w-8 h-8 rounded-full grid place-items-center text-xs font-bold"
@@ -138,10 +173,15 @@ export function HeroV3() {
                 tenho 2 unidades · 100% match
               </div>
             </div>
-          </div>
+          </motion.div>
 
           {/* Float card 2 — captações ativas */}
-          <div className="absolute bottom-10 -right-4 w-[220px] bg-white rounded-2xl p-4 shadow-[0_20px_40px_-12px_rgba(1,28,38,0.25)] border border-secondary/5">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.9 }}
+            className="absolute bottom-10 -right-4 w-[220px] bg-white rounded-2xl p-4 shadow-[0_20px_40px_-12px_rgba(1,28,38,0.25)] border border-secondary/5"
+          >
             <div className="text-[10px] font-semibold tracking-wider text-secondary/50 uppercase lv3-mono">
               Captações ativas
             </div>
@@ -167,10 +207,15 @@ export function HeroV3() {
                 strokeWidth="1.8"
               />
             </svg>
-          </div>
+          </motion.div>
 
           {/* Badge: Match em 48h */}
-          <div className="absolute top-1/2 -right-2 px-3 py-2.5 bg-secondary text-background-soft rounded-xl shadow-xl flex items-center gap-2.5">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, delay: 1.1 }}
+            className="absolute top-1/2 -right-2 px-3 py-2.5 bg-secondary text-background-soft rounded-xl shadow-xl flex items-center gap-2.5"
+          >
             <div className="w-2 h-2 rounded-full bg-primary lv3-pulse" />
             <div>
               <div className="text-xs font-bold leading-none mb-0.5">Match em 48h</div>
@@ -178,7 +223,7 @@ export function HeroV3() {
                 Vila Imperial · agora
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     </header>

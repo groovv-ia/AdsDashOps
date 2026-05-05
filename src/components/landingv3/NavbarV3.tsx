@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X } from 'lucide-react';
 
 export function NavbarV3() {
@@ -89,39 +90,44 @@ export function NavbarV3() {
         </button>
       </div>
 
-      <div
-        className={`md:hidden overflow-hidden transition-all duration-300 ${
-          open ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
-        } bg-background-soft border-t border-secondary/10`}
-      >
-        <div className="px-5 py-4 space-y-2">
-          {links.map((l) => (
-            <a
-              key={l.label}
-              href={l.href}
-              onClick={() => setOpen(false)}
-              className="block py-2 text-sm font-medium text-secondary"
-            >
-              {l.label}
-            </a>
-          ))}
-          <div className="pt-3 flex flex-col gap-2 border-t border-secondary/10">
-            <button
-              onClick={() => { window.location.href = '/auth/login'; }}
-              className="w-full py-2.5 text-sm font-semibold text-secondary border border-secondary/15 rounded-lg"
-            >
-              Entrar
-            </button>
-            <button
-              onClick={() => { window.location.href = '/auth/account-type'; }}
-              className="w-full py-2.5 text-sm font-bold text-secondary rounded-lg"
-              style={{ background: 'linear-gradient(180deg, #11CAE6, #0A8FA6)' }}
-            >
-              Começar
-            </button>
-          </div>
-        </div>
-      </div>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden bg-background-soft border-t border-secondary/10"
+          >
+            <div className="px-5 py-4 space-y-2">
+              {links.map((l) => (
+                <a
+                  key={l.label}
+                  href={l.href}
+                  onClick={() => setOpen(false)}
+                  className="block py-2 text-sm font-medium text-secondary"
+                >
+                  {l.label}
+                </a>
+              ))}
+              <div className="pt-3 flex flex-col gap-2 border-t border-secondary/10">
+                <button
+                  onClick={() => { window.location.href = '/auth/login'; }}
+                  className="w-full py-2.5 text-sm font-semibold text-secondary border border-secondary/15 rounded-lg"
+                >
+                  Entrar
+                </button>
+                <button
+                  onClick={() => { window.location.href = '/auth/account-type'; }}
+                  className="w-full py-2.5 text-sm font-bold text-secondary rounded-lg"
+                  style={{ background: 'linear-gradient(180deg, #11CAE6, #0A8FA6)' }}
+                >
+                  Começar
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 }
