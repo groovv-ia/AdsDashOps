@@ -33,6 +33,7 @@ import { isDemoMode } from './lib/supabase';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
 import { AlertTriangle } from 'lucide-react';
+import LandingV3 from './pages/LandingV3';
 
 function AppContent() {
   // Todos os hooks devem vir ANTES de qualquer early return
@@ -251,9 +252,15 @@ function AppContent() {
   const isPrivacyPolicyPage = currentPath === '/politica-de-privacidade';
   const isTermsOfServicePage = currentPath === '/termos-de-uso';
   const isDataDeletionPage = currentPath === '/exclusao-de-dados';
+  const isLandingV3Page = currentPath === '/landing-v3';
   const isAuthCallbackPage = currentPath === '/auth/callback';
   const isOAuthCallbackPage = currentPath === '/oauth-callback';
   const isResetPasswordPage = currentPath === '/reset-password';
+
+  // Renderiza Landing V3 (página pública, sem autenticação)
+  if (isLandingV3Page) {
+    return <LandingV3 />;
+  }
 
   // Renderiza página de callback OAuth (Meta, Google, TikTok)
   if (isOAuthCallbackPage) {

@@ -1,0 +1,103 @@
+/* ===== Landing V3 — estilos específicos =====
+   Usa as variáveis e classes Tailwind já configuradas.
+   Aqui só ficam: animação marquee, fontes serif/mono, e detalhes
+   que ficariam verbosos demais como classes utilitárias. */
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap');
+
+.lv3-serif {
+  font-family: 'Instrument Serif', serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.lv3-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  letter-spacing: -0.01em;
+}
+
+/* Marquee infinito */
+@keyframes lv3-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.lv3-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: lv3-marquee 40s linear infinite;
+}
+
+/* Reveal animação */
+.lv3-reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+}
+.lv3-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lv3-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* Stroke text para o "." final do hero */
+.lv3-stroke {
+  -webkit-text-stroke: 2px #011C26;
+  color: transparent;
+}
+
+/* Strike-through estilizado no manifesto */
+.lv3-strike {
+  position: relative;
+  color: rgba(1, 28, 38, 0.4);
+}
+.lv3-strike::after {
+  content: '';
+  position: absolute;
+  left: -4px; right: -4px;
+  top: 55%;
+  height: 3px;
+  background: #11CAE6;
+  transform: rotate(-3deg);
+}
+
+/* Pulse dot */
+@keyframes lv3-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.85); }
+}
+.lv3-pulse {
+  animation: lv3-pulse 1.6s ease-in-out infinite;
+}
+
+/* Spin orbital lento */
+@keyframes lv3-spin-slow {
+  to { transform: rotate(360deg); }
+}
+.lv3-spin-slow { animation: lv3-spin-slow 30s linear infinite; }
+.lv3-spin-slower { animation: lv3-spin-slow 60s linear infinite reverse; }
+
+/* Scroll-bar limpa nas chat bubbles do feature */
+.lv3-scroll-clean::-webkit-scrollbar { display: none; }
+.lv3-scroll-clean { scrollbar-width: none; }
+
+/* FAQ: rotação do icone quando aberto */
+.lv3-qa[open] .lv3-qa-icon { transform: rotate(45deg); }
+.lv3-qa-icon { transition: transform 0.25s ease; }
+
+/* Word-foot — palavra gigante no rodapé */
+.lv3-word-foot {
+  font-family: 'Instrument Serif', serif;
+  font-style: italic;
+  font-size: clamp(80px, 18vw, 280px);
+  line-height: 0.8;
+  letter-spacing: -0.04em;
+  color: rgba(255, 255, 255, 0.04);
+  user-select: none;
+  pointer-events: none;
+}
