@@ -67,36 +67,10 @@ function AppContent() {
     ] as [Date | null, Date | null]
   });
 
-  // Handle OAuth callback
-  useEffect(() => {
-    const handleOAuthCallback = () => {
-      // Proteção contra SSR ou contextos onde window pode não estar disponível
-      if (typeof window === 'undefined' || !window.location) {
-        return;
-      }
-
-      try {
-        const urlParams = new URLSearchParams(window.location.search || '');
-        const hashParams = new URLSearchParams(window.location.hash ? window.location.hash.substring(1) : '');
-
-        const accessToken = urlParams.get('access_token') || hashParams.get('access_token');
-        const error = urlParams.get('error') || hashParams.get('error');
-
-        if (accessToken) {
-          console.log('OAuth callback detected, cleaning URL...');
-          window.history?.replaceState({}, document.title, window.location.pathname);
-        }
-
-        if (error) {
-          console.error('OAuth error:', error);
-        }
-      } catch (err) {
-        console.error('Erro ao processar callback OAuth:', err);
-      }
-    };
-
-    handleOAuthCallback();
-  }, []);
+  // NOTA: NAO limpar o hash fragment da URL aqui!
+  // O SDK do Supabase (com detectSessionInUrl: true) processa #access_token=...
+  // automaticamente. Limpar antes dele processar impede o login social de funcionar.
+  // O SDK limpa o hash apos processar os tokens.
 
   // Listen for auto refresh events
   useEffect(() => {

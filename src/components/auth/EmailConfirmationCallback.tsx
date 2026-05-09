@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { CheckCircle, XCircle, Loader2, LogIn } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { supabase } from '../../lib/supabase';
@@ -12,7 +12,7 @@ const CONFIRMATION_PROCESSED_KEY = 'email_confirmation_processed';
 
 /**
  * Detecta o tipo de callback para exibir mensagem adequada.
- * Login social nao tem `type` no hash/query — tem apenas access_token ou code.
+ * Login social nao tem `type=signup` no hash/query.
  */
 function detectCallbackType(): 'social' | 'email_confirmation' | 'magic_link' {
   const hash = new URLSearchParams(window.location.hash.substring(1));
@@ -43,13 +43,13 @@ function friendlyError(err: any): string {
 /**
  * Processa callbacks de autenticacao Supabase em /auth/callback.
  *
- * Trata tres cenarios:
- *   1. Login social (Google, Facebook) — retorna ?code= via PKCE, ou #access_token= via implicit
- *   2. Confirmacao de email (type=signup) — token_hash nos query params
- *   3. Magic link (type=magiclink)
+ * Com flowType: 'implicit' configurado no cliente, o SDK processa tokens
+ * do hash fragment automaticamente. O processamento e assincrono e emite
+ * evento SIGNED_IN via onAuthStateChange quando concluido.
  *
- * IMPORTANTE: nao usar onAuthStateChange dentro de Promises async — causa
- * "message channel closed" no browser. Usamos apenas polling por getSession().
+ * Este componente usa onAuthStateChange como efeito (nao dentro de Promise)
+ * para evitar o erro "message channel closed" que ocorre com listeners
+ * async em Promises.
  */
 export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps> = ({
   onSuccess,
@@ -61,9 +61,44 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
   const [countdown, setCountdown] = useState(3);
   const [callbackType] = useState<'social' | 'email_confirmation' | 'magic_link'>(detectCallbackType);
   const mountedRef = useRef(true);
+  const processedRef = useRef(false);
+
+  const handleSuccess = useCallback(() => {
+    if (processedRef.current || !mountedRef.current) return;
+    processedRef.current = true;
+    sessionStorage.setItem(CONFIRMATION_PROCESSED_KEY, 'success');
+    setError('');
+    setSuccess(true);
+    setLoading(false);
+    onSuccess?.();
+  }, [onSuccess]);
+
+  const handleError = useCallback((err: any) => {
+    if (processedRef.current || !mountedRef.current) return;
+    processedRef.current = true;
+    console.error('[AuthCallback] Error:', err);
+    const msg = friendlyError(err);
+    setSuccess(false);
+    setError(msg);
+    setLoading(false);
+    onError?.(msg);
+  }, [onError]);
+
+  // Countdown para redirect apos sucesso
+  useEffect(() => {
+    if (!success) return;
+    let t = 3;
+    const timer = setInterval(() => {
+      t--;
+      if (mountedRef.current) setCountdown(t);
+      if (t <= 0) { clearInterval(timer); window.location.replace('/'); }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [success]);
 
   useEffect(() => {
     mountedRef.current = true;
+    processedRef.current = false;
 
     // Ja processamos com sucesso nesta aba — redireciona direto
     if (sessionStorage.getItem(CONFIRMATION_PROCESSED_KEY) === 'success') {
@@ -71,146 +106,143 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
       return;
     }
 
-    const startCountdown = () => {
-      let t = 3;
-      const timer = setInterval(() => {
-        t--;
-        if (mountedRef.current) setCountdown(t);
-        if (t <= 0) { clearInterval(timer); window.location.replace('/'); }
-      }, 1000);
-    };
+    // Verifica erros na URL (retornados pelo Supabase/provedor)
+    const query = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.substring(1));
+    const errCode = query.get('error_code') || hash.get('error_code');
+    const errDesc = query.get('error_description') || hash.get('error_description');
+    if (errCode || errDesc) {
+      handleError({ message: decodeURIComponent(errDesc || errCode || 'Erro na autenticacao') });
+      return;
+    }
 
-    const handleSuccess = () => {
-      sessionStorage.setItem(CONFIRMATION_PROCESSED_KEY, 'success');
-      if (!mountedRef.current) return;
-      setError('');
-      setSuccess(true);
-      setLoading(false);
-      onSuccess?.();
-      startCountdown();
-    };
+    /**
+     * Tentativa de processar OTP (token_hash) manualmente.
+     * Usado para confirmacao de email com link direto.
+     */
+    const tryVerifyOtp = async () => {
+      const tokenHash = query.get('token_hash');
+      const type = query.get('type');
+      if (!tokenHash || !type) return false;
 
-    const handleError = (err: any) => {
-      console.error('[AuthCallback] Error:', err);
-      const msg = friendlyError(err);
-      if (!mountedRef.current) return;
-      setSuccess(false);
-      setError(msg);
-      setLoading(false);
-      onError?.(msg);
+      console.log('[AuthCallback] Verifying OTP, type:', type);
+      try {
+        const { data, error: verifyErr } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: type as any,
+        });
+        if (verifyErr) { handleError(verifyErr); return true; }
+        if (data?.user) { handleSuccess(); return true; }
+      } catch (e: any) {
+        handleError(e);
+        return true;
+      }
+      return false;
     };
 
     /**
-     * Polling simples: verifica getSession() a cada 500ms por ate 15s.
-     * Evita usar onAuthStateChange dentro de Promise (causa "message channel closed").
-     * O SDK processa o ?code= ou #access_token automaticamente em background;
-     * basta aguardar a sessao aparecer.
+     * Tentativa de trocar code PKCE por sessao.
+     * Usado quando flowType e PKCE (nao implicit).
      */
-    const pollForSession = (): Promise<boolean> => {
-      return new Promise((resolve) => {
-        let attempts = 0;
-        const MAX = 30; // 30 x 500ms = 15s
+    const tryExchangeCode = async () => {
+      const code = query.get('code');
+      if (!code) return false;
 
-        const check = async () => {
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-              console.log('[AuthCallback] Session found via polling:', session.user.email);
-              resolve(true);
-              return;
-            }
-          } catch {
-            // ignora erro pontual de rede
-          }
-          attempts++;
-          if (attempts >= MAX) { resolve(false); return; }
-          setTimeout(check, 500);
-        };
-
-        check();
-      });
+      console.log('[AuthCallback] Exchanging PKCE code...');
+      try {
+        const { data, error: exchErr } = await supabase.auth.exchangeCodeForSession(code);
+        if (exchErr) { handleError(exchErr); return true; }
+        if (data?.user) { handleSuccess(); return true; }
+      } catch (e: any) {
+        if (e?.message?.includes('code verifier') || e?.message?.includes('flow state')) {
+          handleError(e);
+          return true;
+        }
+        handleError(e);
+        return true;
+      }
+      return false;
     };
 
+    /**
+     * Estrategia principal de processamento:
+     *
+     * 1. Checa se a sessao ja existe (SDK pode ter processado o hash antes do mount)
+     * 2. Tenta OTP se token_hash presente
+     * 3. Tenta PKCE se code presente
+     * 4. Registra onAuthStateChange listener e timeout — o SDK vai processar
+     *    o hash fragment em background e emitir SIGNED_IN quando pronto
+     */
     const processAuth = async () => {
+      console.log('[AuthCallback] Processing auth callback...');
+      console.log('[AuthCallback] URL:', window.location.href);
+
+      // Checa sessao existente — SDK pode ter processado hash antes do mount
       try {
-        const query = new URLSearchParams(window.location.search);
-        const hash = new URLSearchParams(window.location.hash.substring(1));
-
-        console.log('[AuthCallback] URL:', window.location.href);
-
-        // Erros explicitados na URL pelo Supabase ou provedor
-        const errCode = query.get('error_code') || hash.get('error_code');
-        const errDesc = query.get('error_description') || hash.get('error_description');
-        if (errCode || errDesc) {
-          handleError({ message: decodeURIComponent(errDesc || errCode || 'Erro na autenticacao') });
-          return;
-        }
-
-        // Sessao ja existente — SDK processou antes deste hook rodar
-        const { data: { session: existing } } = await supabase.auth.getSession();
-        if (existing?.user) {
-          console.log('[AuthCallback] Session already active:', existing.user.email);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          console.log('[AuthCallback] Session already active:', session.user.email);
           handleSuccess();
           return;
         }
+      } catch { /* continue */ }
 
-        // token_hash flow (confirmacao de email via OTP)
-        const tokenHash = query.get('token_hash');
-        const type = query.get('type');
-        if (tokenHash && type) {
-          console.log('[AuthCallback] token_hash flow, type:', type);
-          const { data, error: verifyError } = await supabase.auth.verifyOtp({
-            token_hash: tokenHash,
-            type: type as any,
-          });
-          if (verifyError) throw verifyError;
-          if (data?.user) { handleSuccess(); return; }
-        }
+      // Tenta OTP
+      const otpHandled = await tryVerifyOtp();
+      if (otpHandled) return;
 
-        // PKCE code flow — login social moderno e alguns emails de confirmacao
-        const code = query.get('code');
-        if (code) {
-          console.log('[AuthCallback] PKCE code exchange...');
-          try {
-            const { data, error: exchErr } = await supabase.auth.exchangeCodeForSession(code);
-            if (exchErr) throw exchErr;
-            if (data?.user) { handleSuccess(); return; }
-          } catch (pkceErr: any) {
-            // code_verifier ausente = PKCE state perdido, mas email pode estar confirmado
-            if (pkceErr?.message?.includes('code verifier') || pkceErr?.message?.includes('flow state')) {
-              handleError(pkceErr);
-              return;
-            }
-            throw pkceErr;
-          }
-        }
+      // Tenta PKCE code exchange
+      const codeHandled = await tryExchangeCode();
+      if (codeHandled) return;
 
-        // Implicit flow — hash fragment com access_token
-        // O SDK processa isso automaticamente; aguardamos via polling
-        if (hash.get('access_token') || hash.get('refresh_token')) {
-          console.log('[AuthCallback] Implicit hash tokens detected, polling for session...');
-          const found = await pollForSession();
-          if (found) { handleSuccess(); return; }
-          handleError({ message: 'Sessao nao estabelecida. Tente fazer login novamente.' });
-          return;
-        }
-
-        // Nenhum parametro reconhecido — pode ser redirect tardio do SDK
-        console.log('[AuthCallback] No auth params found, polling briefly...');
-        const found = await pollForSession();
-        if (found) { handleSuccess(); return; }
-
-        handleError({ message: 'Nenhum dado de autenticacao encontrado na URL.' });
-      } catch (err: any) {
-        handleError(err);
-      }
+      // Para implicit flow (hash fragment com access_token):
+      // O SDK processa automaticamente via detectSessionInUrl.
+      // Precisamos apenas ESPERAR o SDK terminar.
+      // Nao usamos onAuthStateChange dentro de Promise — usamos timeout com polling.
+      console.log('[AuthCallback] Waiting for SDK to process tokens (polling)...');
     };
 
     processAuth();
 
     return () => { mountedRef.current = false; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [handleSuccess, handleError]);
 
+  /**
+   * Listener separado de onAuthStateChange — roda como efeito do React,
+   * NAO dentro de Promise. Isso evita o erro "message channel closed".
+   *
+   * Quando o SDK termina de processar o hash fragment, emite SIGNED_IN.
+   * Este listener captura e marca sucesso.
+   */
+  useEffect(() => {
+    // Se ja processamos, nao precisa do listener
+    if (sessionStorage.getItem(CONFIRMATION_PROCESSED_KEY) === 'success') return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[AuthCallback] Auth event:', event, session?.user?.email);
+      if (
+        (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') &&
+        session?.user &&
+        !processedRef.current
+      ) {
+        handleSuccess();
+      }
+    });
+
+    // Timeout: se em 20s nenhuma sessao apareceu, mostra erro
+    const timeout = setTimeout(() => {
+      if (!processedRef.current && mountedRef.current) {
+        handleError({ message: 'Sessao nao estabelecida. Tente fazer login novamente.' });
+      }
+    }, 20000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
+  }, [handleSuccess, handleError]);
+
+  // Textos por tipo de callback
   const loadingTitle = callbackType === 'social' ? 'Entrando com sua conta...' : 'Confirmando seu Email';
   const loadingSubtitle = callbackType === 'social' ? 'Autenticando com o provedor...' : 'Aguarde enquanto validamos sua conta...';
   const successTitle = callbackType === 'social' ? 'Login Realizado com Sucesso!' : 'Email Confirmado com Sucesso!';
