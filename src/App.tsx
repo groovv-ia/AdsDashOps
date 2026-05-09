@@ -30,6 +30,7 @@ import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
 import { useDashboardData } from './hooks/useDashboardData';
 import { useWorkspace } from './contexts/WorkspaceContext';
+import { useProfile } from './hooks/useProfile';
 import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
 import { isDemoMode } from './lib/supabase';
 import { exportToCSV, exportToPDF } from './utils/export';
@@ -42,6 +43,8 @@ function AppContent() {
   const { notifications, unreadCount } = useNotifications();
   const { settings: systemSettings } = useSystemSettings();
   const { workspaces, isLoading: workspacesLoading, refreshWorkspaces } = useWorkspace();
+  // Perfil do usuario: controla se o onboarding ja foi concluido
+  const { profile, isLoading: profileLoading, markOnboardingCompleted } = useProfile(user?.id);
 
   // Hook para gerenciar dados do dashboard (reais ou mocks)
   const {
@@ -305,16 +308,31 @@ function AppContent() {
     );
   }
 
-  // Exibe onboarding para usuarios sem workspace (aguarda carregamento terminar)
-  const showOnboarding = !workspacesLoading && workspaces.length === 0;
+  // Aguarda perfil e workspaces carregarem para evitar flash de conteudo
+  if (profileLoading || workspacesLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4" />
+          <p className="text-gray-500 text-sm">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Exibe onboarding se o usuario ainda nao o concluiu (flag onboarding_completed = false)
+  // O workspace ja existe (criado automaticamente pelo trigger), mas o usuario ainda
+  // nao passou pelo fluxo de boas-vindas e personalizacao.
+  const showOnboarding = profile !== null && profile.onboarding_completed === false;
 
   if (showOnboarding) {
     return (
       <OnboardingFlow
-        userName={user?.user_metadata?.full_name || user?.email}
-        onComplete={() => {
-          // Recarrega workspaces apos concluir o onboarding
-          refreshWorkspaces();
+        userName={user?.user_metadata?.full_name || profile?.full_name || user?.email}
+        onComplete={async () => {
+          // Marca onboarding como concluido no banco e recarrega workspaces
+          await markOnboardingCompleted();
+          await refreshWorkspaces();
         }}
       />
     );
