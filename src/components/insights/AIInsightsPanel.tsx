@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Sparkles, 
-  TrendingUp, 
-  TrendingDown, 
-  AlertTriangle, 
-  Lightbulb, 
+import React, { useState } from 'react';
+import {
+  Sparkles,
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  Lightbulb,
   Target,
   Zap,
   BarChart3,
@@ -12,15 +12,13 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  ArrowRight,
-  Settings,
-  Key,
-  ExternalLink
+  ArrowRight
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { CampaignSelector } from './CampaignSelector';
-import { AIInsightsService, AIInsight, CampaignAnalysis } from '../../lib/aiInsights';
+import { AIInsightsRemoteService } from '../../lib/aiInsightsRemote';
+import { AIInsight, CampaignAnalysis } from '../../lib/aiInsights';
 import { Campaign, AdMetrics } from '../../types/advertising';
 import { useDashboardData } from '../../hooks/useDashboardData';
 
@@ -60,44 +58,14 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
     ads: [] as string[]
   });
   
-  // OpenAI API configuration
-  const [showApiConfig, setShowApiConfig] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-  const [isApiConfigured, setIsApiConfigured] = useState(false);
-
-  const aiService = AIInsightsService.getInstance();
-
-  useEffect(() => {
-    // Check if OpenAI API key is configured
-    const configuredKey = import.meta.env.VITE_OPENAI_API_KEY || localStorage.getItem('openai_api_key');
-    setIsApiConfigured(!!configuredKey);
-    if (configuredKey) {
-      setApiKey(configuredKey);
-    }
-  }, []);
+  // Servico remoto de IA (chamadas server-side via edge function)
+  const aiService = AIInsightsRemoteService.getInstance();
 
   const handleSelectionChange = (newSelection: typeof selection) => {
     setSelection(newSelection);
   };
 
-  const handleApiKeySubmit = () => {
-    if (apiKey.trim()) {
-      localStorage.setItem('openai_api_key', apiKey.trim());
-      setIsApiConfigured(true);
-      setShowApiConfig(false);
-      
-      // Update the environment variable for the current session
-      (window as any).__OPENAI_API_KEY__ = apiKey.trim();
-    }
-  };
-
   const generateInsights = async () => {
-    // Verifica se a API está configurada
-    if (!isApiConfigured) {
-      setShowApiConfig(true);
-      return;
-    }
-
     setLoading(true);
     console.log('Iniciando geração de insights...');
 
@@ -441,125 +409,15 @@ export const AIInsightsPanel: React.FC<AIInsightsPanelProps> = ({
             </div>
           )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowApiConfig(true)}
-            icon={isApiConfigured ? Settings : Key}
-          >
-            {isApiConfigured ? 'Configurar' : 'Conectar API'}
-          </Button>
         </div>
       </div>
 
       {/* Campaign Selector */}
-      <CampaignSelector 
-        onSelectionChange={handleSelectionChange} 
+      <CampaignSelector
+        onSelectionChange={handleSelectionChange}
         onGenerateAnalysis={generateInsights}
         loading={loading}
       />
-
-      {/* API Configuration Modal */}
-      {showApiConfig && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center space-x-3">
-                <Key className="w-6 h-6 text-blue-600" />
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900">Configuração da API OpenAI</h2>
-                  <p className="text-gray-600">Configure sua chave da API para habilitar análises avançadas</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-start space-x-2">
-                  <Sparkles className="w-5 h-5 text-blue-600 mt-0.5" />
-                  <div>
-                    <h4 className="font-medium text-blue-900">Como obter sua chave da API</h4>
-                    <ol className="text-sm text-blue-700 mt-2 space-y-1 list-decimal list-inside">
-                      <li>Acesse <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="underline">platform.openai.com/api-keys</a></li>
-                      <li>Faça login em sua conta OpenAI</li>
-                      <li>Clique em "Create new secret key"</li>
-                      <li>Copie a chave gerada e cole abaixo</li>
-                    </ol>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Chave da API OpenAI
-                </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="sk-..."
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Sua chave será armazenada localmente no navegador e não será enviada para nossos servidores
-                </p>
-              </div>
-
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <div className="flex items-start space-x-2">
-                  <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
-                  <div>
-                    <h4 className="font-medium text-yellow-900">Importante</h4>
-                    <p className="text-sm text-yellow-700 mt-1">
-                      O uso da API OpenAI pode gerar custos. Consulte os preços em{' '}
-                      <a href="https://openai.com/pricing" target="_blank" rel="noopener noreferrer" className="underline">
-                        openai.com/pricing
-                      </a>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowApiConfig(false)}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                onClick={handleApiKeySubmit}
-                disabled={!apiKey.trim()}
-                icon={Key}
-              >
-                Salvar Configuração
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* API Key Warning */}
-      {!isApiConfigured && (
-        <Card className="bg-yellow-50 border-yellow-200">
-          <div className="flex items-start space-x-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
-            <div>
-              <h4 className="font-medium text-yellow-900">Configuração Necessária</h4>
-              <p className="text-sm text-yellow-700 mt-1">
-                Configure sua chave da API OpenAI para habilitar análises avançadas com IA.
-                <button 
-                  onClick={() => setShowApiConfig(true)}
-                  className="ml-2 text-yellow-800 underline hover:text-yellow-900"
-                >
-                  Configurar agora
-                </button>
-              </p>
-            </div>
-          </div>
-        </Card>
-      )}
 
       {/* Results Section - Only show if we have results */}
       {(campaignAnalyses.length > 0 || optimizationInsights.length > 0 || anomalies.length > 0 || marketInsights.length > 0) && (

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, Trash2, Home, Mail, Send, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
+import { supabase } from '../../lib/supabase';
 
 /**
  * Componente DataDeletionPolicy
@@ -39,10 +40,22 @@ export const DataDeletionPolicy: React.FC = () => {
     setSubmitStatus('loading');
     setErrorMessage('');
 
-    // Simula envio do formulário
     try {
-      // Aqui você implementaria a lógica real de envio
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Obtem o usuario autenticado (pode ser null se nao estiver logado)
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Insere a solicitacao de exclusao no banco de dados
+      const { error: insertError } = await supabase
+        .from('data_deletion_requests')
+        .insert({
+          user_id: user?.id || null,
+          full_name: formData.fullName,
+          email: formData.email,
+          meta_account_id: formData.metaAccountId,
+          reason: formData.reason || null
+        });
+
+      if (insertError) throw insertError;
 
       setSubmitStatus('success');
       setFormData({

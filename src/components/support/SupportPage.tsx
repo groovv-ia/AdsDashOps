@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { supabase } from '../../lib/supabase';
 
 interface FAQItem {
   id: string;
@@ -483,24 +484,6 @@ const faqData: FAQItem[] = [
   }
 ];
 
-const mockTickets: SupportTicket[] = [
-  {
-    id: 'TICK-001',
-    subject: 'Problema na sincronização do Google Ads',
-    status: 'in-progress',
-    priority: 'high',
-    created: '2024-01-28',
-    lastUpdate: '2024-01-29'
-  },
-  {
-    id: 'TICK-002',
-    subject: 'Dúvida sobre interpretação de métricas',
-    status: 'resolved',
-    priority: 'medium',
-    created: '2024-01-25',
-    lastUpdate: '2024-01-27'
-  }
-];
 
 export const SupportPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'faq' | 'contact' | 'tickets' | 'resources'>('faq');
@@ -514,6 +497,44 @@ export const SupportPage: React.FC = () => {
     priority: 'medium',
     message: ''
   });
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Carrega tickets reais do banco de dados
+  useEffect(() => {
+    const loadTickets = async () => {
+      setTicketsLoading(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data, error } = await supabase
+          .from('support_tickets')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          setTickets(data.map(t => ({
+            id: t.id.substring(0, 8).toUpperCase(),
+            subject: t.subject,
+            status: t.status === 'open' ? 'open' : t.status === 'in_progress' ? 'in-progress' : t.status === 'resolved' ? 'resolved' : 'closed',
+            priority: t.priority as 'low' | 'medium' | 'high' | 'urgent',
+            created: t.created_at,
+            lastUpdate: t.updated_at
+          })));
+        }
+      } catch (err) {
+        console.error('Erro ao carregar tickets:', err);
+      } finally {
+        setTicketsLoading(false);
+      }
+    };
+
+    loadTickets();
+  }, [activeTab]);
 
   const filteredFAQs = faqData.filter(faq => {
     const matchesSearch = !searchQuery || 
@@ -536,11 +557,38 @@ export const SupportPage: React.FC = () => {
     }
   });
 
-  const handleContactSubmit = (e: React.FormEvent) => {
+  const handleContactSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Here you would submit the contact form
-    alert('Ticket criado com sucesso! Você receberá uma resposta em breve.');
-    setContactForm({ subject: '', category: '', priority: 'medium', message: '' });
+    setSubmitLoading(true);
+    setSubmitMessage(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setSubmitMessage({ type: 'error', text: 'Voce precisa estar logado para criar um ticket.' });
+        return;
+      }
+
+      const { error } = await supabase
+        .from('support_tickets')
+        .insert({
+          user_id: user.id,
+          subject: contactForm.subject,
+          category: contactForm.category,
+          priority: contactForm.priority,
+          message: contactForm.message
+        });
+
+      if (error) throw error;
+
+      setSubmitMessage({ type: 'success', text: 'Ticket criado com sucesso! Voce recebera uma resposta em breve.' });
+      setContactForm({ subject: '', category: '', priority: 'medium', message: '' });
+    } catch (err: any) {
+      console.error('Erro ao criar ticket:', err);
+      setSubmitMessage({ type: 'error', text: 'Erro ao criar ticket. Tente novamente.' });
+    } finally {
+      setSubmitLoading(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -865,41 +913,48 @@ export const SupportPage: React.FC = () => {
         </Button>
       </div>
 
-      <div className="space-y-4">
-        {mockTickets.map((ticket) => (
-          <Card key={ticket.id} className="hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-2">
-                  <h4 className="font-medium text-gray-900">{ticket.subject}</h4>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(ticket.status)}`}>
-                    {ticket.status === 'open' ? 'Aberto' :
-                     ticket.status === 'in-progress' ? 'Em Andamento' :
-                     ticket.status === 'resolved' ? 'Resolvido' : 'Fechado'}
-                  </span>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getPriorityColor(ticket.priority)}`}>
-                    {ticket.priority === 'urgent' ? 'Urgente' :
-                     ticket.priority === 'high' ? 'Alta' :
-                     ticket.priority === 'medium' ? 'Média' : 'Baixa'}
-                  </span>
+      {ticketsLoading ? (
+        <div className="text-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="text-gray-500 mt-3">Carregando tickets...</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {tickets.map((ticket) => (
+            <Card key={ticket.id} className="hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <h4 className="font-medium text-gray-900">{ticket.subject}</h4>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(ticket.status)}`}>
+                      {ticket.status === 'open' ? 'Aberto' :
+                       ticket.status === 'in-progress' ? 'Em Andamento' :
+                       ticket.status === 'resolved' ? 'Resolvido' : 'Fechado'}
+                    </span>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getPriorityColor(ticket.priority)}`}>
+                      {ticket.priority === 'urgent' ? 'Urgente' :
+                       ticket.priority === 'high' ? 'Alta' :
+                       ticket.priority === 'medium' ? 'Média' : 'Baixa'}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-4 text-sm text-gray-500">
+                    <span>#{ticket.id}</span>
+                    <span>Criado em {new Date(ticket.created).toLocaleDateString('pt-BR')}</span>
+                    <span>Atualizado em {new Date(ticket.lastUpdate).toLocaleDateString('pt-BR')}</span>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-4 text-sm text-gray-500">
-                  <span>#{ticket.id}</span>
-                  <span>Criado em {new Date(ticket.created).toLocaleDateString('pt-BR')}</span>
-                  <span>Atualizado em {new Date(ticket.lastUpdate).toLocaleDateString('pt-BR')}</span>
-                </div>
+                <ChevronRight className="w-5 h-5 text-gray-400" />
               </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </Card>
-        ))}
-      </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
-      {mockTickets.length === 0 && (
+      {!ticketsLoading && tickets.length === 0 && (
         <Card className="text-center py-12">
           <MessageCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum ticket encontrado</h3>
-          <p className="text-gray-500 mb-4">Você ainda não criou nenhum ticket de suporte.</p>
+          <p className="text-gray-500 mb-4">Voce ainda nao criou nenhum ticket de suporte.</p>
           <Button onClick={() => setActiveTab('contact')}>
             Criar Primeiro Ticket
           </Button>
@@ -1116,9 +1171,23 @@ const FAQItem: React.FC<{ faq: FAQItem }> = ({ faq }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [userFeedback, setUserFeedback] = useState<'helpful' | 'not-helpful' | null>(null);
 
-  const handleFeedback = (type: 'helpful' | 'not-helpful') => {
+  const handleFeedback = async (type: 'helpful' | 'not-helpful') => {
     setUserFeedback(type);
-    // Here you would typically send the feedback to your backend
+
+    // Persiste o feedback no banco de dados
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase
+        .from('support_feedback')
+        .upsert(
+          { user_id: user.id, article_id: faq.id, is_helpful: type === 'helpful' },
+          { onConflict: 'user_id,article_id' }
+        );
+    } catch (err) {
+      console.error('Erro ao salvar feedback:', err);
+    }
   };
 
   const getDifficultyColor = (difficulty: string) => {
