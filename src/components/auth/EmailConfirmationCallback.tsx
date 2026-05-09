@@ -3,54 +3,53 @@ import { CheckCircle, XCircle, Loader2, LogIn } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { supabase } from '../../lib/supabase';
 
-/**
- * Props do componente AuthCallback
- */
 interface EmailConfirmationCallbackProps {
   onSuccess?: () => void;
   onError?: (error: string) => void;
 }
 
-/**
- * Chave no sessionStorage para evitar reprocessamento em remontagens
- */
 const CONFIRMATION_PROCESSED_KEY = 'email_confirmation_processed';
 
 /**
- * Detecta o tipo de callback pela URL para exibir mensagem adequada.
- *
- * O Supabase sinaliza o tipo via parametro `type` no hash ou query:
- *   - signup    → confirmacao de email apos cadastro
- *   - recovery  → redefinicao de senha (vai para /reset-password, nao aqui)
- *   - magiclink → login por magic link
- *   - (ausente) → login social (Google, Facebook) — access_token direto no hash
+ * Detecta o tipo de callback para exibir mensagem adequada.
+ * Login social nao tem `type` no hash/query — tem apenas access_token ou code.
  */
 function detectCallbackType(): 'social' | 'email_confirmation' | 'magic_link' {
   const hash = new URLSearchParams(window.location.hash.substring(1));
   const query = new URLSearchParams(window.location.search);
   const type = hash.get('type') || query.get('type') || '';
-
   if (type === 'signup') return 'email_confirmation';
   if (type === 'magiclink') return 'magic_link';
-  // Login social: tem access_token no hash mas nao tem type, ou provider != email
   return 'social';
+}
+
+function friendlyError(err: any): string {
+  const msg: string = err?.message || String(err) || '';
+  if (msg.includes('Token has expired') || msg.includes('otp_expired'))
+    return 'O link expirou. Solicite um novo email de confirmacao e tente novamente.';
+  if (msg.includes('Email already confirmed'))
+    return 'Este email ja foi confirmado. Voce pode fazer login normalmente.';
+  if (msg.includes('invalid flow state') || msg.includes('PKCE') || msg.includes('code verifier') || msg.includes('flow state'))
+    return 'Seu email foi confirmado! Para acessar a plataforma, faca login normalmente.';
+  if (msg.includes('Invalid token') || msg.includes('otp_disabled'))
+    return 'Link invalido. Tente fazer login — sua conta pode ja estar confirmada.';
+  if (msg.includes('provider_email_needs_verification'))
+    return 'Verifique seu email antes de continuar.';
+  if (msg)
+    return `Nao foi possivel autenticar: ${msg}`;
+  return 'Nao foi possivel autenticar automaticamente. Tente fazer login.';
 }
 
 /**
  * Processa callbacks de autenticacao Supabase em /auth/callback.
  *
- * Trata tres cenarios usando a mesma rota:
+ * Trata tres cenarios:
+ *   1. Login social (Google, Facebook) — retorna ?code= via PKCE, ou #access_token= via implicit
+ *   2. Confirmacao de email (type=signup) — token_hash nos query params
+ *   3. Magic link (type=magiclink)
  *
- * 1. Login social (Google, Facebook) — signInWithOAuth() redireciona aqui
- *    com #access_token=...&refresh_token=...&provider_token=...
- *
- * 2. Confirmacao de email apos cadastro — link do email redireciona aqui
- *    com #access_token=...&type=signup
- *
- * 3. Magic link — com #access_token=...&type=magiclink
- *
- * Com flowType: 'implicit' no cliente, o SDK processa o hash automaticamente
- * no createClient(). O componente aguarda a sessao e redireciona ao dashboard.
+ * IMPORTANTE: nao usar onAuthStateChange dentro de Promises async — causa
+ * "message channel closed" no browser. Usamos apenas polling por getSession().
  */
 export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps> = ({
   onSuccess,
@@ -60,35 +59,27 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [countdown, setCountdown] = useState(3);
-  const [callbackType, setCallbackType] = useState<'social' | 'email_confirmation' | 'magic_link'>('social');
+  const [callbackType] = useState<'social' | 'email_confirmation' | 'magic_link'>(detectCallbackType);
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
 
-    // Ja processamos com sucesso antes nesta aba — redireciona direto
+    // Ja processamos com sucesso nesta aba — redireciona direto
     if (sessionStorage.getItem(CONFIRMATION_PROCESSED_KEY) === 'success') {
       window.location.replace('/');
       return;
     }
 
-    setCallbackType(detectCallbackType());
-
-    /** Inicia countdown e redireciona ao dashboard */
-    const startRedirectCountdown = () => {
-      let timeLeft = 3;
+    const startCountdown = () => {
+      let t = 3;
       const timer = setInterval(() => {
-        timeLeft--;
-        if (mountedRef.current) setCountdown(timeLeft);
-        if (timeLeft <= 0) {
-          clearInterval(timer);
-          window.location.replace('/');
-        }
+        t--;
+        if (mountedRef.current) setCountdown(t);
+        if (t <= 0) { clearInterval(timer); window.location.replace('/'); }
       }, 1000);
-      return timer;
     };
 
-    /** Marca sucesso, salva flag e inicia countdown */
     const handleSuccess = () => {
       sessionStorage.setItem(CONFIRMATION_PROCESSED_KEY, 'success');
       if (!mountedRef.current) return;
@@ -96,150 +87,120 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
       setSuccess(true);
       setLoading(false);
       onSuccess?.();
-      startRedirectCountdown();
+      startCountdown();
     };
 
-    /** Trata erros com mensagens amigaveis */
     const handleError = (err: any) => {
       console.error('[AuthCallback] Error:', err);
-      const msg: string = err?.message || String(err) || '';
-
-      let errorMessage = '';
-      if (msg.includes('Token has expired') || msg.includes('otp_expired')) {
-        errorMessage = 'O link de confirmacao expirou. Faca login e solicite um novo email de confirmacao.';
-      } else if (msg.includes('Email already confirmed')) {
-        errorMessage = 'Este email ja foi confirmado. Voce pode fazer login normalmente.';
-      } else if (msg.includes('invalid flow state') || msg.includes('PKCE') || msg.includes('code verifier')) {
-        errorMessage = 'Seu email foi confirmado! Para acessar a plataforma, faca login normalmente.';
-      } else if (msg.includes('Invalid token') || msg.includes('otp_disabled')) {
-        errorMessage = 'Link invalido. Tente fazer login — sua conta pode ja estar confirmada.';
-      } else if (msg.includes('provider_email_needs_verification')) {
-        errorMessage = 'Verifique seu email antes de continuar.';
-      } else if (msg) {
-        errorMessage = `Nao foi possivel autenticar: ${msg}. Tente fazer login novamente.`;
-      } else {
-        errorMessage = 'Nao foi possivel autenticar automaticamente. Tente fazer login.';
-      }
-
+      const msg = friendlyError(err);
       if (!mountedRef.current) return;
       setSuccess(false);
-      setError(errorMessage);
+      setError(msg);
       setLoading(false);
-      onError?.(errorMessage);
+      onError?.(msg);
     };
 
     /**
-     * Aguarda o SDK estabelecer sessao apos processar o hash fragment.
-     *
-     * Com flowType: 'implicit', createClient() inicia o processamento do hash
-     * de forma assincrona. Combinamos listener de auth com polling para capturar
-     * a sessao assim que ficar disponivel.
+     * Polling simples: verifica getSession() a cada 500ms por ate 15s.
+     * Evita usar onAuthStateChange dentro de Promise (causa "message channel closed").
+     * O SDK processa o ?code= ou #access_token automaticamente em background;
+     * basta aguardar a sessao aparecer.
      */
-    const waitForSession = (): Promise<{ session: any } | null> => {
+    const pollForSession = (): Promise<boolean> => {
       return new Promise((resolve) => {
-        let resolved = false;
+        let attempts = 0;
+        const MAX = 30; // 30 x 500ms = 15s
 
-        const finish = (result: { session: any } | null) => {
-          if (resolved) return;
-          resolved = true;
-          subRef?.data?.subscription?.unsubscribe?.();
-          clearInterval(pollInterval);
-          clearTimeout(timeout);
-          resolve(result);
-        };
-
-        // Listener de eventos — captura SIGNED_IN emitido pelo SDK apos processar hash
-        const subRef = supabase.auth.onAuthStateChange((event, session) => {
-          console.log('[AuthCallback] Auth event:', event, session?.user?.email);
-          if (
-            (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') &&
-            session?.user
-          ) {
-            finish({ session });
-          }
-        });
-
-        // Polling a cada 600ms — cobre race conditions
-        const pollInterval = setInterval(async () => {
+        const check = async () => {
           try {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
-              console.log('[AuthCallback] Session via polling:', session.user.email);
-              finish({ session });
+              console.log('[AuthCallback] Session found via polling:', session.user.email);
+              resolve(true);
+              return;
             }
           } catch {
-            // ignora erros de polling
+            // ignora erro pontual de rede
           }
-        }, 600);
+          attempts++;
+          if (attempts >= MAX) { resolve(false); return; }
+          setTimeout(check, 500);
+        };
 
-        // Timeout de seguranca: 12 segundos
-        const timeout = setTimeout(() => finish(null), 12000);
+        check();
       });
     };
 
     const processAuth = async () => {
       try {
-        const queryParams = new URLSearchParams(window.location.search);
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const query = new URLSearchParams(window.location.search);
+        const hash = new URLSearchParams(window.location.hash.substring(1));
 
-        // Verifica erros explicitados na URL pelo Supabase/provedor OAuth
-        const errorCode = queryParams.get('error_code') || hashParams.get('error_code');
-        const errorDescription = queryParams.get('error_description') || hashParams.get('error_description');
-        if (errorCode || errorDescription) {
-          handleError({ message: decodeURIComponent(errorDescription || errorCode || 'Erro na autenticacao') });
+        console.log('[AuthCallback] URL:', window.location.href);
+
+        // Erros explicitados na URL pelo Supabase ou provedor
+        const errCode = query.get('error_code') || hash.get('error_code');
+        const errDesc = query.get('error_description') || hash.get('error_description');
+        if (errCode || errDesc) {
+          handleError({ message: decodeURIComponent(errDesc || errCode || 'Erro na autenticacao') });
           return;
         }
 
-        // --- ESTRATEGIA 0: Sessao ja existente ---
-        // Com flowType: 'implicit', createClient() processa o hash automaticamente.
-        // Para login social, a sessao frequentemente ja existe quando este hook roda.
-        console.log('[AuthCallback] Checking existing session...');
-        const { data: { session: existingSession } } = await supabase.auth.getSession();
-        if (existingSession?.user) {
-          console.log('[AuthCallback] Session already exists:', existingSession.user.email);
+        // Sessao ja existente — SDK processou antes deste hook rodar
+        const { data: { session: existing } } = await supabase.auth.getSession();
+        if (existing?.user) {
+          console.log('[AuthCallback] Session already active:', existing.user.email);
           handleSuccess();
           return;
         }
 
-        // --- ESTRATEGIA 1: token_hash + type (OTP / confirmacao de email) ---
-        const tokenHash = queryParams.get('token_hash');
-        const type = queryParams.get('type');
+        // token_hash flow (confirmacao de email via OTP)
+        const tokenHash = query.get('token_hash');
+        const type = query.get('type');
         if (tokenHash && type) {
           console.log('[AuthCallback] token_hash flow, type:', type);
-          const otpType = (type === 'signup' ? 'signup' : type === 'email' ? 'email' : type) as any;
-          const { data, error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: otpType });
+          const { data, error: verifyError } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: type as any,
+          });
           if (verifyError) throw verifyError;
           if (data?.user) { handleSuccess(); return; }
         }
 
-        // --- ESTRATEGIA 2: Codigo PKCE ---
-        const code = queryParams.get('code');
+        // PKCE code flow — login social moderno e alguns emails de confirmacao
+        const code = query.get('code');
         if (code) {
-          console.log('[AuthCallback] PKCE code flow');
+          console.log('[AuthCallback] PKCE code exchange...');
           try {
-            const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-            if (exchangeError) throw exchangeError;
+            const { data, error: exchErr } = await supabase.auth.exchangeCodeForSession(code);
+            if (exchErr) throw exchErr;
             if (data?.user) { handleSuccess(); return; }
           } catch (pkceErr: any) {
+            // code_verifier ausente = PKCE state perdido, mas email pode estar confirmado
             if (pkceErr?.message?.includes('code verifier') || pkceErr?.message?.includes('flow state')) {
-              handleError({ message: 'invalid flow state — email confirmed' });
+              handleError(pkceErr);
               return;
             }
             throw pkceErr;
           }
         }
 
-        // --- ESTRATEGIA 3: Aguarda SDK processar hash fragment ---
-        // Cobre login social e confirmacao de email no formato implicit.
-        console.log('[AuthCallback] Waiting for SDK to process hash fragment...');
-        const result = await waitForSession();
-
-        if (result?.session) {
-          handleSuccess();
+        // Implicit flow — hash fragment com access_token
+        // O SDK processa isso automaticamente; aguardamos via polling
+        if (hash.get('access_token') || hash.get('refresh_token')) {
+          console.log('[AuthCallback] Implicit hash tokens detected, polling for session...');
+          const found = await pollForSession();
+          if (found) { handleSuccess(); return; }
+          handleError({ message: 'Sessao nao estabelecida. Tente fazer login novamente.' });
           return;
         }
 
-        handleError({ message: 'Nao foi possivel autenticar automaticamente.' });
+        // Nenhum parametro reconhecido — pode ser redirect tardio do SDK
+        console.log('[AuthCallback] No auth params found, polling briefly...');
+        const found = await pollForSession();
+        if (found) { handleSuccess(); return; }
+
+        handleError({ message: 'Nenhum dado de autenticacao encontrado na URL.' });
       } catch (err: any) {
         handleError(err);
       }
@@ -247,12 +208,9 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
 
     processAuth();
 
-    return () => {
-      mountedRef.current = false;
-    };
+    return () => { mountedRef.current = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Textos dinamicos por tipo de callback
   const loadingTitle = callbackType === 'social' ? 'Entrando com sua conta...' : 'Confirmando seu Email';
   const loadingSubtitle = callbackType === 'social' ? 'Autenticando com o provedor...' : 'Aguarde enquanto validamos sua conta...';
   const successTitle = callbackType === 'social' ? 'Login Realizado com Sucesso!' : 'Email Confirmado com Sucesso!';
@@ -264,55 +222,36 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
 
-        {/* Estado de carregamento */}
         {loading && !success && !error && (
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-blue-100 mb-4">
               <Loader2 className="h-10 w-10 text-blue-600 animate-spin" />
             </div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-              {loadingTitle}
-            </h2>
-            <p className="text-gray-600">
-              {loadingSubtitle}
-            </p>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-2">{loadingTitle}</h2>
+            <p className="text-gray-600">{loadingSubtitle}</p>
           </div>
         )}
 
-        {/* Estado de sucesso */}
         {!loading && success && !error && (
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
               <CheckCircle className="h-10 w-10 text-green-600" />
             </div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-              {successTitle}
-            </h2>
-            <p className="text-gray-600 mb-6">
-              {successSubtitle}
-            </p>
-            <Button
-              onClick={() => window.location.replace('/')}
-              variant="primary"
-              className="w-full"
-            >
+            <h2 className="text-2xl font-semibold text-gray-900 mb-2">{successTitle}</h2>
+            <p className="text-gray-600 mb-6">{successSubtitle}</p>
+            <Button onClick={() => window.location.replace('/')} variant="primary" className="w-full">
               Ir para o Dashboard Agora
             </Button>
           </div>
         )}
 
-        {/* Estado de erro */}
         {!loading && !success && error && (
           <div className="text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-amber-100 mb-4">
               <XCircle className="h-10 w-10 text-amber-600" />
             </div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-              Acao Necessaria
-            </h2>
-            <p className="text-gray-700 mb-6 text-sm leading-relaxed">
-              {error}
-            </p>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-2">Acao Necessaria</h2>
+            <p className="text-gray-700 mb-6 text-sm leading-relaxed">{error}</p>
             <div className="space-y-3">
               <Button
                 onClick={() => window.location.replace('/')}
@@ -335,6 +274,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
             </div>
           </div>
         )}
+
       </div>
     </div>
   );
