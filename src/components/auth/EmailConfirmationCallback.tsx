@@ -12,34 +12,22 @@ interface EmailConfirmationCallbackProps {
 }
 
 /**
- * Chave no sessionStorage para impedir reprocessamento em remontagens
- * (o App re-renderiza a cada mudança de auth, causando remontagens)
+ * Chave no sessionStorage para evitar reprocessamento em remontagens
  */
 const CONFIRMATION_PROCESSED_KEY = 'email_confirmation_processed';
 
 /**
- * Componente que processa o callback de confirmacao de email.
+ * Processa o callback de confirmacao de email.
  *
- * Quando o usuario clica no link de confirmacao do email, o Supabase
- * verifica o token server-side e redireciona para esta pagina.
+ * O Supabase redireciona para /auth/callback com tokens no hash fragment:
+ *   https://site.com/auth/callback#access_token=...&refresh_token=...&type=signup
  *
- * O fluxo de deteccao segue 5 estrategias em ordem:
+ * Com flowType: 'implicit' configurado no cliente, o SDK detecta e processa
+ * esses tokens automaticamente no createClient(). O componente apenas
+ * aguarda a sessao ficar disponivel e redireciona para o dashboard.
  *
- * 1. Sessao ja existente — o Supabase JS client pode ter processado
- *    os tokens da URL automaticamente durante a inicializacao do modulo
- *    (createClient detecta ?code ou #access_token na URL).
- *
- * 2. PKCE com "code" — formato padrao do Supabase v2+.
- *    Requer code_verifier no localStorage (mesmo navegador do cadastro).
- *
- * 3. token_hash + type — formato alternativo para verificacao OTP.
- *
- * 4. Hash fragment com access_token + refresh_token — formato legado/implicit.
- *
- * 5. Fallback: escuta eventos do auth + polling periodico de getSession().
- *    Cobre o cenario em que os tokens ja foram consumidos pelo JS client
- *    mas a sessao ainda nao estava pronta quando as estrategias anteriores
- *    rodaram.
+ * Para recuperacao de senha (type=recovery), o redirect vai para /reset-password,
+ * nao para este componente.
  */
 export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps> = ({
   onSuccess,
@@ -54,15 +42,13 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
   useEffect(() => {
     mountedRef.current = true;
 
-    // Se ja processamos com sucesso nesta aba, redireciona direto
+    // Ja processamos com sucesso antes nesta aba — redireciona direto
     if (sessionStorage.getItem(CONFIRMATION_PROCESSED_KEY) === 'success') {
       window.location.replace('/');
       return;
     }
 
-    /**
-     * Inicia countdown de 5s e redireciona ao dashboard
-     */
+    /** Inicia countdown de 5s e redireciona ao dashboard */
     const startRedirectCountdown = () => {
       let timeLeft = 5;
       const timer = setInterval(() => {
@@ -76,9 +62,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
       return timer;
     };
 
-    /**
-     * Marca confirmacao como sucesso, salva flag e inicia countdown
-     */
+    /** Marca sucesso, salva flag e inicia countdown */
     const handleSuccess = () => {
       sessionStorage.setItem(CONFIRMATION_PROCESSED_KEY, 'success');
       if (!mountedRef.current) return;
@@ -89,27 +73,25 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
       startRedirectCountdown();
     };
 
-    /**
-     * Trata erro na confirmacao com mensagens descritivas
-     */
+    /** Trata erros com mensagens amigaveis */
     const handleError = (err: any) => {
       console.error('[EmailConfirmation] Error:', err);
+      const msg: string = err?.message || String(err) || '';
 
-      let errorMessage = 'Erro ao confirmar email. ';
-      const msg = err?.message || '';
-
+      let errorMessage = '';
       if (msg.includes('Token has expired') || msg.includes('otp_expired')) {
-        errorMessage += 'O link de confirmacao expirou. Faca login e solicite um novo email.';
-      } else if (msg.includes('Invalid token') || msg.includes('otp_disabled')) {
-        errorMessage += 'Link de confirmacao invalido. Tente fazer login — seu email pode ja estar confirmado.';
+        errorMessage = 'O link de confirmacao expirou. Faca login e solicite um novo email de confirmacao.';
       } else if (msg.includes('Email already confirmed')) {
-        errorMessage += 'Este email ja foi confirmado. Voce pode fazer login normalmente.';
+        errorMessage = 'Este email ja foi confirmado. Voce pode fazer login normalmente.';
       } else if (msg.includes('invalid flow state') || msg.includes('PKCE') || msg.includes('code verifier')) {
-        errorMessage = 'Seu email foi confirmado, mas a sessao nao pode ser criada automaticamente (navegador diferente do cadastro). Faca login normalmente.';
-      } else if (msg.includes('both auth code and code verifier')) {
-        errorMessage = 'Seu email foi confirmado com sucesso! Faca login para acessar a plataforma.';
+        // Email foi confirmado server-side mas sessao nao pode ser criada no navegador atual
+        errorMessage = 'Seu email foi confirmado! Para acessar a plataforma, faca login normalmente.';
+      } else if (msg.includes('Invalid token') || msg.includes('otp_disabled')) {
+        errorMessage = 'Link de confirmacao invalido. Tente fazer login — seu email pode ja estar confirmado.';
+      } else if (msg) {
+        errorMessage = `Nao foi possivel confirmar automaticamente: ${msg}. Tente fazer login.`;
       } else {
-        errorMessage += msg || 'Tente fazer login normalmente — seu email pode ja ter sido confirmado.';
+        errorMessage = 'Nao foi possivel confirmar automaticamente. Tente fazer login — seu email pode ja ter sido confirmado.';
       }
 
       if (!mountedRef.current) return;
@@ -120,96 +102,73 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
     };
 
     /**
-     * Aguarda o Supabase JS client estabelecer a sessao.
+     * Aguarda o SDK estabelecer sessao apos processar o hash fragment.
      *
-     * Combina duas estrategias simultaneas:
-     * - Listener de auth state (captura SIGNED_IN, INITIAL_SESSION)
-     * - Polling periodico de getSession() a cada 800ms
+     * Com flowType: 'implicit', o createClient() inicia o processamento
+     * do hash de forma assincrona. Combinamos listener de auth com polling
+     * para capturar a sessao assim que ficar disponivel.
      *
-     * Timeout de seguranca: 10 segundos.
+     * Timeout: 12 segundos (suficiente para qualquer conexao lenta).
      */
-    const waitForSession = (): Promise<boolean> => {
+    const waitForSession = (): Promise<{ session: any } | null> => {
       return new Promise((resolve) => {
         let resolved = false;
 
-        const finish = (value: boolean) => {
+        const finish = (result: { session: any } | null) => {
           if (resolved) return;
           resolved = true;
-          resolve(value);
+          subscription?.data?.subscription?.unsubscribe?.();
+          clearInterval(pollInterval);
+          clearTimeout(timeout);
+          resolve(result);
         };
 
-        // Listener de eventos de auth
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        // Listener de eventos de auth — captura SIGNED_IN emitido pelo SDK
+        const subscription = supabase.auth.onAuthStateChange((event, session) => {
+          console.log('[EmailConfirmation] Auth event:', event, session?.user?.email);
           if (
             (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') &&
             session?.user
           ) {
-            console.log('[EmailConfirmation] Session via auth listener:', event, session.user.email);
-            subscription.unsubscribe();
-            clearInterval(pollInterval);
-            finish(true);
+            finish({ session });
           }
         });
 
-        // Polling de sessao a cada 800ms (cobre race conditions)
+        // Polling a cada 600ms — cobre race conditions
         const pollInterval = setInterval(async () => {
           try {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
               console.log('[EmailConfirmation] Session via polling:', session.user.email);
-              clearInterval(pollInterval);
-              subscription.unsubscribe();
-              finish(true);
+              finish({ session });
             }
           } catch {
-            // Ignora erros de polling
+            // ignora erros de polling
           }
-        }, 800);
+        }, 600);
 
-        // Timeout de 10 segundos
-        setTimeout(() => {
-          clearInterval(pollInterval);
-          subscription.unsubscribe();
-          finish(false);
-        }, 10000);
+        // Timeout de seguranca
+        const timeout = setTimeout(() => finish(null), 12000);
       });
     };
 
-    /**
-     * Funcao principal que processa a confirmacao de email.
-     *
-     * Tenta 5 estrategias em sequencia para detectar/estabelecer sessao.
-     * Cada estrategia cobre um cenario diferente de como o Supabase
-     * pode ter redirecionado o usuario.
-     */
     const confirmEmail = async () => {
       try {
         const queryParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
 
-        console.log('[EmailConfirmation] URL params:', {
-          search: window.location.search,
-          hash: window.location.hash ? '(present)' : '(empty)',
-          code: queryParams.get('code') ? 'yes' : 'no',
-          token_hash: queryParams.get('token_hash') ? 'yes' : 'no',
-          access_token: hashParams.get('access_token') ? 'yes' : 'no',
-        });
-
-        // Verifica erros explicitos nos parametros da URL
+        // Verifica erros explicitados na URL pelo Supabase
         const errorCode = queryParams.get('error_code') || hashParams.get('error_code');
         const errorDescription = queryParams.get('error_description') || hashParams.get('error_description');
-
         if (errorCode || errorDescription) {
-          const errorMsg = decodeURIComponent(errorDescription || 'Erro ao confirmar email');
-          handleError({ message: errorMsg });
+          handleError({ message: decodeURIComponent(errorDescription || errorCode || 'Erro ao confirmar email') });
           return;
         }
 
         // --- ESTRATEGIA 0: Sessao ja existente ---
-        // O Supabase JS client detecta ?code ou #access_token na URL durante
-        // createClient() e processa automaticamente. Se ja terminou, a sessao
-        // existe antes mesmo do useEffect rodar.
-        console.log('[EmailConfirmation] Strategy 0: checking existing session...');
+        // Com flowType: 'implicit', o createClient() processa o hash automaticamente.
+        // Na maioria dos casos a sessao ja existe quando este useEffect roda.
+        console.log('[EmailConfirmation] Checking existing session...');
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (existingSession?.user) {
           console.log('[EmailConfirmation] Session already exists:', existingSession.user.email);
@@ -217,87 +176,47 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           return;
         }
 
-        // --- ESTRATEGIA 1: PKCE com authorization code ---
-        const code = queryParams.get('code');
-        if (code) {
-          console.log('[EmailConfirmation] Strategy 1: PKCE code found');
-          try {
-            const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-            if (exchangeError) throw exchangeError;
-            if (data?.user) {
-              console.log('[EmailConfirmation] PKCE exchange OK:', data.user.email);
-              handleSuccess();
-              return;
-            }
-          } catch (pkceErr: any) {
-            // PKCE falhou (ex: navegador diferente, code_verifier ausente)
-            // O email JA foi confirmado server-side pelo Supabase.
-            // Informamos o usuario que pode fazer login.
-            console.warn('[EmailConfirmation] PKCE exchange failed:', pkceErr?.message);
-            handleError({
-              message: pkceErr?.message?.includes('code verifier')
-                ? 'both auth code and code verifier'
-                : (pkceErr?.message || 'PKCE exchange failed'),
-            });
-            return;
-          }
-        }
-
-        // --- ESTRATEGIA 2: token_hash + type (verificacao OTP) ---
+        // --- ESTRATEGIA 1: token_hash + type (OTP direto) ---
         const tokenHash = queryParams.get('token_hash');
         const type = queryParams.get('type');
         if (tokenHash && type) {
-          console.log('[EmailConfirmation] Strategy 2: token_hash, type:', type);
-          const otpType = type === 'signup' ? 'signup' : type === 'email' ? 'email' : type as any;
-
-          const { data, error: verifyError } = await supabase.auth.verifyOtp({
-            token_hash: tokenHash,
-            type: otpType,
-          });
-
+          console.log('[EmailConfirmation] token_hash flow, type:', type);
+          const otpType = (type === 'signup' ? 'signup' : type === 'email' ? 'email' : type) as any;
+          const { data, error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: otpType });
           if (verifyError) throw verifyError;
-          if (!data.user) throw new Error('Usuario nao encontrado apos confirmacao');
-
-          console.log('[EmailConfirmation] OTP verify OK:', data.user.email);
-          handleSuccess();
-          return;
+          if (data?.user) { handleSuccess(); return; }
         }
 
-        // --- ESTRATEGIA 3: Hash fragment com tokens (formato legado/implicit) ---
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
-        if (accessToken && refreshToken) {
-          console.log('[EmailConfirmation] Strategy 3: legacy hash fragment');
-
-          const { data, error: sessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-
-          if (sessionError) throw sessionError;
-          if (!data.user) throw new Error('Usuario nao encontrado apos confirmacao');
-
-          console.log('[EmailConfirmation] Hash fragment OK:', data.user.email);
-          handleSuccess();
-          return;
+        // --- ESTRATEGIA 2: Codigo PKCE ---
+        const code = queryParams.get('code');
+        if (code) {
+          console.log('[EmailConfirmation] PKCE code flow');
+          try {
+            const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+            if (exchangeError) throw exchangeError;
+            if (data?.user) { handleSuccess(); return; }
+          } catch (pkceErr: any) {
+            // Se falhou por code_verifier ausente, o email FOI confirmado server-side
+            if (pkceErr?.message?.includes('code verifier') || pkceErr?.message?.includes('flow state')) {
+              handleError({ message: 'invalid flow state — email confirmed' });
+              return;
+            }
+            throw pkceErr;
+          }
         }
 
-        // --- ESTRATEGIA 4: Aguardar Supabase client (listener + polling) ---
-        // Quando nenhum parametro e encontrado na URL, o Supabase JS client
-        // pode ter consumido os tokens durante a inicializacao e esta
-        // finalizando o processamento async.
-        console.log('[EmailConfirmation] Strategy 4: waiting for session (listener + polling)...');
-        const sessionEstablished = await waitForSession();
+        // --- ESTRATEGIA 3: Hash fragment (implicit flow) —
+        // O SDK pode nao ter terminado de processar — aguarda com listener + polling
+        console.log('[EmailConfirmation] Waiting for SDK to process hash fragment...');
+        const result = await waitForSession();
 
-        if (sessionEstablished) {
+        if (result?.session) {
           handleSuccess();
           return;
         }
 
         // Nenhuma estrategia funcionou
-        handleError({
-          message: 'Nao foi possivel confirmar automaticamente. Seu email pode ja ter sido confirmado — tente fazer login.',
-        });
+        handleError({ message: 'Nao foi possivel confirmar automaticamente.' });
       } catch (err: any) {
         handleError(err);
       }
@@ -364,7 +283,6 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
               {error}
             </p>
             <div className="space-y-3">
-              {/* Botao principal: ir para login */}
               <Button
                 onClick={() => window.location.replace('/')}
                 variant="primary"
@@ -373,7 +291,6 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
                 <LogIn className="h-4 w-4" />
                 Ir para o Login
               </Button>
-              {/* Botao secundario: tentar novamente */}
               <Button
                 onClick={() => {
                   sessionStorage.removeItem(CONFIRMATION_PROCESSED_KEY);

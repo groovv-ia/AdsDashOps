@@ -13,9 +13,24 @@ if (!hasSupabaseConfig && import.meta.env.DEV) {
 
 // Client sempre criado (nunca null) para evitar null checks em toda a aplicacao
 // Se nao configurado, chamadas de API falharao com erro claro
+//
+// flowType: 'implicit' — necessario porque o Supabase esta retornando tokens
+// via hash fragment (#access_token=...) nos links de confirmacao e recuperacao.
+// Com 'pkce' (padrao do SDK v2), o SDK ignoraria o hash e esperaria um `?code=`
+// que nunca chega, causando falha silenciosa na confirmacao de email.
+//
+// detectSessionInUrl: true — garante que o SDK processe automaticamente os
+// tokens do hash na inicializacao, antes de qualquer componente ser montado.
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-key'
+  supabaseAnonKey || 'placeholder-key',
+  {
+    auth: {
+      flowType: 'implicit',
+      detectSessionInUrl: true,
+      persistSession: true,
+    },
+  }
 );
 
 // Flag de modo demo (sem Supabase configurado)

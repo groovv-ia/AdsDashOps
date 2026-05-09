@@ -127,7 +127,8 @@ export const ResetPasswordPage: React.FC = () => {
           return;
         }
 
-        // Verifica se já existe uma sessão ativa (caso a URL tenha sido limpa)
+        // Verifica sessao existente — com flowType:'implicit' o SDK pode ter
+        // processado o hash fragment antes deste useEffect rodar
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           setSessionReady(true);
@@ -135,9 +136,43 @@ export const ResetPasswordPage: React.FC = () => {
           return;
         }
 
-        // Nenhum token válido encontrado
-        setSessionError('Link de recuperação inválido ou expirado. Solicite um novo link na página de login.');
-        setCheckingSession(false);
+        // Aguarda o SDK terminar de processar o hash (listener + polling de 8s)
+        await new Promise<void>((resolve) => {
+          let done = false;
+          const finish = () => { if (!done) { done = true; resolve(); } };
+
+          const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
+            if ((event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') && sess?.user) {
+              subscription.unsubscribe();
+              clearInterval(poll);
+              clearTimeout(timeout);
+              setSessionReady(true);
+              setCheckingSession(false);
+              finish();
+            }
+          });
+
+          const poll = setInterval(async () => {
+            const { data: { session: s } } = await supabase.auth.getSession();
+            if (s?.user) {
+              subscription.unsubscribe();
+              clearInterval(poll);
+              clearTimeout(timeout);
+              setSessionReady(true);
+              setCheckingSession(false);
+              finish();
+            }
+          }, 600);
+
+          const timeout = setTimeout(() => {
+            subscription.unsubscribe();
+            clearInterval(poll);
+            setSessionError('Link de recuperacao invalido ou expirado. Solicite um novo link na pagina de login.');
+            setCheckingSession(false);
+            finish();
+          }, 8000);
+        });
+        return;
       } catch (err: any) {
         console.error('Error validating reset session:', err);
 
