@@ -73,14 +73,19 @@ export const SimpleMetaConnect: React.FC = () => {
           setLoading(true);
           setError(null);
 
+          // Le os estados ANTES de limpar o localStorage
+          const expectedState = localStorage.getItem('meta_oauth_state');
+          const returnedState = localStorage.getItem('meta_oauth_returned_state');
+
           // Limpa localStorage
           localStorage.removeItem('meta_oauth_code');
           localStorage.removeItem('meta_oauth_platform');
           localStorage.removeItem('meta_oauth_flow');
           localStorage.removeItem('meta_oauth_state');
+          localStorage.removeItem('meta_oauth_returned_state');
 
-          // Processa o código
-          await exchangeCodeForToken(code);
+          // Processa o codigo passando os estados para validacao CSRF
+          await exchangeCodeForToken(code, returnedState || undefined, expectedState || undefined);
         }
       } catch (err: any) {
         console.error('❌ [Meta Connect] Erro ao processar retorno OAuth:', err);
@@ -177,7 +182,8 @@ export const SimpleMetaConnect: React.FC = () => {
     const clientId = import.meta.env.VITE_META_APP_ID;
     const redirectUri = import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
     const scope = 'ads_read,ads_management,business_management';
-    const state = `meta_${Date.now()}`;
+    // Gera state criptograficamente aleatorio para prevenir CSRF
+    const state = `meta_${Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('')}`;
 
     // Validação de configuração
     console.log('🚀 [Meta Connect] Configurações OAuth:');
@@ -257,7 +263,7 @@ export const SimpleMetaConnect: React.FC = () => {
    * Troca o codigo de autorizacao por um access token via Edge Function (server-side)
    * O App Secret nunca e exposto ao browser
    */
-  const exchangeCodeForToken = async (code: string) => {
+  const exchangeCodeForToken = async (code: string, returnedState?: string, expectedState?: string) => {
     try {
       console.log('[Exchange Token] Iniciando troca de codigo por token via Edge Function');
 
@@ -275,6 +281,8 @@ export const SimpleMetaConnect: React.FC = () => {
           body: JSON.stringify({
             code,
             redirect_uri: redirectUri,
+            state: returnedState,
+            expected_state: expectedState,
           }),
         }
       );

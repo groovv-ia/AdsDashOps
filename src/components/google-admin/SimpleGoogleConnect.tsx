@@ -126,14 +126,19 @@ export const SimpleGoogleConnect: React.FC = () => {
           setLoading(true);
           setError(null);
 
+          // Le os estados ANTES de limpar o localStorage
+          const expectedState = localStorage.getItem('google_oauth_state');
+          const returnedState = localStorage.getItem('google_oauth_returned_state');
+
           // Limpa localStorage
           localStorage.removeItem('google_oauth_code');
           localStorage.removeItem('google_oauth_platform');
           localStorage.removeItem('google_oauth_flow');
           localStorage.removeItem('google_oauth_state');
+          localStorage.removeItem('google_oauth_returned_state');
 
-          // Processa o codigo
-          await exchangeCodeForToken(code);
+          // Processa o codigo passando os estados para validacao CSRF
+          await exchangeCodeForToken(code, returnedState || undefined, expectedState || undefined);
         }
       } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : 'Erro ao processar autorizacao';
@@ -230,7 +235,8 @@ export const SimpleGoogleConnect: React.FC = () => {
     const redirectUri =
       import.meta.env.VITE_OAUTH_REDIRECT_URL || `${window.location.origin}/oauth-callback`;
     const scope = 'https://www.googleapis.com/auth/adwords';
-    const state = `google_${Date.now()}`;
+    // Gera state criptograficamente aleatorio para prevenir CSRF
+    const state = `google_${Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('')}`;
 
     // Validacao de configuracao
     console.log('[Google Connect] Configuracoes OAuth:');
@@ -283,7 +289,7 @@ export const SimpleGoogleConnect: React.FC = () => {
    * Troca o codigo de autorizacao por tokens de acesso via Edge Function (server-side)
    * O Client Secret nunca e exposto ao browser
    */
-  const exchangeCodeForToken = async (code: string) => {
+  const exchangeCodeForToken = async (code: string, returnedState?: string, expectedState?: string) => {
     try {
       console.log('[Exchange Token] Iniciando troca de codigo por token via Edge Function');
 
@@ -303,6 +309,8 @@ export const SimpleGoogleConnect: React.FC = () => {
             code,
             redirect_uri: redirectUri,
             include_user_info: true,
+            state: returnedState,
+            expected_state: expectedState,
           }),
         }
       );

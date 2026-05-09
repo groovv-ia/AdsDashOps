@@ -26,6 +26,8 @@ interface ExchangeTokenRequest {
   code: string;
   redirect_uri: string;
   include_user_info?: boolean;
+  state?: string;          // state retornado pelo Google no callback
+  expected_state?: string; // state que o frontend salvou antes do redirect
 }
 
 // Interface para resposta do Google OAuth token endpoint
@@ -78,6 +80,39 @@ Deno.serve(async (req: Request) => {
     if (!body.redirect_uri) {
       return new Response(
         JSON.stringify({ error: "Redirect URI is required" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // Valida o state parameter para prevenir CSRF
+    if (body.state && body.expected_state) {
+      if (body.state !== body.expected_state) {
+        console.error("[google-exchange-token] State mismatch — possivel ataque CSRF");
+        return new Response(
+          JSON.stringify({ error: "Invalid state parameter. Request may have been tampered with." }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
+
+    // Valida redirect_uri contra lista de origens permitidas
+    const ALLOWED_REDIRECT_URIS = [
+      "https://adsops.bolt.host/oauth-callback",
+      "https://adsops.bolt.host/auth/callback",
+    ];
+    const isAllowedRedirect = ALLOWED_REDIRECT_URIS.some(
+      (allowed) => body.redirect_uri === allowed || body.redirect_uri.startsWith("http://localhost")
+    );
+    if (!isAllowedRedirect) {
+      console.error("[google-exchange-token] redirect_uri nao permitida:", body.redirect_uri);
+      return new Response(
+        JSON.stringify({ error: "redirect_uri not allowed" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

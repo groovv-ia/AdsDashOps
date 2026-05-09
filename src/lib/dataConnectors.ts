@@ -441,7 +441,8 @@ export const initiateOAuth = {
   meta: (clientId: string, redirectUri?: string) => {
     const uri = getRedirectUri(redirectUri);
     const scope = 'ads_read,ads_management,business_management';
-    const state = Date.now().toString(); // Previne CSRF attacks
+    // Gera state criptograficamente aleatorio para prevenir CSRF
+    const state = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
     const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(uri)}&scope=${scope}&response_type=code&state=${state}`;
     console.log('Meta OAuth URL:', authUrl);
     window.open(authUrl, 'meta-oauth', 'width=600,height=600');

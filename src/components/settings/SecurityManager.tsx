@@ -42,7 +42,6 @@ export const SecurityManager: React.FC<SecurityManagerProps> = ({ onSecurityChan
   const generateQRCode = async () => {
     setLoading(true);
     try {
-      // Verificar se o Supabase está configurado
       if (!supabase) {
         alert('Supabase não configurado. Configure o Supabase para usar recursos de segurança.');
         setLoading(false);
@@ -52,21 +51,29 @@ export const SecurityManager: React.FC<SecurityManagerProps> = ({ onSecurityChan
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não encontrado');
 
-      // Generate secret key (in real app, this would be done server-side)
+      // Gera segredo TOTP usando CSPRNG (nao Math.random)
       const secret = generateSecret();
       const issuer = 'AdsOPS';
       const accountName = user.email;
-      
+
       const qrCodeUrl = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(accountName)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}`;
-      
+
       setQrCode(qrCodeUrl);
-      
-      // Generate backup codes
-      const codes = Array.from({ length: 8 }, () => 
-        Math.random().toString(36).substring(2, 8).toUpperCase()
+
+      // Salva o segredo no metadata do usuario para verificacao posterior
+      await supabase.auth.updateUser({
+        data: { totp_secret_pending: secret }
+      });
+
+      // Gera codigos de backup com CSPRNG — 8 codigos de 8 chars hex
+      const codes = Array.from({ length: 8 }, () =>
+        Array.from(crypto.getRandomValues(new Uint8Array(4)))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('')
+          .toUpperCase()
       );
       setBackupCodes(codes);
-      
+
       setShowSetup(true);
       setStep('qr');
     } catch (error) {
@@ -76,47 +83,65 @@ export const SecurityManager: React.FC<SecurityManagerProps> = ({ onSecurityChan
     }
   };
 
-  const generateSecret = () => {
+  // Gera segredo TOTP base32 usando crypto.getRandomValues (CSPRNG)
+  const generateSecret = (): string => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-    let secret = '';
-    for (let i = 0; i < 32; i++) {
-      secret += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return secret;
+    const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+    return Array.from(randomBytes)
+      .map(b => chars[b % chars.length])
+      .join('');
   };
 
   const verifyCode = async () => {
-    if (verificationCode.length !== 6) {
-      alert('Código deve ter 6 dígitos');
+    if (!/^\d{6}$/.test(verificationCode)) {
+      alert('Código deve ter exatamente 6 dígitos numéricos');
       return;
     }
 
     setLoading(true);
     try {
-      // Verificar se o Supabase está configurado
       if (!supabase) {
-        alert('Supabase não configurado. Configure o Supabase para usar recursos de segurança.');
+        alert('Supabase não configurado.');
         setLoading(false);
         return;
       }
 
-      // In real app, verify the TOTP code server-side
-      // For demo, we'll just check if it's not empty
-      if (verificationCode) {
-        // Update user metadata
-        const { error } = await supabase.auth.updateUser({
-          data: { two_factor_enabled: true }
-        });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirada. Faça login novamente.');
 
-        if (error) throw error;
+      // Verifica o codigo TOTP server-side via edge function (HMAC-SHA1 real)
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-totp`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ token: verificationCode }),
+        }
+      );
 
-        setTwoFactorEnabled(true);
-        setStep('backup');
-        onSecurityChange?.(true);
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || 'Erro ao verificar código');
       }
+
+      if (!result.valid) {
+        alert('Código inválido. Verifique o app autenticador e tente novamente.');
+        setLoading(false);
+        return;
+      }
+
+      // Sucesso: o servidor ja ativou o 2FA no metadata
+      setTwoFactorEnabled(true);
+      setStep('backup');
+      onSecurityChange?.(true);
     } catch (error) {
       console.error('Erro ao verificar código:', error);
-      alert('Código inválido');
+      alert(error instanceof Error ? error.message : 'Erro ao verificar código. Tente novamente.');
     } finally {
       setLoading(false);
     }

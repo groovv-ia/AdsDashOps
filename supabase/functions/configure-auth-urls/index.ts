@@ -1,9 +1,10 @@
 /**
  * Edge Function: configure-auth-urls
  *
- * Diagnostica e configura o site_url e redirect_urls do Supabase.
- * Gera um link de confirmacao de teste para verificar qual URL e usada.
- * Executada via POST para aplicar configuracoes, GET para diagnostico.
+ * SEGURANCA: Exige autenticacao de usuario autenticado.
+ * Retorna as URLs configuradas para o projeto (somente leitura).
+ * Operacoes administrativas de configuracao foram removidas desta funcao publica
+ * e devem ser feitas diretamente pelo dashboard do Supabase.
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -16,7 +17,7 @@ const corsHeaders = {
 };
 
 const SITE_URL = "https://adsops.bolt.host";
-const REDIRECT_URLS = [
+const ALLOWED_REDIRECT_URLS = [
   "https://adsops.bolt.host",
   "https://adsops.bolt.host/auth/callback",
   "https://adsops.bolt.host/reset-password",
@@ -29,64 +30,44 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // Verifica autenticacao: exige header Authorization com JWT valido
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Authorization required" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-    // Gera link de confirmacao de teste para inspecionar qual URL o Supabase usa
-    const generateLinkRes = await fetch(`${supabaseUrl}/auth/v1/admin/generate_link`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": serviceRoleKey,
-        "Authorization": `Bearer ${serviceRoleKey}`,
-      },
-      body: JSON.stringify({
-        type: "magiclink",
-        email: "diagnostic-test@example.com",
-        redirect_to: `${SITE_URL}/auth/callback`,
-      }),
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
     });
 
-    const linkData = await generateLinkRes.json();
+    // Valida que o token pertence a um usuario real
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    // Tenta atualizar configuracoes via endpoint interno do GoTrue
-    // Este endpoint usa o service role e e acessivel apenas internamente
-    const updateRes = await fetch(`${supabaseUrl}/auth/v1/admin/config`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": serviceRoleKey,
-        "Authorization": `Bearer ${serviceRoleKey}`,
-      },
-      body: JSON.stringify({
-        URI_ALLOW_LIST: REDIRECT_URLS.join(","),
-        SITE_URL: SITE_URL,
-      }),
-    });
-
-    const updateText = await updateRes.text();
-    let updateData: unknown;
-    try { updateData = JSON.parse(updateText); } catch { updateData = updateText; }
-
+    // Retorna apenas as URLs permitidas para uso pelo frontend (somente leitura)
     return new Response(
       JSON.stringify({
-        diagnostic: {
-          generate_link_status: generateLinkRes.status,
-          action_link: (linkData as any)?.action_link ?? "not_available",
-          link_data_keys: Object.keys(linkData as object ?? {}),
-        },
-        config_update: {
-          status: updateRes.status,
-          response: updateData,
-        },
         site_url: SITE_URL,
-        redirect_urls: REDIRECT_URLS,
-      }, null, 2),
+        redirect_urls: ALLOWED_REDIRECT_URLS,
+      }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
+    // Nunca expoe detalhes internos do erro
+    console.error("[configure-auth-urls] Error:", err);
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+      JSON.stringify({ error: "Internal server error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

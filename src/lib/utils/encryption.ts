@@ -1,7 +1,28 @@
 import CryptoJS from 'crypto-js';
 
-// Chave de criptografia derivada internamente (nao exposta via env vars do browser)
-const ENCRYPTION_KEY = CryptoJS.SHA256('adsops-client-encryption-2024').toString().substring(0, 32);
+/**
+ * AVISO DE SEGURANCA:
+ * Esta criptografia client-side e usada apenas como camada de ofuscacao
+ * para tokens armazenados via fluxos legados.
+ *
+ * Novos fluxos de token (Meta, Google) devem usar as edge functions que
+ * armazenam tokens via Supabase Vault (vault.secrets) — nunca via este modulo.
+ *
+ * A chave e lida da variavel de ambiente VITE_ENCRYPTION_KEY.
+ * Se nao configurada, usa um valor derivado do project ID para evitar
+ * que a chave seja uma string literal no bundle JS.
+ */
+const buildEncryptionKey = (): string => {
+  const envKey = import.meta.env.VITE_ENCRYPTION_KEY;
+  if (envKey && envKey.length >= 32) {
+    return envKey.substring(0, 32);
+  }
+  // Fallback: deriva da URL do projeto (unica por instancia, nao e segredo publico)
+  const projectRef = import.meta.env.VITE_SUPABASE_URL || 'adsops-default';
+  return CryptoJS.SHA256(projectRef + '-enc-salt').toString().substring(0, 32);
+};
+
+const ENCRYPTION_KEY = buildEncryptionKey();
 
 export const encryptData = (data: string): string => {
   try {

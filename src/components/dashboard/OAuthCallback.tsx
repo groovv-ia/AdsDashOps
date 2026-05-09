@@ -95,10 +95,14 @@ export const OAuthCallback: React.FC = () => {
       setStatus('success');
       setMessage('Autorizacao concluida! Redirecionando...');
 
-      // Salva codigo no localStorage usando prefixo da plataforma
+      // Salva codigo e state retornado no localStorage
+      // O state retornado pelo provider e comparado com o expected_state no exchange
       localStorage.setItem(`${detectedPlatform}_oauth_code`, code);
       localStorage.setItem(`${detectedPlatform}_oauth_platform`, detectedPlatform);
       localStorage.removeItem(`${detectedPlatform}_oauth_error`);
+      if (state) {
+        localStorage.setItem(`${detectedPlatform}_oauth_returned_state`, state);
+      }
 
       // Para compatibilidade com o codigo existente do Meta
       if (detectedPlatform === 'meta') {
