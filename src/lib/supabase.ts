@@ -224,8 +224,11 @@ export const signInWithProvider = async (provider: 'google' | 'facebook' | 'appl
       },
     };
 
-    // URL de redirecionamento após autenticação bem-sucedida (centralizada)
-    const redirectTo = AUTH_REDIRECT_URLS.OAUTH_CALLBACK;
+    // Login social usa /auth/callback (mesmo handler da confirmacao de email),
+    // pois o Supabase retorna tokens via hash fragment (#access_token=...).
+    // OAUTH_CALLBACK (/oauth-callback) e exclusivo para integracao de plataformas
+    // de anuncios (Meta Ads, Google Ads API, TikTok) — nao para login de usuarios.
+    const redirectTo = AUTH_REDIRECT_URLS.SOCIAL_LOGIN_CALLBACK;
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,

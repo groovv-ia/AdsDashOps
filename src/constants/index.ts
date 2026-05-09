@@ -396,6 +396,18 @@ export const SUCCESS_MESSAGES = {
  * Centraliza todas as URLs usadas no fluxo de auth (confirmação de email,
  * reset de senha, OAuth) para evitar strings hardcoded em vários arquivos.
  * Usa variáveis de ambiente quando disponíveis, com fallback para produção.
+ *
+ * IMPORTANTE — distinção entre os dois tipos de OAuth:
+ *
+ * SOCIAL_LOGIN_CALLBACK (/auth/callback):
+ *   Usado por signInWithProvider (Google, Facebook) — login de usuários.
+ *   O Supabase retorna tokens via hash fragment (#access_token=...).
+ *   Processado pelo EmailConfirmationCallback, que já trata hash fragments.
+ *
+ * OAUTH_CALLBACK (/oauth-callback):
+ *   Usado pela integração com plataformas de anúncios (Meta Ads API,
+ *   Google Ads API, TikTok). Retorna ?code= nos query params.
+ *   Processado pelo OAuthCallback.
  */
 export const AUTH_REDIRECT_URLS = {
   /** URL base do site em produção */
@@ -407,8 +419,18 @@ export const AUTH_REDIRECT_URLS = {
   /** URL de callback para redefinição de senha */
   PASSWORD_RESET: import.meta.env.VITE_PASSWORD_RESET_URL || 'https://adsops.bolt.host/reset-password',
 
-  /** URL de callback para login social (Google, Facebook) */
-  OAUTH_CALLBACK: import.meta.env.VITE_OAUTH_REDIRECT_URL || 'https://adsops.bolt.host',
+  /**
+   * URL de callback para login social (Google, Facebook).
+   * Aponta para /auth/callback — mesmo handler da confirmação de email,
+   * pois o Supabase usa hash fragment (#access_token=...) em ambos os casos.
+   */
+  SOCIAL_LOGIN_CALLBACK: import.meta.env.VITE_SOCIAL_LOGIN_CALLBACK_URL || 'https://adsops.bolt.host/auth/callback',
+
+  /**
+   * URL de callback exclusiva para integração de plataformas de anúncios
+   * (Meta Ads API, Google Ads API, TikTok). Retorna ?code= nos query params.
+   */
+  OAUTH_CALLBACK: import.meta.env.VITE_OAUTH_REDIRECT_URL || 'https://adsops.bolt.host/oauth-callback',
 } as const;
 
 /**

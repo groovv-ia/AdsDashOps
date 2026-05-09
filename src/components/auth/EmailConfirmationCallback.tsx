@@ -4,7 +4,7 @@ import { Button } from '../ui/Button';
 import { supabase } from '../../lib/supabase';
 
 /**
- * Props do componente EmailConfirmationCallback
+ * Props do componente AuthCallback
  */
 interface EmailConfirmationCallbackProps {
   onSuccess?: () => void;
@@ -17,17 +17,40 @@ interface EmailConfirmationCallbackProps {
 const CONFIRMATION_PROCESSED_KEY = 'email_confirmation_processed';
 
 /**
- * Processa o callback de confirmacao de email.
+ * Detecta o tipo de callback pela URL para exibir mensagem adequada.
  *
- * O Supabase redireciona para /auth/callback com tokens no hash fragment:
- *   https://site.com/auth/callback#access_token=...&refresh_token=...&type=signup
+ * O Supabase sinaliza o tipo via parametro `type` no hash ou query:
+ *   - signup    → confirmacao de email apos cadastro
+ *   - recovery  → redefinicao de senha (vai para /reset-password, nao aqui)
+ *   - magiclink → login por magic link
+ *   - (ausente) → login social (Google, Facebook) — access_token direto no hash
+ */
+function detectCallbackType(): 'social' | 'email_confirmation' | 'magic_link' {
+  const hash = new URLSearchParams(window.location.hash.substring(1));
+  const query = new URLSearchParams(window.location.search);
+  const type = hash.get('type') || query.get('type') || '';
+
+  if (type === 'signup') return 'email_confirmation';
+  if (type === 'magiclink') return 'magic_link';
+  // Login social: tem access_token no hash mas nao tem type, ou provider != email
+  return 'social';
+}
+
+/**
+ * Processa callbacks de autenticacao Supabase em /auth/callback.
  *
- * Com flowType: 'implicit' configurado no cliente, o SDK detecta e processa
- * esses tokens automaticamente no createClient(). O componente apenas
- * aguarda a sessao ficar disponivel e redireciona para o dashboard.
+ * Trata tres cenarios usando a mesma rota:
  *
- * Para recuperacao de senha (type=recovery), o redirect vai para /reset-password,
- * nao para este componente.
+ * 1. Login social (Google, Facebook) — signInWithOAuth() redireciona aqui
+ *    com #access_token=...&refresh_token=...&provider_token=...
+ *
+ * 2. Confirmacao de email apos cadastro — link do email redireciona aqui
+ *    com #access_token=...&type=signup
+ *
+ * 3. Magic link — com #access_token=...&type=magiclink
+ *
+ * Com flowType: 'implicit' no cliente, o SDK processa o hash automaticamente
+ * no createClient(). O componente aguarda a sessao e redireciona ao dashboard.
  */
 export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps> = ({
   onSuccess,
@@ -36,7 +59,8 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
   const [loading, setLoading] = useState(true);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(3);
+  const [callbackType, setCallbackType] = useState<'social' | 'email_confirmation' | 'magic_link'>('social');
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -48,9 +72,11 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
       return;
     }
 
-    /** Inicia countdown de 5s e redireciona ao dashboard */
+    setCallbackType(detectCallbackType());
+
+    /** Inicia countdown e redireciona ao dashboard */
     const startRedirectCountdown = () => {
-      let timeLeft = 5;
+      let timeLeft = 3;
       const timer = setInterval(() => {
         timeLeft--;
         if (mountedRef.current) setCountdown(timeLeft);
@@ -75,7 +101,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
 
     /** Trata erros com mensagens amigaveis */
     const handleError = (err: any) => {
-      console.error('[EmailConfirmation] Error:', err);
+      console.error('[AuthCallback] Error:', err);
       const msg: string = err?.message || String(err) || '';
 
       let errorMessage = '';
@@ -84,14 +110,15 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
       } else if (msg.includes('Email already confirmed')) {
         errorMessage = 'Este email ja foi confirmado. Voce pode fazer login normalmente.';
       } else if (msg.includes('invalid flow state') || msg.includes('PKCE') || msg.includes('code verifier')) {
-        // Email foi confirmado server-side mas sessao nao pode ser criada no navegador atual
         errorMessage = 'Seu email foi confirmado! Para acessar a plataforma, faca login normalmente.';
       } else if (msg.includes('Invalid token') || msg.includes('otp_disabled')) {
-        errorMessage = 'Link de confirmacao invalido. Tente fazer login — seu email pode ja estar confirmado.';
+        errorMessage = 'Link invalido. Tente fazer login — sua conta pode ja estar confirmada.';
+      } else if (msg.includes('provider_email_needs_verification')) {
+        errorMessage = 'Verifique seu email antes de continuar.';
       } else if (msg) {
-        errorMessage = `Nao foi possivel confirmar automaticamente: ${msg}. Tente fazer login.`;
+        errorMessage = `Nao foi possivel autenticar: ${msg}. Tente fazer login novamente.`;
       } else {
-        errorMessage = 'Nao foi possivel confirmar automaticamente. Tente fazer login — seu email pode ja ter sido confirmado.';
+        errorMessage = 'Nao foi possivel autenticar automaticamente. Tente fazer login.';
       }
 
       if (!mountedRef.current) return;
@@ -104,11 +131,9 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
     /**
      * Aguarda o SDK estabelecer sessao apos processar o hash fragment.
      *
-     * Com flowType: 'implicit', o createClient() inicia o processamento
-     * do hash de forma assincrona. Combinamos listener de auth com polling
-     * para capturar a sessao assim que ficar disponivel.
-     *
-     * Timeout: 12 segundos (suficiente para qualquer conexao lenta).
+     * Com flowType: 'implicit', createClient() inicia o processamento do hash
+     * de forma assincrona. Combinamos listener de auth com polling para capturar
+     * a sessao assim que ficar disponivel.
      */
     const waitForSession = (): Promise<{ session: any } | null> => {
       return new Promise((resolve) => {
@@ -117,15 +142,15 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
         const finish = (result: { session: any } | null) => {
           if (resolved) return;
           resolved = true;
-          subscription?.data?.subscription?.unsubscribe?.();
+          subRef?.data?.subscription?.unsubscribe?.();
           clearInterval(pollInterval);
           clearTimeout(timeout);
           resolve(result);
         };
 
-        // Listener de eventos de auth — captura SIGNED_IN emitido pelo SDK
-        const subscription = supabase.auth.onAuthStateChange((event, session) => {
-          console.log('[EmailConfirmation] Auth event:', event, session?.user?.email);
+        // Listener de eventos — captura SIGNED_IN emitido pelo SDK apos processar hash
+        const subRef = supabase.auth.onAuthStateChange((event, session) => {
+          console.log('[AuthCallback] Auth event:', event, session?.user?.email);
           if (
             (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') &&
             session?.user
@@ -139,7 +164,7 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           try {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
-              console.log('[EmailConfirmation] Session via polling:', session.user.email);
+              console.log('[AuthCallback] Session via polling:', session.user.email);
               finish({ session });
             }
           } catch {
@@ -147,40 +172,40 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           }
         }, 600);
 
-        // Timeout de seguranca
+        // Timeout de seguranca: 12 segundos
         const timeout = setTimeout(() => finish(null), 12000);
       });
     };
 
-    const confirmEmail = async () => {
+    const processAuth = async () => {
       try {
         const queryParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
 
-        // Verifica erros explicitados na URL pelo Supabase
+        // Verifica erros explicitados na URL pelo Supabase/provedor OAuth
         const errorCode = queryParams.get('error_code') || hashParams.get('error_code');
         const errorDescription = queryParams.get('error_description') || hashParams.get('error_description');
         if (errorCode || errorDescription) {
-          handleError({ message: decodeURIComponent(errorDescription || errorCode || 'Erro ao confirmar email') });
+          handleError({ message: decodeURIComponent(errorDescription || errorCode || 'Erro na autenticacao') });
           return;
         }
 
         // --- ESTRATEGIA 0: Sessao ja existente ---
-        // Com flowType: 'implicit', o createClient() processa o hash automaticamente.
-        // Na maioria dos casos a sessao ja existe quando este useEffect roda.
-        console.log('[EmailConfirmation] Checking existing session...');
+        // Com flowType: 'implicit', createClient() processa o hash automaticamente.
+        // Para login social, a sessao frequentemente ja existe quando este hook roda.
+        console.log('[AuthCallback] Checking existing session...');
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (existingSession?.user) {
-          console.log('[EmailConfirmation] Session already exists:', existingSession.user.email);
+          console.log('[AuthCallback] Session already exists:', existingSession.user.email);
           handleSuccess();
           return;
         }
 
-        // --- ESTRATEGIA 1: token_hash + type (OTP direto) ---
+        // --- ESTRATEGIA 1: token_hash + type (OTP / confirmacao de email) ---
         const tokenHash = queryParams.get('token_hash');
         const type = queryParams.get('type');
         if (tokenHash && type) {
-          console.log('[EmailConfirmation] token_hash flow, type:', type);
+          console.log('[AuthCallback] token_hash flow, type:', type);
           const otpType = (type === 'signup' ? 'signup' : type === 'email' ? 'email' : type) as any;
           const { data, error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: otpType });
           if (verifyError) throw verifyError;
@@ -190,13 +215,12 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
         // --- ESTRATEGIA 2: Codigo PKCE ---
         const code = queryParams.get('code');
         if (code) {
-          console.log('[EmailConfirmation] PKCE code flow');
+          console.log('[AuthCallback] PKCE code flow');
           try {
             const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
             if (exchangeError) throw exchangeError;
             if (data?.user) { handleSuccess(); return; }
           } catch (pkceErr: any) {
-            // Se falhou por code_verifier ausente, o email FOI confirmado server-side
             if (pkceErr?.message?.includes('code verifier') || pkceErr?.message?.includes('flow state')) {
               handleError({ message: 'invalid flow state — email confirmed' });
               return;
@@ -205,9 +229,9 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           }
         }
 
-        // --- ESTRATEGIA 3: Hash fragment (implicit flow) —
-        // O SDK pode nao ter terminado de processar — aguarda com listener + polling
-        console.log('[EmailConfirmation] Waiting for SDK to process hash fragment...');
+        // --- ESTRATEGIA 3: Aguarda SDK processar hash fragment ---
+        // Cobre login social e confirmacao de email no formato implicit.
+        console.log('[AuthCallback] Waiting for SDK to process hash fragment...');
         const result = await waitForSession();
 
         if (result?.session) {
@@ -215,19 +239,26 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
           return;
         }
 
-        // Nenhuma estrategia funcionou
-        handleError({ message: 'Nao foi possivel confirmar automaticamente.' });
+        handleError({ message: 'Nao foi possivel autenticar automaticamente.' });
       } catch (err: any) {
         handleError(err);
       }
     };
 
-    confirmEmail();
+    processAuth();
 
     return () => {
       mountedRef.current = false;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Textos dinamicos por tipo de callback
+  const loadingTitle = callbackType === 'social' ? 'Entrando com sua conta...' : 'Confirmando seu Email';
+  const loadingSubtitle = callbackType === 'social' ? 'Autenticando com o provedor...' : 'Aguarde enquanto validamos sua conta...';
+  const successTitle = callbackType === 'social' ? 'Login Realizado com Sucesso!' : 'Email Confirmado com Sucesso!';
+  const successSubtitle = callbackType === 'social'
+    ? `Bem-vindo! Redirecionando em ${countdown} segundos...`
+    : `Sua conta foi ativada. Redirecionando em ${countdown} segundos...`;
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -240,10 +271,10 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
               <Loader2 className="h-10 w-10 text-blue-600 animate-spin" />
             </div>
             <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-              Confirmando seu Email
+              {loadingTitle}
             </h2>
             <p className="text-gray-600">
-              Aguarde enquanto validamos sua conta...
+              {loadingSubtitle}
             </p>
           </div>
         )}
@@ -255,10 +286,10 @@ export const EmailConfirmationCallback: React.FC<EmailConfirmationCallbackProps>
               <CheckCircle className="h-10 w-10 text-green-600" />
             </div>
             <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-              Email Confirmado com Sucesso!
+              {successTitle}
             </h2>
             <p className="text-gray-600 mb-6">
-              Sua conta foi ativada. Redirecionando em {countdown} segundos...
+              {successSubtitle}
             </p>
             <Button
               onClick={() => window.location.replace('/')}
