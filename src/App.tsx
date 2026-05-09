@@ -29,6 +29,8 @@ import { useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useNotifications';
 import { useSystemSettings } from './hooks/useSystemSettings';
 import { useDashboardData } from './hooks/useDashboardData';
+import { useWorkspace } from './contexts/WorkspaceContext';
+import { OnboardingFlow } from './components/onboarding/OnboardingFlow';
 import { isDemoMode } from './lib/supabase';
 import { exportToCSV, exportToPDF } from './utils/export';
 import { MetricsSummary } from './types/advertising';
@@ -39,6 +41,7 @@ function AppContent() {
   const { user, loading } = useAuth();
   const { notifications, unreadCount } = useNotifications();
   const { settings: systemSettings } = useSystemSettings();
+  const { workspaces, isLoading: workspacesLoading, refreshWorkspaces } = useWorkspace();
 
   // Hook para gerenciar dados do dashboard (reais ou mocks)
   const {
@@ -299,6 +302,21 @@ function AppContent() {
         )}
         <AuthForm onSuccess={() => window.location.reload()} />
       </>
+    );
+  }
+
+  // Exibe onboarding para usuarios sem workspace (aguarda carregamento terminar)
+  const showOnboarding = !workspacesLoading && workspaces.length === 0;
+
+  if (showOnboarding) {
+    return (
+      <OnboardingFlow
+        userName={user?.user_metadata?.full_name || user?.email}
+        onComplete={() => {
+          // Recarrega workspaces apos concluir o onboarding
+          refreshWorkspaces();
+        }}
+      />
     );
   }
 
