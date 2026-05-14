@@ -483,6 +483,8 @@ export const MetaAdsSyncPage: React.FC = () => {
   };
 
   // Sincroniza uma conta especifica
+  // Sempre baixa 365 dias de dados da API — o periodo de analise e selecionado
+  // na pagina de detalhe da conta apos a sincronizacao
   const handleSyncAccount = async (accountId: string, syncCreatives: boolean) => {
     const account = getAccountById(accountId);
     if (!account) return;
@@ -494,13 +496,14 @@ export const MetaAdsSyncPage: React.FC = () => {
     let syncSuccessful = false;
 
     try {
-      const daysBack = calculateDaysBack(selectedPeriod);
+      // Sempre sincroniza 365 dias para garantir dados completos
+      const SYNC_DAYS_BACK = 365;
 
       const result = await runMetaSync({
         mode: 'backfill',
         clientId: selectedClient?.id,
         metaAdAccountId: account.meta_id,
-        daysBack,
+        daysBack: SYNC_DAYS_BACK,
         levels: ['campaign', 'adset', 'ad'],
         syncCreatives: syncCreatives,
       });
@@ -573,6 +576,7 @@ export const MetaAdsSyncPage: React.FC = () => {
   };
 
   // Sincroniza uma conta e retorna o resultado para o batch
+  // Sempre baixa 365 dias — periodo de analise e selecionado depois
   const syncSingleAccount = async (
     account: { id: string; meta_id: string; name: string; last_sync_at?: string | null },
     syncCreatives: boolean
@@ -580,13 +584,13 @@ export const MetaAdsSyncPage: React.FC = () => {
     const startTime = Date.now();
 
     try {
-      const daysBack = calculateDaysBack(selectedPeriod);
+      const SYNC_DAYS_BACK = 365;
 
       const result = await runMetaSync({
         mode: 'backfill',
         clientId: selectedClient?.id,
         metaAdAccountId: account.meta_id,
-        daysBack,
+        daysBack: SYNC_DAYS_BACK,
         levels: ['campaign', 'adset', 'ad'],
         syncCreatives,
       });

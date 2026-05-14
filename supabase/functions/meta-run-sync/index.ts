@@ -373,6 +373,55 @@ Deno.serve(async (req: Request) => {
           }
         }
 
+        // Busca reach consolidado do periodo completo (sem time_increment)
+        // O reach diario nao pode ser somado pois e contagem unica de pessoas.
+        // Esta chamada retorna o reach real do periodo, identico ao Gerenciador de Anuncios.
+        try {
+          for (const level of levels) {
+            const reachUrl = `https://graph.facebook.com/v21.0/${adAccount.meta_ad_account_id}/insights`;
+            const reachParams = new URLSearchParams({
+              level: level === "adset" ? "adset" : level,
+              fields: level === "campaign"
+                ? "campaign_id,reach"
+                : level === "adset"
+                  ? "adset_id,reach"
+                  : "ad_id,reach",
+              time_range: JSON.stringify({ since: dateFrom, until: dateTo }),
+              use_account_attribution_setting: "true",
+              limit: "500",
+              access_token: accessToken,
+            });
+            let reachPageUrl: string | null = `${reachUrl}?${reachParams.toString()}`;
+
+            while (reachPageUrl) {
+              const reachData = await fetchInsightsWithRetry(reachPageUrl);
+              if (reachData.data && reachData.data.length > 0) {
+                for (const row of reachData.data) {
+                  const entityId = level === "campaign" ? row.campaign_id
+                    : level === "adset" ? row.adset_id
+                    : row.ad_id;
+                  if (!entityId) continue;
+                  const periodReach = parseInt(row.reach || "0", 10);
+
+                  // Atualiza o campo reach na primeira data do periodo para servir de
+                  // "reach consolidado" — componentes frontend usam este valor quando agregam
+                  await supabaseAdmin
+                    .from("meta_insights_daily")
+                    .update({ reach: periodReach })
+                    .eq("workspace_id", workspace.id)
+                    .eq("meta_ad_account_id", adAccount.id)
+                    .eq("level", level)
+                    .eq("entity_id", entityId)
+                    .eq("date", dateFrom);
+                }
+              }
+              reachPageUrl = reachData.paging?.next || null;
+            }
+          }
+        } catch (reachError) {
+          console.warn("[meta-run-sync] Erro ao buscar reach consolidado:", reachError);
+        }
+
         if (syncJob) {
           const durationSeconds = Math.floor((new Date().getTime() - syncStartTime.getTime()) / 1000);
           await supabaseAdmin.from("meta_sync_jobs").update({ status: syncResult.errors.length > 0 ? "failed" : "completed", fetched_rows: totalRows, total_records_synced: totalRows, duration_seconds: durationSeconds, error_message: syncResult.errors.join("; ") || null, ended_at: new Date().toISOString() }).eq("id", syncJob.id);
