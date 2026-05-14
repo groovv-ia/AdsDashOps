@@ -134,6 +134,22 @@ function extractPurchaseValue(actionValues?: Array<{ action_type: string; value:
   return actionValues.filter((a) => purchaseTypes.includes(a.action_type)).reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
 }
 
+function extractMessagingConversations(actions?: Array<{ action_type: string; value: string }>): number {
+  if (!actions || !Array.isArray(actions)) return 0;
+  const onsite = actions.find((a) => a.action_type === 'onsite_conversion.messaging_conversation_started_7d');
+  if (onsite) return parseInt(onsite.value || '0', 10);
+  const generic = actions.find((a) => a.action_type === 'messaging_conversation_started');
+  if (generic) return parseInt(generic.value || '0', 10);
+  return 0;
+}
+
+function extractPageLikes(actions?: Array<{ action_type: string; value: string }>): number {
+  if (!actions || !Array.isArray(actions)) return 0;
+  const like = actions.find((a) => a.action_type === 'like');
+  if (like) return parseInt(like.value || '0', 10);
+  return 0;
+}
+
 async function fetchInsightsWithRetry(url: string, maxRetries: number = 3): Promise<MetaInsightsResponse> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -358,7 +374,8 @@ Deno.serve(async (req: Request) => {
                 spend: parseFloat(insight.spend || "0"), impressions: parseInt(insight.impressions || "0", 10), reach: parseInt(insight.reach || "0", 10), clicks: parseInt(insight.clicks || "0", 10),
                 ctr: parseFloat(insight.ctr || "0"), cpc: parseFloat(insight.cpc || "0"), cpm: parseFloat(insight.cpm || "0"), frequency: parseFloat(insight.frequency || "0"), unique_clicks: parseInt(insight.unique_clicks || "0", 10),
                 actions_json: insight.actions || {}, action_values_json: insight.action_values || {}, leads: extractLeads(insight.actions), conversions: extractConversions(insight.actions),
-                conversion_value: extractConversionValue(insight.action_values), purchase_value: extractPurchaseValue(insight.action_values)
+                conversion_value: extractConversionValue(insight.action_values), purchase_value: extractPurchaseValue(insight.action_values),
+                messaging_conversations_started: extractMessagingConversations(insight.actions), page_likes: extractPageLikes(insight.actions)
               }, { onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date" });
               totalRows++;
             }
