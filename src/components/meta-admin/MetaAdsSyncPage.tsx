@@ -39,7 +39,6 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { AdAccountCard, AdAccountData } from './AdAccountCard';
 import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems } from './BreadcrumbNav';
-import { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
 import { EnhancedPeriodSelector } from './EnhancedPeriodSelector';
 import { SyncStatusBadge, SyncStatus } from './SyncStatusBadge';
 import { AccountFilters, StatusFilter, SyncFilter, SortOption } from './AccountFilters';
@@ -123,10 +122,6 @@ interface KPIs {
   roas: number;
 }
 
-// Presets de periodo exclusivos para sincronizacao (sem hoje/ontem, com opcoes longas)
-const SYNC_PERIOD_PRESETS = DEFAULT_PERIOD_PRESETS.filter((p) =>
-  ['last_7', 'last_14', 'last_30', 'last_90', 'last_180', 'last_365'].includes(p.id)
-);
 
 // Niveis de entidade disponiveis com icones
 const LEVELS = [
@@ -443,44 +438,6 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Calcula daysBack baseado no preset selecionado
   // Handles flags especiais para periodos de calendario
-  const calculateDaysBack = (periodId: string): number => {
-    const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === periodId);
-    if (!preset) return 7;
-
-    const days = preset.days;
-
-    // Periodos de calendario com flags especiais
-    if (days === -1 || days === -2) {
-      // Este mes ou mes passado - usa 30 dias
-      return 30;
-    } else if (days === -3) {
-      // Este trimestre - calcula dias desde inicio do trimestre
-      const today = new Date();
-      const currentMonth = today.getMonth();
-      const currentQuarter = Math.floor(currentMonth / 3);
-      const firstMonthOfQuarter = currentQuarter * 3;
-      const quarterStart = new Date(today.getFullYear(), firstMonthOfQuarter, 1);
-      const daysSinceQuarterStart = Math.ceil((today.getTime() - quarterStart.getTime()) / (1000 * 60 * 60 * 24));
-      return Math.max(daysSinceQuarterStart + 1, 1);
-    } else if (days === -4) {
-      // Este semestre - calcula dias desde inicio do semestre
-      const today = new Date();
-      const currentMonth = today.getMonth();
-      const firstMonthOfSemester = currentMonth < 6 ? 0 : 6;
-      const semesterStart = new Date(today.getFullYear(), firstMonthOfSemester, 1);
-      const daysSinceSemesterStart = Math.ceil((today.getTime() - semesterStart.getTime()) / (1000 * 60 * 60 * 24));
-      return Math.max(daysSinceSemesterStart + 1, 1);
-    } else if (days === -5) {
-      // Este ano - calcula dias desde 1 de janeiro
-      const today = new Date();
-      const yearStart = new Date(today.getFullYear(), 0, 1);
-      const daysSinceYearStart = Math.ceil((today.getTime() - yearStart.getTime()) / (1000 * 60 * 60 * 24));
-      return Math.max(daysSinceYearStart + 1, 1);
-    }
-
-    // Periodos normais (hoje, ontem, ultimos N dias)
-    return Math.max(days || 7, 1);
-  };
 
   // Sincroniza uma conta especifica
   // Sempre baixa 365 dias de dados da API — o periodo de analise e selecionado
@@ -1462,25 +1419,19 @@ export const MetaAdsSyncPage: React.FC = () => {
           </Card>
         )}
 
-        {/* Seletor de Periodo de Sincronizacao */}
-        <Card className="bg-gradient-to-r from-gray-50 to-white">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 p-1.5 rounded-lg bg-blue-50">
-                <RefreshCw className="w-4 h-4 text-blue-600" />
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900">Periodo de Sincronizacao</h3>
-                <p className="text-sm text-gray-500">
-                  Define quantos dias de dados serao baixados da API do Meta
-                </p>
-              </div>
+        {/* Informativo sobre periodo de sincronizacao */}
+        <Card className="bg-gradient-to-r from-blue-50/50 to-white border-blue-100">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 p-1.5 rounded-lg bg-blue-50">
+              <RefreshCw className="w-4 h-4 text-blue-600" />
             </div>
-            <PeriodButtons
-              selectedPeriod={selectedPeriod}
-              onPeriodChange={handlePeriodChange}
-              presets={SYNC_PERIOD_PRESETS}
-            />
+            <div>
+              <h3 className="font-medium text-gray-900">Sincronizacao Completa</h3>
+              <p className="text-sm text-gray-500">
+                A sincronizacao baixa automaticamente os ultimos 365 dias de dados do Meta Ads.
+                Apos sincronizar, selecione o periodo de analise na pagina de detalhes da conta.
+              </p>
+            </div>
           </div>
         </Card>
 
