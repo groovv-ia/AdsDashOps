@@ -243,7 +243,8 @@ export class AIInsightsService {
       clicks: acc.clicks + metric.clicks,
       spend: acc.spend + metric.spend,
       conversions: acc.conversions + metric.conversions,
-      reach: acc.reach + metric.reach
+      // Reach nao e aditivo — usa o maior valor como aproximacao
+      reach: Math.max(acc.reach, metric.reach)
     }), { impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0 });
 
     const avgCTR = metrics.reduce((sum, m) => sum + m.ctr, 0) / metrics.length;

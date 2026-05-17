@@ -387,7 +387,8 @@ export function aggregateMetrics(dailyMetrics: AdMetrics[]): AdMetricsAggregated
   const totals = dailyMetrics.reduce(
     (acc, m) => ({
       impressions: acc.impressions + m.impressions,
-      reach: acc.reach + m.reach,
+      // Reach nao e aditivo — usa o maior valor diario como aproximacao
+      reach: Math.max(acc.reach, m.reach),
       clicks: acc.clicks + m.clicks,
       spend: acc.spend + m.spend,
       conversions: acc.conversions + m.conversions,

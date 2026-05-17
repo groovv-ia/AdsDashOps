@@ -2,7 +2,8 @@
  * CampaignsPage
  *
  * Pagina principal de visualizacao de campanhas.
- * Integra dados do Meta Ads Sync para exibir campanhas com metricas reais.
+ * Busca dados em tempo real da Meta Ads API para exibir metricas identicas
+ * ao Gerenciador de Anuncios.
  *
  * Features:
  * - Grid responsivo de cards de campanhas
@@ -10,7 +11,7 @@
  * - Busca em tempo real por nome
  * - Ordenacao por multiplos criterios
  * - Estatisticas gerais no topo
- * - Integracao com Meta Insights Daily
+ * - Metricas 100% identicas ao Gerenciador de Anuncios (via API em tempo real)
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -36,6 +37,12 @@ import {
   MetaInsightsDataService,
   MetaCampaignData,
 } from '../../lib/services/MetaInsightsDataService';
+import {
+  fetchRealTimeInsights,
+  processToTotalsByEntity,
+  PeriodMetrics,
+} from '../../lib/services/MetaRealTimeService';
+import { supabase } from '../../lib/supabase';
 import { useClient } from '../../contexts/ClientContext';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -86,25 +93,188 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
   // Debounce da busca
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // Servico de dados
+  // Servico de dados (fallback quando API real-time falha)
   const metaInsightsService = new MetaInsightsDataService();
 
-  /** Retorna o dateRange do hook de período */
+  /** Retorna o dateRange do hook de periodo */
   const getDateRange = useCallback(() => periodDateRange, [periodDateRange]);
 
   /**
-   * Carrega campanhas do Meta Insights
+   * Busca contas Meta Ad vinculadas ao workspace atual
+   */
+  const fetchAdAccounts = async (workspaceId: string): Promise<Array<{ id: string; meta_ad_account_id: string; name: string }>> => {
+    const { data, error } = await supabase
+      .from('meta_ad_accounts')
+      .select('id, meta_ad_account_id, name')
+      .eq('workspace_id', workspaceId);
+
+    if (error) {
+      logger.error('Erro ao buscar contas Meta Ad', error);
+      return [];
+    }
+    return data || [];
+  };
+
+  /**
+   * Busca status e objetivo das campanhas no cache de entidades
+   */
+  const fetchCampaignEntities = async (
+    workspaceId: string,
+    entityIds: string[]
+  ): Promise<Map<string, { status: string; objective?: string }>> => {
+    const map = new Map<string, { status: string; objective?: string }>();
+    if (entityIds.length === 0) return map;
+
+    const { data } = await supabase
+      .from('meta_entities_cache')
+      .select('entity_id, effective_status, objective')
+      .eq('workspace_id', workspaceId)
+      .eq('entity_type', 'campaign')
+      .in('entity_id', entityIds);
+
+    if (data) {
+      for (const e of data) {
+        map.set(e.entity_id, { status: e.effective_status || 'UNKNOWN', objective: e.objective });
+      }
+    }
+    return map;
+  };
+
+  /**
+   * Converte PeriodMetrics para CampaignWithMetrics
+   */
+  const mapPeriodMetricsToCampaign = (
+    pm: PeriodMetrics,
+    entityInfo: { status: string; objective?: string } | undefined,
+    metaAdAccountId: string,
+    dateFrom: string,
+    dateTo: string
+  ): CampaignWithMetrics => ({
+    id: pm.entity_id,
+    name: pm.entity_name,
+    platform: 'Meta',
+    status: entityInfo?.status || 'UNKNOWN',
+    objective: entityInfo?.objective || 'CONVERSIONS',
+    connection_id: '',
+    user_id: '',
+    created_date: dateFrom,
+    start_date: dateFrom,
+    end_date: dateTo,
+    daily_budget: undefined,
+    lifetime_budget: undefined,
+    meta_entity_id: pm.entity_id,
+    meta_ad_account_id: metaAdAccountId,
+    metrics: {
+      impressions: pm.impressions,
+      clicks: pm.clicks,
+      spend: pm.spend,
+      conversions: pm.conversions,
+      reach: pm.reach,
+      frequency: pm.frequency,
+      ctr: pm.ctr,
+      cpc: pm.cpc,
+      cpm: pm.cpm,
+      roas: pm.roas,
+      cost_per_result: pm.cost_per_result,
+      conversion_value: pm.conversion_value,
+    },
+    total_ad_sets: 0,
+    total_ads: 0,
+    last_sync: dateTo,
+    days_active: 0,
+    data_source: 'meta_realtime',
+  });
+
+  /**
+   * Carrega campanhas em tempo real da Meta API.
+   * Para cada conta vinculada, chama a edge function que retorna metricas
+   * identicas ao Gerenciador de Anuncios.
+   * Em caso de erro, faz fallback para dados do banco (meta_insights_daily).
    */
   const loadCampaigns = useCallback(async () => {
     setLoading(true);
     setError('');
 
     try {
-      logger.info('Carregando campanhas do Meta Insights');
+      if (!currentWorkspace?.id) {
+        setCampaigns([]);
+        return;
+      }
 
       const { dateFrom, dateTo } = getDateRange();
+      logger.info('Carregando campanhas em tempo real da Meta API', { dateFrom, dateTo });
 
-      // Busca campanhas do Meta Insights passando workspace_id explicitamente
+      // Busca todas as contas Meta do workspace
+      const adAccounts = await fetchAdAccounts(currentWorkspace.id);
+
+      if (adAccounts.length === 0) {
+        setCampaigns([]);
+        return;
+      }
+
+      // Busca insights em tempo real para todas as contas em paralelo
+      const results = await Promise.allSettled(
+        adAccounts.map(account =>
+          fetchRealTimeInsights({
+            meta_ad_account_id: account.meta_ad_account_id,
+            level: 'campaign',
+            date_from: dateFrom,
+            date_to: dateTo,
+            mode: 'totals',
+          })
+        )
+      );
+
+      // Combina resultados de todas as contas
+      const allCampaignMetrics: Array<{ metrics: PeriodMetrics; accountId: string }> = [];
+      let hasError = false;
+
+      results.forEach((result, idx) => {
+        if (result.status === 'fulfilled' && result.value.totals.length > 0) {
+          const periodMetrics = processToTotalsByEntity(result.value.totals, 'campaign');
+          for (const pm of periodMetrics) {
+            allCampaignMetrics.push({ metrics: pm, accountId: adAccounts[idx].meta_ad_account_id });
+          }
+        } else if (result.status === 'rejected') {
+          hasError = true;
+          logger.warn('Erro ao buscar insights da conta', { account: adAccounts[idx].name, error: result.reason });
+        }
+      });
+
+      // Se nenhuma conta retornou dados, faz fallback para banco de dados
+      if (allCampaignMetrics.length === 0 && hasError) {
+        logger.info('Fallback: carregando campanhas do banco de dados');
+        await loadCampaignsFromDatabase();
+        return;
+      }
+
+      // Busca status/objetivo das campanhas
+      const entityIds = allCampaignMetrics.map(c => c.metrics.entity_id);
+      const entityInfoMap = await fetchCampaignEntities(currentWorkspace.id, entityIds);
+
+      // Converte para formato CampaignWithMetrics
+      const mappedCampaigns: CampaignWithMetrics[] = allCampaignMetrics.map(({ metrics, accountId }) =>
+        mapPeriodMetricsToCampaign(metrics, entityInfoMap.get(metrics.entity_id), accountId, dateFrom, dateTo)
+      );
+
+      setCampaigns(mappedCampaigns);
+      logger.info('Campanhas carregadas em tempo real', { count: mappedCampaigns.length });
+    } catch (err) {
+      logger.error('Erro ao carregar campanhas em tempo real, tentando fallback', err);
+      await loadCampaignsFromDatabase();
+    } finally {
+      setLoading(false);
+    }
+  }, [currentWorkspace, selectedClient, getDateRange]);
+
+  /**
+   * Fallback: carrega campanhas do banco de dados (meta_insights_daily)
+   * quando a API em tempo real falha.
+   */
+  const loadCampaignsFromDatabase = async () => {
+    try {
+      const { dateFrom, dateTo } = getDateRange();
+
       const metaCampaigns = await metaInsightsService.fetchCampaignsWithMetrics({
         workspaceId: currentWorkspace?.id,
         clientId: selectedClient?.id,
@@ -112,7 +282,6 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
         dateTo,
       });
 
-      // Converte para formato CampaignWithMetrics
       const mappedCampaigns: CampaignWithMetrics[] = metaCampaigns.map((mc: MetaCampaignData) => ({
         id: mc.entity_id,
         name: mc.entity_name,
@@ -150,15 +319,13 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
       }));
 
       setCampaigns(mappedCampaigns);
-      logger.info('Campanhas carregadas', { count: mappedCampaigns.length });
+      setError('Usando dados do ultimo sync (API em tempo real indisponivel)');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar campanhas';
-      logger.error('Erro ao carregar campanhas', err);
+      logger.error('Erro ao carregar campanhas do banco', err);
       setError(errorMessage);
-    } finally {
-      setLoading(false);
     }
-  }, [currentWorkspace, selectedClient, getDateRange]);
+  };
 
   /**
    * Carrega campanhas ao montar e quando filtros mudam

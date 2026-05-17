@@ -195,11 +195,12 @@ export async function prepareMetricsDataForAnalysis(
     return null;
   }
 
-  // Calcula totais e médias
+  // Calcula totais e medias — reach nao e somado (contagem unica de pessoas)
   const totals = dailyData.reduce(
     (acc, row) => ({
       impressions: acc.impressions + (Number(row.impressions) || 0),
-      reach: acc.reach + (Number(row.reach) || 0),
+      // Reach nao e aditivo — usa o maior valor diario como aproximacao
+      reach: Math.max(acc.reach, Number(row.reach) || 0),
       clicks: acc.clicks + (Number(row.clicks) || 0),
       spend: acc.spend + (Number(row.spend) || 0),
       conversions: acc.conversions + extractConversions(row.actions_json),

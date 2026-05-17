@@ -55,6 +55,13 @@ import {
   SyncResult,
 } from '../../lib/services/MetaSystemUserService';
 import {
+  fetchRealTimeInsights,
+  processToTotalsByEntity,
+  processDailyData,
+  calculatePeriodKPIs,
+  type PeriodMetrics,
+} from '../../lib/services/MetaRealTimeService';
+import {
   getTokenExpiryStatus,
   refreshMetaToken,
   TokenStatusInfo,
@@ -343,39 +350,97 @@ export const MetaAdsSyncPage: React.FC = () => {
     [syncStatus]
   );
 
-  // Carrega insights do banco de dados
-  // - adset-detail: anuncios do adset selecionado
-  // - campaign-detail: conjuntos do adset (adsets) da campanha selecionada
-  // - account-detail: entidades do nivel selecionado (campaign/adset/ad)
+  // Carrega insights em tempo real da Meta API via edge function.
+  // Retorna totais consolidados do periodo (reach exato) e breakdown diario.
   const loadInsights = async () => {
     if (!navigationState.selectedAccountId) return;
 
-    try {
-      let result;
+    const account = getAccountById(navigationState.selectedAccountId);
+    if (!account?.meta_id) return;
 
-      if (navigationState.currentView === 'adset-detail' && navigationState.selectedAdsetId) {
-        // Anuncios dentro de um adset especifico
-        result = await getAdInsightsByAdset({
-          clientId: selectedClient?.id,
-          metaAdAccountId: navigationState.selectedAccountId,
-          adsetId: navigationState.selectedAdsetId,
-          dateFrom: dateRange.dateFrom,
-          dateTo: dateRange.dateTo,
-          limit: 1000,
-        });
-      } else if (navigationState.currentView === 'campaign-detail' && navigationState.selectedCampaignId) {
-        // Conjuntos de anuncios de uma campanha especifica
-        result = await getInsightsByCampaign({
-          clientId: selectedClient?.id,
-          metaAdAccountId: navigationState.selectedAccountId,
-          campaignId: navigationState.selectedCampaignId,
-          dateFrom: dateRange.dateFrom,
-          dateTo: dateRange.dateTo,
-          limit: 1000,
-        });
-      } else {
-        // Busca normal por nivel (campanhas, conjuntos ou anuncios da conta)
-        result = await getInsightsFromDatabase({
+    try {
+      // Determina o nivel a buscar conforme a view atual
+      let level: 'campaign' | 'adset' | 'ad' = selectedLevel as 'campaign' | 'adset' | 'ad';
+      if (navigationState.currentView === 'adset-detail') {
+        level = 'ad';
+      } else if (navigationState.currentView === 'campaign-detail') {
+        level = 'adset';
+      }
+
+      // Busca dados em tempo real da Meta API (totais + diario)
+      const response = await fetchRealTimeInsights({
+        meta_ad_account_id: account.meta_id,
+        level,
+        date_from: dateRange.dateFrom,
+        date_to: dateRange.dateTo,
+        mode: 'dual',
+      });
+
+      // Processa totais consolidados do periodo (reach exato da Meta)
+      const periodTotals = processToTotalsByEntity(response.totals, level);
+
+      // Processa dados diarios para tabela
+      const dailyRows = processDailyData(response.daily, level);
+
+      // Filtra por campanha/adset se estiver em view de drill-down
+      let filteredTotals = periodTotals;
+      let filteredDaily = dailyRows;
+
+      if (navigationState.currentView === 'campaign-detail' && navigationState.selectedCampaignId) {
+        // Filtra adsets que pertencem a campanha selecionada
+        // Os totals retornam todos adsets da conta, precisamos filtrar pelo campaign_id no daily
+        const adsetIdsInCampaign = new Set(
+          response.daily
+            .filter(row => row.campaign_id === navigationState.selectedCampaignId)
+            .map(row => row.adset_id)
+            .filter(Boolean)
+        );
+        filteredTotals = periodTotals.filter(t => adsetIdsInCampaign.has(t.entity_id));
+        filteredDaily = dailyRows.filter(d => adsetIdsInCampaign.has(d.entity_id));
+      } else if (navigationState.currentView === 'adset-detail' && navigationState.selectedAdsetId) {
+        // Filtra ads que pertencem ao adset selecionado
+        const adIdsInAdset = new Set(
+          response.daily
+            .filter(row => row.adset_id === navigationState.selectedAdsetId)
+            .map(row => row.ad_id)
+            .filter(Boolean)
+        );
+        filteredTotals = periodTotals.filter(t => adIdsInAdset.has(t.entity_id));
+        filteredDaily = dailyRows.filter(d => adIdsInAdset.has(d.entity_id));
+      }
+
+      // Converte para formato InsightRow (usado pela tabela existente)
+      const insightRows: InsightRow[] = filteredDaily.map(row => ({
+        id: row.id,
+        level: row.level,
+        entity_id: row.entity_id,
+        entity_name: row.entity_name,
+        date: row.date,
+        spend: row.spend,
+        impressions: row.impressions,
+        reach: row.reach,
+        clicks: row.clicks,
+        ctr: row.ctr,
+        cpc: row.cpc,
+        cpm: row.cpm,
+        leads: row.leads,
+        messaging_conversations_started: row.messaging_conversations_started,
+        page_likes: row.page_likes,
+        conversions: row.conversions,
+        conversion_value: row.conversion_value,
+        purchase_value: row.purchase_value,
+      }));
+
+      setInsights(insightRows);
+
+      // Calcula KPIs usando os TOTAIS consolidados da Meta (nao soma diario)
+      calculateKPIsFromTotals(filteredTotals);
+      setLastLiveRefresh(response.meta.fetched_at);
+    } catch (err) {
+      console.error('Erro ao carregar insights em tempo real:', err);
+      // Fallback: tenta buscar do banco local se a API falhar
+      try {
+        const result = await getInsightsFromDatabase({
           clientId: selectedClient?.id,
           metaAdAccountId: navigationState.selectedAccountId,
           level: selectedLevel,
@@ -383,22 +448,51 @@ export const MetaAdsSyncPage: React.FC = () => {
           dateTo: dateRange.dateTo,
           limit: 1000,
         });
+        if (!result.error) {
+          setInsights(result.data as InsightRow[]);
+          calculateKPIsLegacy(result.data as InsightRow[]);
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback tambem falhou:', fallbackErr);
       }
-
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-
-      setInsights(result.data as InsightRow[]);
-      calculateKPIs(result.data as InsightRow[]);
-    } catch (err) {
-      console.error('Erro ao carregar insights:', err);
     }
   };
 
-  // Calcula KPIs a partir dos dados
-  const calculateKPIs = (data: InsightRow[]) => {
+  // Calcula KPIs usando totais consolidados da Meta API (valores exatos do periodo)
+  const calculateKPIsFromTotals = (periodTotals: PeriodMetrics[]) => {
+    const empty: KPIs = {
+      totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: 0,
+      avgCtr: 0, avgCpc: 0, avgCpm: 0,
+      totalLeads: 0, totalLeadGrouped: 0, totalMessagingConversations: 0,
+      totalPageLikes: 0, totalConversions: 0, totalConversionValue: 0,
+      totalPurchaseValue: 0, roas: null,
+    };
+    if (periodTotals.length === 0) { setKpis(empty); return; }
+
+    // Usa o servico de calculo que respeita a natureza de cada metrica
+    const kpis = calculatePeriodKPIs(periodTotals);
+
+    setKpis({
+      totalSpend: kpis.totalSpend,
+      totalImpressions: kpis.totalImpressions,
+      totalClicks: kpis.totalClicks,
+      totalReach: kpis.totalReach,
+      avgCtr: kpis.avgCtr,
+      avgCpc: kpis.avgCpc,
+      avgCpm: kpis.avgCpm,
+      totalLeads: kpis.totalLeads,
+      totalLeadGrouped: kpis.totalLeads,
+      totalMessagingConversations: kpis.totalMessagingConversations,
+      totalPageLikes: kpis.totalPageLikes,
+      totalConversions: kpis.totalConversions,
+      totalConversionValue: kpis.totalConversionValue,
+      totalPurchaseValue: kpis.totalPurchaseValue,
+      roas: kpis.roas,
+    });
+  };
+
+  // Fallback: calcula KPIs a partir de dados do banco (quando API falha)
+  const calculateKPIsLegacy = (data: InsightRow[]) => {
     const empty: KPIs = {
       totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: 0,
       avgCtr: 0, avgCpc: 0, avgCpm: 0,
@@ -425,7 +519,6 @@ export const MetaAdsSyncPage: React.FC = () => {
       { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, leadGrouped: 0, messagingConversations: 0, pageLikes: 0, conversions: 0, conversionValue: 0, purchaseValue: 0 }
     );
 
-    // ROAS: null quando nao ha evento de compra (campanha sem purchase)
     const roas = (totals.purchaseValue > 0 && totals.spend > 0)
       ? totals.purchaseValue / totals.spend
       : null;
@@ -976,7 +1069,7 @@ export const MetaAdsSyncPage: React.FC = () => {
     setPeriod(periodId, newDateRange);
   };
 
-  // Busca insights em tempo real da Meta API (bypass do cache)
+  // Busca insights em tempo real da Meta API (force refresh, ignora cache)
   const handleLiveRefresh = async () => {
     if (!navigationState.selectedAccountId || refreshingLive) return;
 
@@ -985,78 +1078,46 @@ export const MetaAdsSyncPage: React.FC = () => {
 
     setRefreshingLive(true);
     try {
-      const result = await fetchLiveInsights({
+      let level: 'campaign' | 'adset' | 'ad' = selectedLevel as 'campaign' | 'adset' | 'ad';
+      if (navigationState.currentView === 'adset-detail') level = 'ad';
+      else if (navigationState.currentView === 'campaign-detail') level = 'adset';
+
+      const response = await fetchRealTimeInsights({
         meta_ad_account_id: account.meta_id,
-        level: (selectedLevel as 'campaign' | 'adset' | 'ad'),
+        level,
         date_from: dateRange.dateFrom,
         date_to: dateRange.dateTo,
-        time_increment: '1',
+        mode: 'dual',
+        force_refresh: true,
       });
 
-      // Converte dados da Meta API para o formato InsightRow do frontend
-      if (result.data && result.data.length > 0) {
-        const liveInsights: InsightRow[] = result.data.map((row) => {
-          const entityId = selectedLevel === 'campaign' ? (row.campaign_id || '')
-            : selectedLevel === 'adset' ? (row.adset_id || '')
-            : (row.ad_id || '');
-          const entityName = selectedLevel === 'campaign' ? (row.campaign_name || entityId)
-            : selectedLevel === 'adset' ? (row.adset_name || entityId)
-            : (row.ad_name || entityId);
+      const periodTotals = processToTotalsByEntity(response.totals, level);
+      const dailyRows = processDailyData(response.daily, level);
 
-          // Extrai metricas do actions[]
-          const actions = row.actions || [];
-          const actionValues = row.action_values || [];
-          const leads = (() => {
-            const lg = actions.find(a => a.action_type === 'onsite_conversion.lead_grouped');
-            if (lg) return parseInt(lg.value || '0', 10);
-            const pl = actions.find(a => a.action_type === 'offsite_conversion.fb_pixel_lead');
-            if (pl) return parseInt(pl.value || '0', 10);
-            const g = actions.find(a => a.action_type === 'lead');
-            if (g) return parseInt(g.value || '0', 10);
-            return 0;
-          })();
-          const messagingConv = (() => {
-            const o = actions.find(a => a.action_type === 'onsite_conversion.messaging_conversation_started_7d');
-            if (o) return parseInt(o.value || '0', 10);
-            const g = actions.find(a => a.action_type === 'messaging_conversation_started');
-            if (g) return parseInt(g.value || '0', 10);
-            return 0;
-          })();
-          const pageLikes = (() => {
-            const l = actions.find(a => a.action_type === 'like');
-            return l ? parseInt(l.value || '0', 10) : 0;
-          })();
-          const purchaseTypes = ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase'];
-          const purchaseValue = actionValues
-            .filter(a => purchaseTypes.includes(a.action_type))
-            .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
+      const insightRows: InsightRow[] = dailyRows.map(row => ({
+        id: row.id,
+        level: row.level,
+        entity_id: row.entity_id,
+        entity_name: row.entity_name,
+        date: row.date,
+        spend: row.spend,
+        impressions: row.impressions,
+        reach: row.reach,
+        clicks: row.clicks,
+        ctr: row.ctr,
+        cpc: row.cpc,
+        cpm: row.cpm,
+        leads: row.leads,
+        messaging_conversations_started: row.messaging_conversations_started,
+        page_likes: row.page_likes,
+        conversions: row.conversions,
+        conversion_value: row.conversion_value,
+        purchase_value: row.purchase_value,
+      }));
 
-          return {
-            id: `${entityId}_${row.date_start}`,
-            level: selectedLevel,
-            entity_id: entityId,
-            entity_name: entityName,
-            date: row.date_start,
-            spend: parseFloat(row.spend || '0'),
-            impressions: parseInt(row.impressions || '0', 10),
-            reach: parseInt(row.reach || '0', 10),
-            clicks: parseInt(row.clicks || '0', 10),
-            ctr: parseFloat(row.ctr || '0'),
-            cpc: parseFloat(row.cpc || '0'),
-            cpm: parseFloat(row.cpm || '0'),
-            leads,
-            messaging_conversations_started: messagingConv,
-            page_likes: pageLikes,
-            conversions: leads + messagingConv,
-            conversion_value: purchaseValue,
-            purchase_value: purchaseValue,
-          };
-        });
-
-        setInsights(liveInsights);
-        calculateKPIs(liveInsights);
-        setLastLiveRefresh(new Date().toISOString());
-      }
+      setInsights(insightRows);
+      calculateKPIsFromTotals(periodTotals);
+      setLastLiveRefresh(response.meta.fetched_at);
     } catch (err) {
       console.error('Erro ao buscar dados em tempo real:', err);
       setError(err instanceof Error ? err.message : 'Erro ao atualizar dados');

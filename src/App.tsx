@@ -157,13 +157,13 @@ function AppContent() {
     return true;
   });
 
-  // Calculate summary metrics
+  // Calculate summary metrics — reach nao e aditivo (contagem unica de pessoas)
   const summaryMetrics: MetricsSummary = filteredMetrics.reduce((acc, metric) => ({
     impressions: acc.impressions + metric.impressions,
     clicks: acc.clicks + metric.clicks,
     spend: acc.spend + metric.spend,
     conversions: acc.conversions + metric.conversions,
-    reach: acc.reach + metric.reach,
+    reach: Math.max(acc.reach, metric.reach),
     frequency: acc.frequency + metric.frequency,
     ctr: acc.ctr + metric.ctr,
     cpc: acc.cpc + metric.cpc,

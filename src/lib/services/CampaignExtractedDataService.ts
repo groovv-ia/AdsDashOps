@@ -305,7 +305,8 @@ export class CampaignExtractedDataService {
           existing.clicks += Number(m.clicks) || 0;
           existing.spend += Number(m.spend) || 0;
           existing.conversions += Number(m.conversions) || 0;
-          existing.reach += Number(m.reach) || 0;
+          // Reach nao e aditivo — usa o maior valor como aproximacao
+          existing.reach = Math.max(existing.reach, Number(m.reach) || 0);
           existing.messaging_conversations_started += Number((m as any).messaging_conversations_started) || 0;
           existing.leads += Number((m as any).leads) || 0;
 
@@ -447,7 +448,8 @@ export class CampaignExtractedDataService {
           existing.clicks += Number(m.clicks) || 0;
           existing.spend += Number(m.spend) || 0;
           existing.conversions += Number(m.conversions) || 0;
-          existing.reach += Number(m.reach) || 0;
+          // Reach nao e aditivo — usa o maior valor como aproximacao
+          existing.reach = Math.max(existing.reach, Number(m.reach) || 0);
           existing.messaging_conversations_started += Number((m as any).messaging_conversations_started) || 0;
           existing.leads += Number((m as any).leads) || 0;
 

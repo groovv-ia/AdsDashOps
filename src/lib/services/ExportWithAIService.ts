@@ -365,7 +365,8 @@ export function calculateExportStatistics(data: any[]): Record<string, any> {
     impressions: acc.impressions + (Number(row.impressions) || 0),
     clicks: acc.clicks + (Number(row.clicks) || 0),
     spend: acc.spend + (Number(row.spend) || 0),
-    reach: acc.reach + (Number(row.reach) || 0),
+    // Reach nao e aditivo — usa o maior valor como aproximacao
+    reach: Math.max(acc.reach, Number(row.reach) || 0),
     conversions: acc.conversions + (Number(row.conversions) || 0),
   }), { impressions: 0, clicks: 0, spend: 0, reach: 0, conversions: 0 });
 

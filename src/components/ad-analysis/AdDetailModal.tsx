@@ -102,10 +102,11 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   const preloadedMetricsForAI: PreloadedMetricsData | null = useMemo(() => {
     if (!hasPreloadedData || !adData?.entity_name) return null;
 
+    // Reach nao e aditivo — usa o maior valor diario como aproximacao
     const totals = preloadedMetrics.reduce(
       (acc, row) => ({
         impressions: acc.impressions + (row.impressions || 0),
-        reach: acc.reach + (row.reach || 0),
+        reach: Math.max(acc.reach, row.reach || 0),
         clicks: acc.clicks + (row.clicks || 0),
         spend: acc.spend + (row.spend || 0),
       }),
@@ -192,11 +193,11 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   const aggregatedPreloadedMetrics = useMemo(() => {
     if (!hasPreloadedData) return null;
 
-    // Soma todas as metricas incluindo leads e conversas iniciadas
+    // Soma metricas aditivas; reach nao e somado (contagem unica de pessoas)
     const totals = preloadedMetrics.reduce(
       (acc, row) => ({
         impressions: acc.impressions + (row.impressions || 0),
-        reach: acc.reach + (row.reach || 0),
+        reach: Math.max(acc.reach, row.reach || 0),
         clicks: acc.clicks + (row.clicks || 0),
         spend: acc.spend + (row.spend || 0),
         leads: acc.leads + ((row as any).leads || 0),

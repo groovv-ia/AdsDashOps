@@ -635,18 +635,17 @@ export class CampaignDataService {
    * @returns Objeto com métricas agregadas usando valores reais
    */
   private aggregateMetrics(metrics: any[]): CampaignWithMetrics['metrics'] {
-    // Soma todos os valores - usa apenas somas simples, não recalcula métricas da API
+    // Soma metricas aditivas; reach NAO e somado (e contagem unica de pessoas)
     const totals = metrics.reduce(
       (acc, metric) => ({
         impressions: acc.impressions + (metric.impressions || 0),
         clicks: acc.clicks + (metric.clicks || 0),
         spend: acc.spend + (metric.spend || 0),
         conversions: acc.conversions + (metric.conversions || 0),
-        reach: acc.reach + (metric.reach || 0),
+        // Reach nao e aditivo — usa o maior valor diario como aproximacao
+        reach: Math.max(acc.reach, metric.reach || 0),
         frequency: acc.frequency + (metric.frequency || 0),
-        // NOVO: Soma valor REAL de conversões (não estima)
         conversion_value: acc.conversion_value + (metric.conversion_value || 0),
-        // NOVO: Soma CPM real da API (usado para calcular média ponderada)
         cpm_sum: acc.cpm_sum + (metric.cpm || 0),
         ctr_sum: acc.ctr_sum + (metric.ctr || 0),
         cpc_sum: acc.cpc_sum + (metric.cpc || 0),
