@@ -70,7 +70,8 @@ interface AdDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   adData: AdDetailModalState['adData'];
-  dateRange?: { start: string; end: string };
+  // Periodo obrigatorio — sempre vem do filtro global (useWorkspacePeriod)
+  dateRange: { start: string; end: string };
   // Metricas pre-carregadas da pagina pai (evita nova query)
   preloadedMetrics?: PreloadedInsightRow[];
   // Criativo pre-carregado (evita nova busca)
@@ -89,16 +90,9 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   const [imageZoomOpen, setImageZoomOpen] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
-  // Datas padrao: ultimos 30 dias
-  const defaultStartDate = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().split('T')[0];
-  }, []);
-  const defaultEndDate = useMemo(() => new Date().toISOString().split('T')[0], []);
-
-  const startDate = dateRange?.start || defaultStartDate;
-  const endDate = dateRange?.end || defaultEndDate;
+  // Usa exatamente o periodo do filtro global (sem fallback hardcoded)
+  const startDate = dateRange.start;
+  const endDate = dateRange.end;
 
   // Verifica se ha dados pre-carregados
   const hasPreloadedData = preloadedMetrics.length > 0;

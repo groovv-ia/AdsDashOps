@@ -134,6 +134,22 @@ function extractPurchaseValue(actionValues?: Array<{ action_type: string; value:
   return actionValues.filter((a) => purchaseTypes.includes(a.action_type)).reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
 }
 
+function extractMessagingConversations(actions?: Array<{ action_type: string; value: string }>): number {
+  if (!actions || !Array.isArray(actions)) return 0;
+  const onsite = actions.find((a) => a.action_type === 'onsite_conversion.messaging_conversation_started_7d');
+  if (onsite) return parseInt(onsite.value || '0', 10);
+  const generic = actions.find((a) => a.action_type === 'messaging_conversation_started');
+  if (generic) return parseInt(generic.value || '0', 10);
+  return 0;
+}
+
+function extractPageLikes(actions?: Array<{ action_type: string; value: string }>): number {
+  if (!actions || !Array.isArray(actions)) return 0;
+  const like = actions.find((a) => a.action_type === 'like');
+  if (like) return parseInt(like.value || '0', 10);
+  return 0;
+}
+
 async function fetchInsightsWithRetry(url: string, maxRetries: number = 3): Promise<MetaInsightsResponse> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -358,7 +374,8 @@ Deno.serve(async (req: Request) => {
                 spend: parseFloat(insight.spend || "0"), impressions: parseInt(insight.impressions || "0", 10), reach: parseInt(insight.reach || "0", 10), clicks: parseInt(insight.clicks || "0", 10),
                 ctr: parseFloat(insight.ctr || "0"), cpc: parseFloat(insight.cpc || "0"), cpm: parseFloat(insight.cpm || "0"), frequency: parseFloat(insight.frequency || "0"), unique_clicks: parseInt(insight.unique_clicks || "0", 10),
                 actions_json: insight.actions || {}, action_values_json: insight.action_values || {}, leads: extractLeads(insight.actions), conversions: extractConversions(insight.actions),
-                conversion_value: extractConversionValue(insight.action_values), purchase_value: extractPurchaseValue(insight.action_values)
+                conversion_value: extractConversionValue(insight.action_values), purchase_value: extractPurchaseValue(insight.action_values),
+                messaging_conversations_started: extractMessagingConversations(insight.actions), page_likes: extractPageLikes(insight.actions)
               }, { onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date" });
               totalRows++;
             }
@@ -371,6 +388,55 @@ Deno.serve(async (req: Request) => {
             }
             syncResult.errors.push(`Level ${level} error: ${errorMsg}`);
           }
+        }
+
+        // Busca reach consolidado do periodo completo (sem time_increment)
+        // O reach diario nao pode ser somado pois e contagem unica de pessoas.
+        // Esta chamada retorna o reach real do periodo, identico ao Gerenciador de Anuncios.
+        try {
+          for (const level of levels) {
+            const reachUrl = `https://graph.facebook.com/v21.0/${adAccount.meta_ad_account_id}/insights`;
+            const reachParams = new URLSearchParams({
+              level: level === "adset" ? "adset" : level,
+              fields: level === "campaign"
+                ? "campaign_id,reach"
+                : level === "adset"
+                  ? "adset_id,reach"
+                  : "ad_id,reach",
+              time_range: JSON.stringify({ since: dateFrom, until: dateTo }),
+              use_account_attribution_setting: "true",
+              limit: "500",
+              access_token: accessToken,
+            });
+            let reachPageUrl: string | null = `${reachUrl}?${reachParams.toString()}`;
+
+            while (reachPageUrl) {
+              const reachData = await fetchInsightsWithRetry(reachPageUrl);
+              if (reachData.data && reachData.data.length > 0) {
+                for (const row of reachData.data) {
+                  const entityId = level === "campaign" ? row.campaign_id
+                    : level === "adset" ? row.adset_id
+                    : row.ad_id;
+                  if (!entityId) continue;
+                  const periodReach = parseInt(row.reach || "0", 10);
+
+                  // Atualiza o campo reach na primeira data do periodo para servir de
+                  // "reach consolidado" — componentes frontend usam este valor quando agregam
+                  await supabaseAdmin
+                    .from("meta_insights_daily")
+                    .update({ reach: periodReach })
+                    .eq("workspace_id", workspace.id)
+                    .eq("meta_ad_account_id", adAccount.id)
+                    .eq("level", level)
+                    .eq("entity_id", entityId)
+                    .eq("date", dateFrom);
+                }
+              }
+              reachPageUrl = reachData.paging?.next || null;
+            }
+          }
+        } catch (reachError) {
+          console.warn("[meta-run-sync] Erro ao buscar reach consolidado:", reachError);
         }
 
         if (syncJob) {

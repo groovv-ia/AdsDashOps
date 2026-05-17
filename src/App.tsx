@@ -308,8 +308,11 @@ function AppContent() {
     );
   }
 
-  // Aguarda perfil e workspaces carregarem para evitar flash de conteudo
-  if (profileLoading || workspacesLoading) {
+  // Aguarda perfil e workspaces carregarem APENAS no primeiro load.
+  // Nao desmonta a interface se os dados ja foram carregados antes
+  // (evita loop de reload ao trocar de aba e o SDK renovar o token)
+  const isInitialLoad = (profileLoading || workspacesLoading) && workspaces.length === 0;
+  if (isInitialLoad) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-slate-50 flex items-center justify-center">
         <div className="text-center">

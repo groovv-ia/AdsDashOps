@@ -39,22 +39,17 @@ export const useAuth = () => {
 
     getInitialUser();
 
-    // Listen for auth changes
+    // Escuta mudancas de autenticacao
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.email);
-        
-        setUser(session?.user ?? null);
+      (event, session) => {
+        // Evita re-render desnecessario se o usuario nao mudou
+        // (ex: TOKEN_REFRESHED ao voltar para a aba)
+        const newUser = session?.user ?? null;
+        setUser(prev => {
+          if (prev?.id === newUser?.id) return prev;
+          return newUser;
+        });
         setLoading(false);
-
-        // Handle different auth events
-        if (event === 'SIGNED_IN') {
-          console.log('User signed in:', session?.user?.email);
-        } else if (event === 'SIGNED_OUT') {
-          console.log('User signed out');
-        } else if (event === 'TOKEN_REFRESHED') {
-          console.log('Token refreshed');
-        }
       }
     );
 
