@@ -364,86 +364,86 @@ Deno.serve(async (req: Request) => {
             const baseUrl = `https://graph.facebook.com/v21.0/${adAccount.meta_ad_account_id}/insights`;
             const params = new URLSearchParams({ level: level === "adset" ? "adset" : level, fields: insightFields, time_range: JSON.stringify({ since: dateFrom, until: dateTo }), time_increment: "1", use_account_attribution_setting: "true", limit: "500", access_token: accessToken });
             let url: string | null = `${baseUrl}?${params.toString()}`;
-            const allInsights: MetaInsightRow[] = [];
             let paginationTimedOut = false;
 
-            while (url) {
-              // Verifica timeout DENTRO do loop de paginacao
-              if (isNearTimeout()) {
-                paginationTimedOut = true;
-                console.warn(`[meta-run-sync] Timeout na paginacao do level '${level}'. Processando ${allInsights.length} registros parciais.`);
-                break;
-              }
-              const data = await fetchInsightsWithRetry(url);
-              if (data.data && data.data.length > 0) allInsights.push(...data.data);
-              url = data.paging?.next || null;
-            }
-
-            // Processa insights coletados (mesmo que parciais por timeout)
+            // Processa insights em STREAMING: grava no banco a cada pagina da API
+            // em vez de acumular tudo em memoria e gravar depois (evita timeout)
             const dailyBatch: Record<string, unknown>[] = [];
             const rawBatch: Record<string, unknown>[] = [];
             const now = new Date().toISOString();
 
-            for (const insight of allInsights) {
-              let entityId: string, entityName: string | null;
-              if (level === "ad") {
-                entityId = insight.ad_id || "";
-                entityName = insight.ad_name || null;
-                if (entityId && sync_creatives && !allAdIds.some(a => a.adId === entityId)) {
-                  allAdIds.push({ adId: entityId, metaAdAccountId: adAccount.meta_ad_account_id });
-                }
-              } else if (level === "adset") {
-                entityId = insight.adset_id || "";
-                entityName = insight.adset_name || null;
-              } else {
-                entityId = insight.campaign_id || "";
-                entityName = insight.campaign_name || null;
+            while (url) {
+              if (isNearTimeout()) {
+                paginationTimedOut = true;
+                console.warn(`[meta-run-sync] Timeout na paginacao do level '${level}'. ${totalRows} registros salvos ate aqui.`);
+                break;
               }
-              if (!entityId) continue;
 
-              // Acumula raw apenas em modo backfill
-              if (shouldWriteRaw) {
-                rawBatch.push({
+              const pageData = await fetchInsightsWithRetry(url);
+              const pageRows = pageData.data || [];
+              url = pageData.paging?.next || null;
+
+              // Processa cada registro da pagina imediatamente
+              for (const insight of pageRows) {
+                let entityId: string, entityName: string | null;
+                if (level === "ad") {
+                  entityId = insight.ad_id || "";
+                  entityName = insight.ad_name || null;
+                  if (entityId && sync_creatives && !allAdIds.some(a => a.adId === entityId)) {
+                    allAdIds.push({ adId: entityId, metaAdAccountId: adAccount.meta_ad_account_id });
+                  }
+                } else if (level === "adset") {
+                  entityId = insight.adset_id || "";
+                  entityName = insight.adset_name || null;
+                } else {
+                  entityId = insight.campaign_id || "";
+                  entityName = insight.campaign_name || null;
+                }
+                if (!entityId) continue;
+
+                if (shouldWriteRaw) {
+                  rawBatch.push({
+                    workspace_id: workspace.id,
+                    client_id: client_id || null,
+                    meta_ad_account_id: adAccount.meta_ad_account_id,
+                    level,
+                    entity_id: entityId,
+                    date_start: insight.date_start,
+                    date_stop: insight.date_stop,
+                    payload: insight,
+                    fetched_at: now,
+                  });
+                }
+
+                dailyBatch.push({
                   workspace_id: workspace.id,
                   client_id: client_id || null,
-                  meta_ad_account_id: adAccount.meta_ad_account_id,
+                  meta_ad_account_id: adAccount.id,
                   level,
                   entity_id: entityId,
-                  date_start: insight.date_start,
-                  date_stop: insight.date_stop,
-                  payload: insight,
-                  fetched_at: now,
+                  entity_name: entityName,
+                  date: insight.date_start,
+                  spend: parseFloat(insight.spend || "0"),
+                  impressions: parseInt(insight.impressions || "0", 10),
+                  reach: parseInt(insight.reach || "0", 10),
+                  clicks: parseInt(insight.clicks || "0", 10),
+                  ctr: parseFloat(insight.ctr || "0"),
+                  cpc: parseFloat(insight.cpc || "0"),
+                  cpm: parseFloat(insight.cpm || "0"),
+                  frequency: parseFloat(insight.frequency || "0"),
+                  unique_clicks: parseInt(insight.unique_clicks || "0", 10),
+                  actions_json: insight.actions || [],
+                  action_values_json: insight.action_values || [],
+                  leads: extractLeads(insight.actions),
+                  conversions: extractConversions(insight.actions),
+                  conversion_value: extractConversionValue(insight.action_values),
+                  purchase_value: extractPurchaseValue(insight.action_values),
+                  messaging_conversations_started: extractMessagingConversations(insight.actions),
+                  page_likes: extractPageLikes(insight.actions),
                 });
               }
 
-              dailyBatch.push({
-                workspace_id: workspace.id,
-                client_id: client_id || null,
-                meta_ad_account_id: adAccount.id,
-                level,
-                entity_id: entityId,
-                entity_name: entityName,
-                date: insight.date_start,
-                spend: parseFloat(insight.spend || "0"),
-                impressions: parseInt(insight.impressions || "0", 10),
-                reach: parseInt(insight.reach || "0", 10),
-                clicks: parseInt(insight.clicks || "0", 10),
-                ctr: parseFloat(insight.ctr || "0"),
-                cpc: parseFloat(insight.cpc || "0"),
-                cpm: parseFloat(insight.cpm || "0"),
-                frequency: parseFloat(insight.frequency || "0"),
-                unique_clicks: parseInt(insight.unique_clicks || "0", 10),
-                actions_json: insight.actions || [],
-                action_values_json: insight.action_values || [],
-                leads: extractLeads(insight.actions),
-                conversions: extractConversions(insight.actions),
-                conversion_value: extractConversionValue(insight.action_values),
-                purchase_value: extractPurchaseValue(insight.action_values),
-                messaging_conversations_started: extractMessagingConversations(insight.actions),
-                page_likes: extractPageLikes(insight.actions),
-              });
-
-              // Flush batch quando atinge o limite
+              // Flush ao banco apos cada pagina da API (nao acumula tudo)
               if (dailyBatch.length >= BATCH_SIZE) {
                 if (shouldWriteRaw && rawBatch.length > 0) {
                   await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
@@ -459,16 +459,10 @@ Deno.serve(async (req: Request) => {
 
                 totalRows += dailyBatch.length;
                 dailyBatch.length = 0;
-
-                // Verifica timeout apos cada flush ao banco
-                if (isNearTimeout()) {
-                  syncResult.timed_out = true;
-                  break;
-                }
               }
             }
 
-            // Envia registros restantes do ultimo lote parcial
+            // Flush registros restantes do ultimo lote parcial
             if (dailyBatch.length > 0) {
               if (shouldWriteRaw && rawBatch.length > 0) {
                 await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
@@ -484,11 +478,9 @@ Deno.serve(async (req: Request) => {
               totalRows += dailyBatch.length;
             }
 
-            // Se a paginacao deu timeout, marca e interrompe os demais levels
+            // Se timeout na paginacao, marca para o frontend retentar
             if (paginationTimedOut) {
               syncResult.timed_out = true;
-              syncResult.errors.push(`Paginacao parcial no level '${level}' (${allInsights.length} registros salvos). Execute novamente para completar.`);
-              break;
             }
           } catch (levelError) {
             const errorMsg = levelError instanceof Error ? levelError.message : "Unknown";
@@ -507,26 +499,29 @@ Deno.serve(async (req: Request) => {
 
         if (syncJob) {
           const durationSeconds = Math.floor((new Date().getTime() - syncStartTime.getTime()) / 1000);
-          await supabaseAdmin.from("meta_sync_jobs").update({ status: syncResult.errors.length > 0 ? "failed" : "completed", fetched_rows: totalRows, total_records_synced: totalRows, duration_seconds: durationSeconds, error_message: syncResult.errors.join("; ") || null, ended_at: new Date().toISOString() }).eq("id", syncJob.id);
+          // timed_out com dados salvos = "partial", erros reais = "failed"
+          const jobStatus = syncResult.errors.length > 0 ? "failed" : syncResult.timed_out ? "partial" : "completed";
+          await supabaseAdmin.from("meta_sync_jobs").update({ status: jobStatus, fetched_rows: totalRows, total_records_synced: totalRows, duration_seconds: durationSeconds, error_message: syncResult.errors.join("; ") || null, ended_at: new Date().toISOString() }).eq("id", syncJob.id);
         }
 
-        // Atualiza sync_state: last_success_at so e gravado quando NAO ha erros
-        const hasErrors = syncResult.errors.length > 0;
+        // Timeout com dados salvos ainda conta como sucesso parcial (dados validos)
+        const hasRealErrors = syncResult.errors.length > 0;
         const syncStateUpdate: Record<string, unknown> = {
           workspace_id: workspace.id,
           client_id: client_id || null,
           meta_ad_account_id: adAccount.meta_ad_account_id,
-          last_error: hasErrors ? syncResult.errors.join("; ") : null,
+          last_error: hasRealErrors ? syncResult.errors.join("; ") : null,
           updated_at: new Date().toISOString(),
         };
-        if (!hasErrors) {
+        // Grava sucesso se teve dados (mesmo parciais por timeout)
+        if (!hasRealErrors && totalRows > 0) {
           syncStateUpdate.last_success_at = new Date().toISOString();
           if (mode === "daily") syncStateUpdate.last_daily_date_synced = dateTo;
           if (mode === "intraday") syncStateUpdate.last_intraday_synced_at = new Date().toISOString();
         }
         await supabaseAdmin.from("meta_sync_state").upsert(syncStateUpdate, { onConflict: "workspace_id,meta_ad_account_id" });
 
-        if (!hasErrors) syncResult.accounts_synced++;
+        if (!hasRealErrors) syncResult.accounts_synced++;
         syncResult.insights_synced += totalRows;
       } catch (accountError) {
         syncResult.errors.push(`Account ${adAccount.meta_ad_account_id} error: ${accountError instanceof Error ? accountError.message : "Unknown"}`);

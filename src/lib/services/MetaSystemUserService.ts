@@ -321,15 +321,16 @@ export async function syncMetaEntities(
 }
 
 /**
- * Executa sincronizacao de insights do Meta
+ * Executa sincronizacao de um unico level contra a edge function.
+ * Chamada interna -- use runMetaSync() que orquestra todos os levels.
  */
-export async function runMetaSync(options: {
-  mode: 'daily' | 'intraday' | 'backfill';
+async function runSingleLevelSync(options: {
+  mode: string;
   clientId?: string;
   metaAdAccountId?: string;
-  daysBack?: number;
-  levels?: string[];
-  syncCreatives?: boolean;
+  daysBack: number;
+  level: string;
+  syncCreatives: boolean;
 }): Promise<SyncResult> {
   const headers = await getAuthHeaders();
 
@@ -340,9 +341,9 @@ export async function runMetaSync(options: {
       mode: options.mode,
       client_id: options.clientId,
       meta_ad_account_id: options.metaAdAccountId,
-      days_back: options.daysBack || 7,
-      levels: options.levels || ['campaign', 'adset', 'ad'],
-      sync_creatives: options.syncCreatives ?? false,
+      days_back: options.daysBack,
+      levels: [options.level],
+      sync_creatives: options.syncCreatives,
     }),
   });
 
@@ -355,11 +356,91 @@ export async function runMetaSync(options: {
       date_to: '',
       accounts_synced: 0,
       insights_synced: 0,
-      errors: [data.error || 'Erro ao executar sincronizacao'],
+      errors: [data.error || `Erro ao sincronizar level '${options.level}'`],
     };
   }
 
   return data;
+}
+
+/**
+ * Executa sincronizacao de insights do Meta.
+ * Chama a edge function uma vez POR LEVEL (campaign, adset, ad) em sequencia,
+ * evitando timeout em contas com muitos dados.
+ * Se um level retornar timed_out, faz retry automatico (ate 2x por level).
+ */
+export async function runMetaSync(options: {
+  mode: 'daily' | 'intraday' | 'backfill';
+  clientId?: string;
+  metaAdAccountId?: string;
+  daysBack?: number;
+  levels?: string[];
+  syncCreatives?: boolean;
+}): Promise<SyncResult> {
+  const levels = options.levels || ['campaign', 'adset', 'ad'];
+  const daysBack = options.daysBack || 7;
+  const syncCreatives = options.syncCreatives ?? false;
+  const MAX_RETRIES_PER_LEVEL = 2;
+
+  // Resultado agregado de todos os levels
+  const aggregated: SyncResult = {
+    mode: options.mode,
+    date_from: '',
+    date_to: '',
+    accounts_synced: 0,
+    insights_synced: 0,
+    creatives_synced: 0,
+    errors: [],
+  };
+
+  for (const level of levels) {
+    let attempts = 0;
+    let levelDone = false;
+
+    while (!levelDone && attempts <= MAX_RETRIES_PER_LEVEL) {
+      attempts++;
+      const result = await runSingleLevelSync({
+        mode: options.mode,
+        clientId: options.clientId,
+        metaAdAccountId: options.metaAdAccountId,
+        daysBack,
+        level,
+        // Criativos somente no level 'ad' (unico que tem ad_id)
+        syncCreatives: level === 'ad' ? syncCreatives : false,
+      });
+
+      // Agrega metricas
+      if (result.date_from && !aggregated.date_from) aggregated.date_from = result.date_from;
+      if (result.date_to) aggregated.date_to = result.date_to;
+      aggregated.insights_synced += result.insights_synced || 0;
+      aggregated.creatives_synced = (aggregated.creatives_synced || 0) + (result.creatives_synced || 0);
+
+      // Verifica se houve timeout parcial (dados foram salvos mas nao completou)
+      const timedOut = (result as SyncResult & { timed_out?: boolean }).timed_out;
+
+      if (timedOut && attempts <= MAX_RETRIES_PER_LEVEL) {
+        // Retry: a edge function continua de onde parou (upsert nao duplica)
+        console.warn(`[runMetaSync] Level '${level}' timeout (tentativa ${attempts}/${MAX_RETRIES_PER_LEVEL + 1}). Retentando...`);
+        continue;
+      }
+
+      // Coleta erros nao-timeout
+      const nonTimeoutErrors = (result.errors || []).filter(
+        (e) => !e.includes('Timeout') && !e.includes('timeout') && !e.includes('limite de tempo')
+      );
+      if (nonTimeoutErrors.length > 0) {
+        aggregated.errors.push(...nonTimeoutErrors);
+      }
+
+      // Marca level como concluido (mesmo se timeout no ultimo retry -- dados parciais salvos)
+      levelDone = true;
+      if (result.accounts_synced > aggregated.accounts_synced) {
+        aggregated.accounts_synced = result.accounts_synced;
+      }
+    }
+  }
+
+  return aggregated;
 }
 
 /**
