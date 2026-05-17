@@ -472,17 +472,14 @@ function processRowActions(row: Record<string, unknown>) {
   // Usa o valor de leads ja calculado e salvo pelo sync — fiel ao Gerenciador de Anuncios
   const leads = typeof row.leads === 'number' ? row.leads : (parseInt(String(row.leads ?? '0'), 10) || 0);
 
-  // Prefere colunas dedicadas (preenchidas pelo sync), fallback para extracao do JSON
-  const page_likes = (typeof row.page_likes === 'number' && row.page_likes > 0)
-    ? row.page_likes
-    : extractPageLikesFromActions(actionsJson);
-  const messaging_conversations_started = (typeof row.messaging_conversations_started === 'number' && row.messaging_conversations_started > 0)
-    ? row.messaging_conversations_started
-    : extractMessagingConversationsFromActions(actionsJson);
+  // page_likes e messaging nao tem colunas dedicadas, extrai do JSON
+  const page_likes = extractPageLikesFromActions(actionsJson);
+  const messaging_conversations_started = extractMessagingConversationsFromActions(actionsJson);
 
   return {
     ...row,
     leads,
+    // lead_grouped exposto separadamente para uso em detalhes se necessario
     lead_grouped: extractLeadGroupedFromActions(actionsJson),
     page_likes,
     messaging_conversations_started,
@@ -700,64 +697,4 @@ export async function getAdInsightsByAdset(options: {
   });
 
   return { data: processedData };
-}
-
-/**
- * Busca insights em tempo real da Meta API via Edge Function meta-insights-fetch.
- * Retorna dados frescos sem depender do cache do banco.
- */
-export interface LiveInsightsResponse {
-  data: Array<{
-    campaign_id?: string;
-    campaign_name?: string;
-    adset_id?: string;
-    adset_name?: string;
-    ad_id?: string;
-    ad_name?: string;
-    date_start: string;
-    date_stop: string;
-    spend: string;
-    impressions: string;
-    reach: string;
-    clicks: string;
-    ctr: string;
-    cpc: string;
-    cpm: string;
-    frequency?: string;
-    unique_clicks?: string;
-    actions?: Array<{ action_type: string; value: string }>;
-    action_values?: Array<{ action_type: string; value: string }>;
-  }>;
-  meta: {
-    account_id: string;
-    level: string;
-    date_from: string;
-    date_to: string;
-    total_rows: number;
-    fetched_at: string;
-  };
-}
-
-export async function fetchLiveInsights(params: {
-  meta_ad_account_id: string;
-  level: 'campaign' | 'adset' | 'ad';
-  date_from: string;
-  date_to: string;
-  time_increment?: '1' | 'all_days';
-}): Promise<LiveInsightsResponse> {
-  const headers = await getAuthHeaders();
-  const url = getEdgeFunctionUrl('meta-insights-fetch');
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(params),
-  });
-
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error || `Erro ao buscar insights em tempo real (${response.status})`);
-  }
-
-  return response.json();
 }

@@ -135,113 +135,173 @@ export interface MetaInsightsFilterOptions {
 }
 
 /**
- * Converte actions_json de qualquer formato para array uniforme
+ * Extrai conversoes do campo actions_json
+ * O Meta retorna acoes em um formato de array com action_type e value
  */
-function parseActionsJson(actionsJson: Record<string, unknown> | string | null | undefined): Array<{ action_type: string; value: string }> {
-  if (!actionsJson) return [];
+function extractConversions(actionsJson: Record<string, unknown> | string | null | undefined): number {
+  if (!actionsJson) return 0;
 
-  let parsed = actionsJson;
+  // Se for string, tenta parsear como JSON
+  let parsedJson = actionsJson;
   if (typeof actionsJson === 'string') {
     try {
-      parsed = JSON.parse(actionsJson);
+      parsedJson = JSON.parse(actionsJson);
     } catch {
-      return [];
+      return 0;
     }
   }
 
-  if (Array.isArray(parsed)) return parsed;
-  return [];
-}
+  // Se for um array, soma os valores relevantes
+  if (Array.isArray(parsedJson)) {
+    let total = 0;
+    for (const action of parsedJson) {
+      const actionType = action?.action_type || '';
+      // Tipos de acao que contam como conversao
+      if (
+        actionType.includes('purchase') ||
+        actionType.includes('lead') ||
+        actionType.includes('complete_registration') ||
+        actionType.includes('add_to_cart') ||
+        actionType === 'offsite_conversion.fb_pixel_purchase' ||
+        actionType === 'omni_purchase'
+      ) {
+        total += parseFloat(action?.value || '0');
+      }
+    }
+    return total;
+  }
 
-/**
- * Extrai conversoes do campo actions_json
- *
- * Usa a mesma logica de prioridade da Edge Function (meta-run-sync):
- * - Leads: prioridade onsite_conversion.lead_grouped > offsite_conversion.fb_pixel_lead > lead
- * - Purchases: purchase, offsite_conversion.fb_pixel_purchase, onsite_conversion.purchase
- *
- * NAO inclui add_to_cart ou complete_registration — esses nao sao "Resultados"
- * no Gerenciador de Anuncios.
- */
-function extractConversions(actionsJson: Record<string, unknown> | string | null | undefined): number {
-  const actions = parseActionsJson(actionsJson);
-  if (actions.length === 0) return 0;
+  // Se for objeto, tenta acessar diretamente
+  if (typeof parsedJson === 'object' && parsedJson !== null) {
+    const purchase = (parsedJson as Record<string, number>)['purchase'] || 0;
+    const lead = (parsedJson as Record<string, number>)['lead'] || 0;
+    return purchase + lead;
+  }
 
-  // Leads (sem dupla contagem — mesma logica de prioridade da edge function)
-  const leadValue = extractLeads(actionsJson);
-
-  // Purchases — tipos distintos sem sobreposicao
-  const purchaseTypes = ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase'];
-  const purchaseValue = actions
-    .filter(a => purchaseTypes.includes(a.action_type))
-    .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
-
-  return leadValue + purchaseValue;
+  return 0;
 }
 
 /**
  * Extrai conversas iniciadas do campo actions_json
- *
- * Usa prioridade para evitar dupla contagem entre variantes do mesmo evento:
- * 1. onsite_conversion.messaging_conversation_started_7d — valor padrao no Gerenciador
- * 2. messaging_conversation_started — fallback generico
+ * O Meta retorna conversas iniciadas com action_type contendo "messaging_conversation_started"
  */
 function extractMessagingConversationsStarted(actionsJson: Record<string, unknown> | string | null | undefined): number {
-  const actions = parseActionsJson(actionsJson);
-  if (actions.length === 0) return 0;
+  if (!actionsJson) return 0;
 
-  // Prioridade 1: variante com janela de 7 dias (valor exibido no Gerenciador)
-  const onsiteConv = actions.find(a => a.action_type === 'onsite_conversion.messaging_conversation_started_7d');
-  if (onsiteConv) return parseInt(onsiteConv.value || '0', 10);
+  // Se for string, tenta parsear como JSON
+  let parsedJson = actionsJson;
+  if (typeof actionsJson === 'string') {
+    try {
+      parsedJson = JSON.parse(actionsJson);
+    } catch {
+      return 0;
+    }
+  }
 
-  // Prioridade 2: generico
-  const generic = actions.find(a => a.action_type === 'messaging_conversation_started');
-  if (generic) return parseInt(generic.value || '0', 10);
+  // Se for um array, soma os valores relevantes
+  if (Array.isArray(parsedJson)) {
+    let total = 0;
+    for (const action of parsedJson) {
+      const actionType = action?.action_type || '';
+      // Tipos de acao que contam como conversas iniciadas
+      if (
+        actionType.includes('messaging_conversation_started') ||
+        actionType.includes('onsite_conversion.messaging_conversation_started') ||
+        actionType === 'onsite_conversion.messaging_conversation_started_7d'
+      ) {
+        total += parseFloat(action?.value || '0');
+      }
+    }
+    return total;
+  }
+
+  // Se for objeto, tenta acessar diretamente
+  if (typeof parsedJson === 'object' && parsedJson !== null) {
+    const conversations = (parsedJson as Record<string, number>)['messaging_conversation_started'] || 0;
+    return conversations;
+  }
 
   return 0;
 }
 
 /**
  * Extrai leads do campo actions_json
- *
- * Mesma logica de prioridade da Edge Function (meta-run-sync):
- * 1. onsite_conversion.lead_grouped — valor oficial do Gerenciador para Lead Ads
- * 2. offsite_conversion.fb_pixel_lead — fallback para pixel externo
- * 3. lead — fallback generico
- *
- * NAO soma os tres — usa apenas o primeiro encontrado para evitar dupla contagem
+ * O Meta retorna leads com action_type contendo "lead"
  */
 function extractLeads(actionsJson: Record<string, unknown> | string | null | undefined): number {
-  const actions = parseActionsJson(actionsJson);
-  if (actions.length === 0) return 0;
+  if (!actionsJson) return 0;
 
-  // Prioridade 1: lead de formulario nativo (Lead Ads)
-  const leadGrouped = actions.find(a => a.action_type === 'onsite_conversion.lead_grouped');
-  if (leadGrouped) return parseInt(leadGrouped.value || '0', 10);
+  // Se for string, tenta parsear como JSON
+  let parsedJson = actionsJson;
+  if (typeof actionsJson === 'string') {
+    try {
+      parsedJson = JSON.parse(actionsJson);
+    } catch {
+      return 0;
+    }
+  }
 
-  // Prioridade 2: lead de pixel offsite
-  const pixelLead = actions.find(a => a.action_type === 'offsite_conversion.fb_pixel_lead');
-  if (pixelLead) return parseInt(pixelLead.value || '0', 10);
+  // Se for um array, soma os valores relevantes
+  if (Array.isArray(parsedJson)) {
+    let total = 0;
+    for (const action of parsedJson) {
+      const actionType = action?.action_type || '';
+      // Tipos de acao que contam como leads (usa apenas 'lead' para evitar duplicacao)
+      if (actionType === 'lead') {
+        total += parseFloat(action?.value || '0');
+      }
+    }
+    return total;
+  }
 
-  // Prioridade 3: lead generico
-  const genericLead = actions.find(a => a.action_type === 'lead');
-  if (genericLead) return parseInt(genericLead.value || '0', 10);
+  // Se for objeto, tenta acessar diretamente
+  if (typeof parsedJson === 'object' && parsedJson !== null) {
+    const leads = (parsedJson as Record<string, number>)['lead'] || 0;
+    return leads;
+  }
 
   return 0;
 }
 
 /**
  * Extrai valor de conversao do campo action_values_json
- * Soma apenas valores de purchase — mesma logica da Edge Function
  */
 function extractConversionValue(actionValuesJson: Record<string, unknown> | string | null | undefined): number {
-  const actions = parseActionsJson(actionValuesJson);
-  if (actions.length === 0) return 0;
+  if (!actionValuesJson) return 0;
 
-  const valueTypes = ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase'];
-  return actions
-    .filter(a => valueTypes.includes(a.action_type))
-    .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
+  // Se for string, tenta parsear como JSON
+  let parsedJson = actionValuesJson;
+  if (typeof actionValuesJson === 'string') {
+    try {
+      parsedJson = JSON.parse(actionValuesJson);
+    } catch {
+      return 0;
+    }
+  }
+
+  // Se for um array, soma os valores relevantes
+  if (Array.isArray(parsedJson)) {
+    let total = 0;
+    for (const action of parsedJson) {
+      const actionType = action?.action_type || '';
+      if (
+        actionType.includes('purchase') ||
+        actionType === 'offsite_conversion.fb_pixel_purchase' ||
+        actionType === 'omni_purchase'
+      ) {
+        total += parseFloat(action?.value || '0');
+      }
+    }
+    return total;
+  }
+
+  // Se for objeto, tenta acessar diretamente
+  if (typeof parsedJson === 'object' && parsedJson !== null) {
+    const purchase = (parsedJson as Record<string, number>)['purchase'] || 0;
+    return purchase;
+  }
+
+  return 0;
 }
 
 /**
@@ -331,13 +391,6 @@ export class MetaInsightsDataService {
       // Agrega metricas por campanha
       const campaignsMap = new Map<string, MetaCampaignData>();
 
-      // Identifica a primeira data do periodo para extrair reach consolidado
-      // A Edge Function armazena o reach do periodo inteiro na row da primeira data
-      const firstDateInResults = insights.reduce(
-        (min: string, i: RawInsight) => i.date < min ? i.date : min,
-        insights[0]?.date || ''
-      );
-
       for (const insight of insights as RawInsight[]) {
         const existing = campaignsMap.get(insight.entity_id);
         const entity = entities.find(e => e.entity_id === insight.entity_id);
@@ -348,19 +401,11 @@ export class MetaInsightsDataService {
         const messagingConversationsStarted = extractMessagingConversationsStarted(insight.actions_json);
         const leads = extractLeads(insight.actions_json);
 
-        // Reach: usa apenas o valor da primeira data (reach consolidado do periodo)
-        // Para as demais datas, ignora — nao soma pois reach e contagem unica
-        const isFirstDate = insight.date === firstDateInResults;
-        const reachValue = isFirstDate ? (Number(insight.reach) || 0) : 0;
-
         if (existing) {
           existing.metrics.impressions += Number(insight.impressions) || 0;
           existing.metrics.clicks += Number(insight.clicks) || 0;
           existing.metrics.spend += Number(insight.spend) || 0;
-          // Reach: so usa o valor da primeira data (consolidado pelo sync)
-          if (isFirstDate) {
-            existing.metrics.reach = reachValue;
-          }
+          existing.metrics.reach += Number(insight.reach) || 0;
           existing.metrics.conversions += conversions;
           existing.metrics.conversion_value += conversionValue;
           existing.metrics.messaging_conversations_started += messagingConversationsStarted;
@@ -383,8 +428,8 @@ export class MetaInsightsDataService {
               impressions: Number(insight.impressions) || 0,
               clicks: Number(insight.clicks) || 0,
               spend: Number(insight.spend) || 0,
-              reach: reachValue,
-              frequency: 0,
+              reach: Number(insight.reach) || 0,
+              frequency: Number(insight.frequency) || 0,
               ctr: 0,
               cpc: 0,
               cpm: 0,
@@ -472,12 +517,6 @@ export class MetaInsightsDataService {
       // Agrega metricas por adset
       const adsetsMap = new Map<string, MetaCampaignData>();
 
-      // Primeira data do periodo — contem reach consolidado
-      const firstAdsetDate = (insights || []).reduce(
-        (min: string, i: RawInsight) => (!min || i.date < min) ? i.date : min,
-        ''
-      );
-
       for (const insight of (insights || []) as RawInsight[]) {
         const entity = (adsetEntities || []).find((e: CachedEntity) => e.entity_id === insight.entity_id);
         const existing = adsetsMap.get(insight.entity_id);
@@ -485,16 +524,12 @@ export class MetaInsightsDataService {
         const conversionValue = extractConversionValue(insight.action_values_json);
         const messagingConversationsStarted = extractMessagingConversationsStarted(insight.actions_json);
         const leads = extractLeads(insight.actions_json);
-        const isFirstDate = insight.date === firstAdsetDate;
-        const reachValue = isFirstDate ? (Number(insight.reach) || 0) : 0;
 
         if (existing) {
           existing.metrics.impressions += Number(insight.impressions) || 0;
           existing.metrics.clicks += Number(insight.clicks) || 0;
           existing.metrics.spend += Number(insight.spend) || 0;
-          if (isFirstDate) {
-            existing.metrics.reach = reachValue;
-          }
+          existing.metrics.reach += Number(insight.reach) || 0;
           existing.metrics.conversions += conversions;
           existing.metrics.conversion_value += conversionValue;
           existing.metrics.messaging_conversations_started += messagingConversationsStarted;
@@ -514,7 +549,7 @@ export class MetaInsightsDataService {
               impressions: Number(insight.impressions) || 0,
               clicks: Number(insight.clicks) || 0,
               spend: Number(insight.spend) || 0,
-              reach: reachValue,
+              reach: Number(insight.reach) || 0,
               frequency: 0,
               ctr: 0,
               cpc: 0,
@@ -600,12 +635,6 @@ export class MetaInsightsDataService {
       // Agrega metricas por ad
       const adsMap = new Map<string, MetaCampaignData>();
 
-      // Primeira data do periodo — contem reach consolidado
-      const firstAdDate = (insights || []).reduce(
-        (min: string, i: RawInsight) => (!min || i.date < min) ? i.date : min,
-        ''
-      );
-
       for (const insight of (insights || []) as RawInsight[]) {
         const entity = (adEntities || []).find((e: CachedEntity) => e.entity_id === insight.entity_id);
         const existing = adsMap.get(insight.entity_id);
@@ -613,16 +642,12 @@ export class MetaInsightsDataService {
         const conversionValue = extractConversionValue(insight.action_values_json);
         const messagingConversationsStarted = extractMessagingConversationsStarted(insight.actions_json);
         const leads = extractLeads(insight.actions_json);
-        const isFirstDate = insight.date === firstAdDate;
-        const reachValue = isFirstDate ? (Number(insight.reach) || 0) : 0;
 
         if (existing) {
           existing.metrics.impressions += Number(insight.impressions) || 0;
           existing.metrics.clicks += Number(insight.clicks) || 0;
           existing.metrics.spend += Number(insight.spend) || 0;
-          if (isFirstDate) {
-            existing.metrics.reach = reachValue;
-          }
+          existing.metrics.reach += Number(insight.reach) || 0;
           existing.metrics.conversions += conversions;
           existing.metrics.conversion_value += conversionValue;
           existing.metrics.messaging_conversations_started += messagingConversationsStarted;
@@ -641,7 +666,7 @@ export class MetaInsightsDataService {
               impressions: Number(insight.impressions) || 0,
               clicks: Number(insight.clicks) || 0,
               spend: Number(insight.spend) || 0,
-              reach: reachValue,
+              reach: Number(insight.reach) || 0,
               frequency: 0,
               ctr: 0,
               cpc: 0,

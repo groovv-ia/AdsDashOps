@@ -211,17 +211,11 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
       (event, session) => {
         if (!mounted) return;
 
-        // Ignora TOKEN_REFRESHED — nao requer reload de workspaces
-        // Esse evento dispara quando a aba volta ao foco e o SDK renova o JWT
-        if (event === 'TOKEN_REFRESHED') return;
-
         // Usa setTimeout para evitar deadlock do onAuthStateChange
         setTimeout(async () => {
           if (event === 'SIGNED_IN' && session?.user) {
-            // So recarrega se nunca carregou (login real, nao refresh de token)
-            if (!hasLoadedRef.current) {
-              await loadWorkspaces();
-            }
+            hasLoadedRef.current = false;
+            await loadWorkspaces();
           } else if (event === 'SIGNED_OUT') {
             setWorkspaces([]);
             setCurrentWorkspaceState(null);

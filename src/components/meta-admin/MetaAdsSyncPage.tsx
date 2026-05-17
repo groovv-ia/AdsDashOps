@@ -39,6 +39,7 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { AdAccountCard, AdAccountData } from './AdAccountCard';
 import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems } from './BreadcrumbNav';
+import { PeriodSelector, PeriodButtons, DEFAULT_PERIOD_PRESETS } from './PeriodSelector';
 import { EnhancedPeriodSelector } from './EnhancedPeriodSelector';
 import { SyncStatusBadge, SyncStatus } from './SyncStatusBadge';
 import { AccountFilters, StatusFilter, SyncFilter, SortOption } from './AccountFilters';
@@ -50,7 +51,6 @@ import {
   getInsightsFromDatabase,
   getAdInsightsByAdset,
   getInsightsByCampaign,
-  fetchLiveInsights,
   SyncStatusResponse,
   SyncResult,
 } from '../../lib/services/MetaSystemUserService';
@@ -114,17 +114,19 @@ interface KPIs {
   avgCtr: number;
   avgCpc: number;
   avgCpm: number;
-  // Metricas de conversao e engajamento (separadas)
+  // Metricas de conversao e engajamento
   totalLeads: number;
-  totalLeadGrouped: number;
-  totalMessagingConversations: number; // Conversas iniciadas (separado de leads)
-  totalPageLikes: number;             // Novos seguidores no periodo
+  totalLeadGrouped: number;    // Leads de formulario
+  totalPageLikes: number;      // Seguidores de pagina
   totalConversions: number;
   totalConversionValue: number;
-  totalPurchaseValue: number;         // Valor de compras (para ROAS)
-  roas: number | null;                // null quando nao ha purchase
+  roas: number;
 }
 
+// Presets de periodo exclusivos para sincronizacao (sem hoje/ontem, com opcoes longas)
+const SYNC_PERIOD_PRESETS = DEFAULT_PERIOD_PRESETS.filter((p) =>
+  ['last_7', 'last_14', 'last_30', 'last_90', 'last_180', 'last_365'].includes(p.id)
+);
 
 // Niveis de entidade disponiveis com icones
 const LEVELS = [
@@ -189,12 +191,10 @@ export const MetaAdsSyncPage: React.FC = () => {
     avgCpm: 0,
     totalLeads: 0,
     totalLeadGrouped: 0,
-    totalMessagingConversations: 0,
     totalPageLikes: 0,
     totalConversions: 0,
     totalConversionValue: 0,
-    totalPurchaseValue: 0,
-    roas: null,
+    roas: 0,
   });
 
   // Filtros
@@ -225,10 +225,6 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Estado do modal de exportacao
   const [showExportModal, setShowExportModal] = useState(false);
-
-  // Estado para refresh em tempo real (fetch direto da Meta API)
-  const [refreshingLive, setRefreshingLive] = useState(false);
-  const [lastLiveRefresh, setLastLiveRefresh] = useState<string | null>(null);
 
   // ============================================================
   // EFEITOS
@@ -402,9 +398,8 @@ export const MetaAdsSyncPage: React.FC = () => {
     const empty: KPIs = {
       totalSpend: 0, totalImpressions: 0, totalClicks: 0, totalReach: 0,
       avgCtr: 0, avgCpc: 0, avgCpm: 0,
-      totalLeads: 0, totalLeadGrouped: 0, totalMessagingConversations: 0,
-      totalPageLikes: 0, totalConversions: 0, totalConversionValue: 0,
-      totalPurchaseValue: 0, roas: null,
+      totalLeads: 0, totalLeadGrouped: 0, totalPageLikes: 0,
+      totalConversions: 0, totalConversionValue: 0, roas: 0,
     };
     if (data.length === 0) { setKpis(empty); return; }
 
@@ -416,19 +411,14 @@ export const MetaAdsSyncPage: React.FC = () => {
         reach: acc.reach + (row.reach || 0),
         leads: acc.leads + (row.leads || 0),
         leadGrouped: acc.leadGrouped + (row.lead_grouped || 0),
-        messagingConversations: acc.messagingConversations + (row.messaging_conversations_started || 0),
         pageLikes: acc.pageLikes + (row.page_likes || 0),
         conversions: acc.conversions + (row.conversions || 0),
         conversionValue: acc.conversionValue + (row.conversion_value || 0),
-        purchaseValue: acc.purchaseValue + (row.purchase_value || 0),
       }),
-      { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, leadGrouped: 0, messagingConversations: 0, pageLikes: 0, conversions: 0, conversionValue: 0, purchaseValue: 0 }
+      { spend: 0, impressions: 0, clicks: 0, reach: 0, leads: 0, leadGrouped: 0, pageLikes: 0, conversions: 0, conversionValue: 0 }
     );
 
-    // ROAS: null quando nao ha evento de compra (campanha sem purchase)
-    const roas = (totals.purchaseValue > 0 && totals.spend > 0)
-      ? totals.purchaseValue / totals.spend
-      : null;
+    const roas = totals.spend > 0 ? totals.conversionValue / totals.spend : 0;
 
     setKpis({
       totalSpend: totals.spend,
@@ -440,11 +430,9 @@ export const MetaAdsSyncPage: React.FC = () => {
       avgCpm: totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0,
       totalLeads: totals.leads,
       totalLeadGrouped: totals.leadGrouped,
-      totalMessagingConversations: totals.messagingConversations,
       totalPageLikes: totals.pageLikes,
       totalConversions: totals.conversions,
       totalConversionValue: totals.conversionValue,
-      totalPurchaseValue: totals.purchaseValue,
       roas,
     });
   };
@@ -455,10 +443,46 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Calcula daysBack baseado no preset selecionado
   // Handles flags especiais para periodos de calendario
+  const calculateDaysBack = (periodId: string): number => {
+    const preset = DEFAULT_PERIOD_PRESETS.find((p) => p.id === periodId);
+    if (!preset) return 7;
+
+    const days = preset.days;
+
+    // Periodos de calendario com flags especiais
+    if (days === -1 || days === -2) {
+      // Este mes ou mes passado - usa 30 dias
+      return 30;
+    } else if (days === -3) {
+      // Este trimestre - calcula dias desde inicio do trimestre
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const currentQuarter = Math.floor(currentMonth / 3);
+      const firstMonthOfQuarter = currentQuarter * 3;
+      const quarterStart = new Date(today.getFullYear(), firstMonthOfQuarter, 1);
+      const daysSinceQuarterStart = Math.ceil((today.getTime() - quarterStart.getTime()) / (1000 * 60 * 60 * 24));
+      return Math.max(daysSinceQuarterStart + 1, 1);
+    } else if (days === -4) {
+      // Este semestre - calcula dias desde inicio do semestre
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const firstMonthOfSemester = currentMonth < 6 ? 0 : 6;
+      const semesterStart = new Date(today.getFullYear(), firstMonthOfSemester, 1);
+      const daysSinceSemesterStart = Math.ceil((today.getTime() - semesterStart.getTime()) / (1000 * 60 * 60 * 24));
+      return Math.max(daysSinceSemesterStart + 1, 1);
+    } else if (days === -5) {
+      // Este ano - calcula dias desde 1 de janeiro
+      const today = new Date();
+      const yearStart = new Date(today.getFullYear(), 0, 1);
+      const daysSinceYearStart = Math.ceil((today.getTime() - yearStart.getTime()) / (1000 * 60 * 60 * 24));
+      return Math.max(daysSinceYearStart + 1, 1);
+    }
+
+    // Periodos normais (hoje, ontem, ultimos N dias)
+    return Math.max(days || 7, 1);
+  };
 
   // Sincroniza uma conta especifica
-  // Sempre baixa 365 dias de dados da API — o periodo de analise e selecionado
-  // na pagina de detalhe da conta apos a sincronizacao
   const handleSyncAccount = async (accountId: string, syncCreatives: boolean) => {
     const account = getAccountById(accountId);
     if (!account) return;
@@ -470,14 +494,13 @@ export const MetaAdsSyncPage: React.FC = () => {
     let syncSuccessful = false;
 
     try {
-      // Sempre sincroniza 365 dias para garantir dados completos
-      const SYNC_DAYS_BACK = 365;
+      const daysBack = calculateDaysBack(selectedPeriod);
 
       const result = await runMetaSync({
         mode: 'backfill',
         clientId: selectedClient?.id,
         metaAdAccountId: account.meta_id,
-        daysBack: SYNC_DAYS_BACK,
+        daysBack,
         levels: ['campaign', 'adset', 'ad'],
         syncCreatives: syncCreatives,
       });
@@ -550,7 +573,6 @@ export const MetaAdsSyncPage: React.FC = () => {
   };
 
   // Sincroniza uma conta e retorna o resultado para o batch
-  // Sempre baixa 365 dias — periodo de analise e selecionado depois
   const syncSingleAccount = async (
     account: { id: string; meta_id: string; name: string; last_sync_at?: string | null },
     syncCreatives: boolean
@@ -558,13 +580,13 @@ export const MetaAdsSyncPage: React.FC = () => {
     const startTime = Date.now();
 
     try {
-      const SYNC_DAYS_BACK = 365;
+      const daysBack = calculateDaysBack(selectedPeriod);
 
       const result = await runMetaSync({
         mode: 'backfill',
         clientId: selectedClient?.id,
         metaAdAccountId: account.meta_id,
-        daysBack: SYNC_DAYS_BACK,
+        daysBack,
         levels: ['campaign', 'adset', 'ad'],
         syncCreatives,
       });
@@ -974,95 +996,6 @@ export const MetaAdsSyncPage: React.FC = () => {
   // Handler de mudanca de periodo — persiste no Supabase via hook
   const handlePeriodChange = (periodId: string, newDateRange: { dateFrom: string; dateTo: string }) => {
     setPeriod(periodId, newDateRange);
-  };
-
-  // Busca insights em tempo real da Meta API (bypass do cache)
-  const handleLiveRefresh = async () => {
-    if (!navigationState.selectedAccountId || refreshingLive) return;
-
-    const account = getAccountById(navigationState.selectedAccountId);
-    if (!account?.meta_id) return;
-
-    setRefreshingLive(true);
-    try {
-      const result = await fetchLiveInsights({
-        meta_ad_account_id: account.meta_id,
-        level: (selectedLevel as 'campaign' | 'adset' | 'ad'),
-        date_from: dateRange.dateFrom,
-        date_to: dateRange.dateTo,
-        time_increment: '1',
-      });
-
-      // Converte dados da Meta API para o formato InsightRow do frontend
-      if (result.data && result.data.length > 0) {
-        const liveInsights: InsightRow[] = result.data.map((row) => {
-          const entityId = selectedLevel === 'campaign' ? (row.campaign_id || '')
-            : selectedLevel === 'adset' ? (row.adset_id || '')
-            : (row.ad_id || '');
-          const entityName = selectedLevel === 'campaign' ? (row.campaign_name || entityId)
-            : selectedLevel === 'adset' ? (row.adset_name || entityId)
-            : (row.ad_name || entityId);
-
-          // Extrai metricas do actions[]
-          const actions = row.actions || [];
-          const actionValues = row.action_values || [];
-          const leads = (() => {
-            const lg = actions.find(a => a.action_type === 'onsite_conversion.lead_grouped');
-            if (lg) return parseInt(lg.value || '0', 10);
-            const pl = actions.find(a => a.action_type === 'offsite_conversion.fb_pixel_lead');
-            if (pl) return parseInt(pl.value || '0', 10);
-            const g = actions.find(a => a.action_type === 'lead');
-            if (g) return parseInt(g.value || '0', 10);
-            return 0;
-          })();
-          const messagingConv = (() => {
-            const o = actions.find(a => a.action_type === 'onsite_conversion.messaging_conversation_started_7d');
-            if (o) return parseInt(o.value || '0', 10);
-            const g = actions.find(a => a.action_type === 'messaging_conversation_started');
-            if (g) return parseInt(g.value || '0', 10);
-            return 0;
-          })();
-          const pageLikes = (() => {
-            const l = actions.find(a => a.action_type === 'like');
-            return l ? parseInt(l.value || '0', 10) : 0;
-          })();
-          const purchaseTypes = ['purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_conversion.purchase'];
-          const purchaseValue = actionValues
-            .filter(a => purchaseTypes.includes(a.action_type))
-            .reduce((sum, a) => sum + parseFloat(a.value || '0'), 0);
-
-          return {
-            id: `${entityId}_${row.date_start}`,
-            level: selectedLevel,
-            entity_id: entityId,
-            entity_name: entityName,
-            date: row.date_start,
-            spend: parseFloat(row.spend || '0'),
-            impressions: parseInt(row.impressions || '0', 10),
-            reach: parseInt(row.reach || '0', 10),
-            clicks: parseInt(row.clicks || '0', 10),
-            ctr: parseFloat(row.ctr || '0'),
-            cpc: parseFloat(row.cpc || '0'),
-            cpm: parseFloat(row.cpm || '0'),
-            leads,
-            messaging_conversations_started: messagingConv,
-            page_likes: pageLikes,
-            conversions: leads + messagingConv,
-            conversion_value: purchaseValue,
-            purchase_value: purchaseValue,
-          };
-        });
-
-        setInsights(liveInsights);
-        calculateKPIs(liveInsights);
-        setLastLiveRefresh(new Date().toISOString());
-      }
-    } catch (err) {
-      console.error('Erro ao buscar dados em tempo real:', err);
-      setError(err instanceof Error ? err.message : 'Erro ao atualizar dados');
-    } finally {
-      setRefreshingLive(false);
-    }
   };
 
   // ============================================================
@@ -1525,19 +1458,25 @@ export const MetaAdsSyncPage: React.FC = () => {
           </Card>
         )}
 
-        {/* Informativo sobre periodo de sincronizacao */}
-        <Card className="bg-gradient-to-r from-blue-50/50 to-white border-blue-100">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 p-1.5 rounded-lg bg-blue-50">
-              <RefreshCw className="w-4 h-4 text-blue-600" />
+        {/* Seletor de Periodo de Sincronizacao */}
+        <Card className="bg-gradient-to-r from-gray-50 to-white">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 p-1.5 rounded-lg bg-blue-50">
+                <RefreshCw className="w-4 h-4 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="font-medium text-gray-900">Periodo de Sincronizacao</h3>
+                <p className="text-sm text-gray-500">
+                  Define quantos dias de dados serao baixados da API do Meta
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-medium text-gray-900">Sincronizacao Completa</h3>
-              <p className="text-sm text-gray-500">
-                A sincronizacao baixa automaticamente os ultimos 365 dias de dados do Meta Ads.
-                Apos sincronizar, selecione o periodo de analise na pagina de detalhes da conta.
-              </p>
-            </div>
+            <PeriodButtons
+              selectedPeriod={selectedPeriod}
+              onPeriodChange={handlePeriodChange}
+              presets={SYNC_PERIOD_PRESETS}
+            />
           </div>
         </Card>
 
@@ -1752,30 +1691,10 @@ export const MetaAdsSyncPage: React.FC = () => {
           <div className="flex items-center space-x-3">
             <SyncStatusBadge
               status={syncingAccountId === navigationState.selectedAccountId ? 'syncing' : 'synced'}
-              lastSyncAt={lastLiveRefresh || selectedAccount?.last_sync_at}
+              lastSyncAt={selectedAccount?.last_sync_at}
               showLabel
               size="md"
             />
-
-            {/* Botao de refresh em tempo real (busca da Meta API sem sync completo) */}
-            <Button
-              variant="outline"
-              onClick={handleLiveRefresh}
-              disabled={refreshingLive || syncingAccountId === navigationState.selectedAccountId}
-              title="Busca dados atualizados diretamente da Meta API"
-            >
-              {refreshingLive ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Atualizando...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4 mr-2" />
-                  Atualizar agora
-                </>
-              )}
-            </Button>
 
             <Button
               onClick={() => navigationState.selectedAccountId && handleSyncAccount(navigationState.selectedAccountId)}
@@ -1800,19 +1719,9 @@ export const MetaAdsSyncPage: React.FC = () => {
       {/* Filtros */}
       <Card className="relative z-20">
         <div className="space-y-6">
-          {/* Periodo - Versao aprimorada com fuso horario da conta */}
+          {/* Periodo - Versao aprimorada */}
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <label className="block text-sm font-medium text-gray-700">Periodo de Analise</label>
-              {navigationState.selectedAccountId && (() => {
-                const acc = getAccountById(navigationState.selectedAccountId);
-                return acc?.timezone ? (
-                  <span className="text-xs text-gray-400 font-mono">
-                    {acc.timezone}
-                  </span>
-                ) : null;
-              })()}
-            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">Periodo de Analise</label>
             <EnhancedPeriodSelector
               selectedPeriod={selectedPeriod}
               onPeriodChange={handlePeriodChange}
@@ -1940,16 +1849,11 @@ export const MetaAdsSyncPage: React.FC = () => {
             <div>
               <p className="text-sm font-medium text-teal-600">ROAS Medio</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
-                {kpis.roas !== null ? `${kpis.roas.toFixed(2)}x` : '—'}
+                {kpis.roas.toFixed(2)}x
               </p>
-              {kpis.roas !== null && kpis.totalPurchaseValue > 0 && (
+              {kpis.totalConversionValue > 0 && (
                 <p className="text-xs text-teal-500 mt-1">
-                  Receita: {formatCurrency(kpis.totalPurchaseValue)}
-                </p>
-              )}
-              {kpis.roas === null && (
-                <p className="text-xs text-gray-400 mt-1" title="ROAS indisponivel: campanha sem evento de compra configurado">
-                  Sem evento de compra
+                  Receita: {formatCurrency(kpis.totalConversionValue)}
                 </p>
               )}
             </div>
@@ -1959,45 +1863,60 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Conversas Iniciadas (separado de Leads) */}
-        {kpis.totalMessagingConversations > 0 && (
-          <Card className="bg-gradient-to-br from-sky-50 to-white border-sky-100">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium text-sky-600">Conversas Iniciadas</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {formatCompact(kpis.totalMessagingConversations)}
+        {/* Conversas */}
+        <Card className="bg-gradient-to-br from-purple-50 to-white border-purple-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-purple-600">Conversas</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {formatCompact(kpis.totalConversions)}
+              </p>
+              {kpis.totalConversions > 0 && (
+                <p className="text-xs text-purple-500 mt-1">
+                  Leads + Conversas
                 </p>
-                {kpis.totalSpend > 0 && (
-                  <p className="text-xs text-sky-500 mt-1">
-                    Custo: {formatCurrency(kpis.totalSpend / kpis.totalMessagingConversations)}
-                  </p>
-                )}
-              </div>
-              <div className="p-2 bg-sky-100 rounded-lg">
-                <MessageSquare className="w-5 h-5 text-sky-600" />
-              </div>
+              )}
             </div>
-          </Card>
-        )}
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <MessageSquare className="w-5 h-5 text-purple-600" />
+            </div>
+          </div>
+        </Card>
 
-        {/* Novos seguidores no periodo - apenas incremento, nao total vitalicio */}
+        {/* Custo por Conversa */}
+        <Card className="bg-gradient-to-br from-pink-50 to-white border-pink-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-pink-600">Custo/Conversa</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {kpis.totalConversions > 0
+                  ? formatCurrency(kpis.totalSpend / kpis.totalConversions)
+                  : 'N/A'}
+              </p>
+            </div>
+            <div className="p-2 bg-pink-100 rounded-lg">
+              <CircleDollarSign className="w-5 h-5 text-pink-600" />
+            </div>
+          </div>
+        </Card>
+
+        {/* Seguidores de pagina - visivel apenas quando ha dados */}
         {kpis.totalPageLikes > 0 && (
-          <Card className="bg-gradient-to-br from-slate-50 to-white border-slate-200">
+          <Card className="bg-gradient-to-br from-violet-50 to-white border-violet-100">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-600">Novos Seguidores</p>
+                <p className="text-sm font-medium text-violet-600">Seguidores</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">
-                  +{formatCompact(kpis.totalPageLikes)}
+                  {formatCompact(kpis.totalPageLikes)}
                 </p>
                 {kpis.totalSpend > 0 && (
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-violet-500 mt-1">
                     Custo/Seguidor: {formatCurrency(kpis.totalSpend / kpis.totalPageLikes)}
                   </p>
                 )}
               </div>
-              <div className="p-2 bg-slate-100 rounded-lg">
-                <Users className="w-5 h-5 text-slate-600" />
+              <div className="p-2 bg-violet-100 rounded-lg">
+                <Users className="w-5 h-5 text-violet-600" />
               </div>
             </div>
           </Card>
@@ -2178,12 +2097,9 @@ export const MetaAdsSyncPage: React.FC = () => {
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CTR</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPC</th>
                 <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPM</th>
-                {/* Colunas de engajamento separadas */}
-                {kpis.totalMessagingConversations > 0 && (
-                  <th className="text-right py-3 px-4 text-sm font-medium text-sky-600">Conversas</th>
-                )}
+                {/* Colunas de engajamento: seguidores (page_like) e leads de formulario */}
                 {kpis.totalPageLikes > 0 && (
-                  <th className="text-right py-3 px-4 text-sm font-medium text-slate-600">Seguidores</th>
+                  <th className="text-right py-3 px-4 text-sm font-medium text-purple-600">Seguidores</th>
                 )}
                 {(kpis.totalLeads > 0 || kpis.totalLeadGrouped > 0) && (
                   <th className="text-right py-3 px-4 text-sm font-medium text-emerald-600">Leads</th>
@@ -2220,9 +2136,11 @@ export const MetaAdsSyncPage: React.FC = () => {
                   const creative = isAdRow ? getCreative(row.entity_id) : null;
                   const loadingState = isAdRow ? getLoadingState(row.entity_id) : { isLoading: false, hasError: false };
 
-                  // Metricas de engajamento desta linha (separadas)
-                  const rowMessagingConversations = (row as InsightRow & { messaging_conversations_started?: number }).messaging_conversations_started || 0;
+                  // Metricas de engajamento desta linha
+                  // page_likes vem do tableData (ja agregado)
                   const rowPageLikes = (row as InsightRow & { page_likes?: number }).page_likes || 0;
+                  // leads: usa apenas o campo `leads` do tableData — ja calculado corretamente
+                  // no sync (fiel ao Gerenciador de Anuncios). Nao soma lead_grouped por cima.
                   const rowLeads = row.leads || 0;
 
                   return (
@@ -2290,16 +2208,9 @@ export const MetaAdsSyncPage: React.FC = () => {
                         {formatCurrency(row.cpm)}
                       </td>
 
-                      {/* Coluna de Conversas Iniciadas */}
-                      {kpis.totalMessagingConversations > 0 && (
-                        <td className="text-right py-3 px-4 text-sm text-sky-700 font-medium">
-                          {rowMessagingConversations > 0 ? formatNumber(rowMessagingConversations) : <span className="text-gray-300">—</span>}
-                        </td>
-                      )}
-
-                      {/* Coluna de Seguidores (incremento no periodo) */}
+                      {/* Coluna de Seguidores (visivel apenas quando ha dados de page_like) */}
                       {kpis.totalPageLikes > 0 && (
-                        <td className="text-right py-3 px-4 text-sm text-slate-700 font-medium">
+                        <td className="text-right py-3 px-4 text-sm text-purple-700 font-medium">
                           {rowPageLikes > 0 ? formatNumber(rowPageLikes) : <span className="text-gray-300">—</span>}
                         </td>
                       )}

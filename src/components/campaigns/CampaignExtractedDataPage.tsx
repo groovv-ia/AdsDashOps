@@ -28,7 +28,6 @@ import { CampaignAdsTable } from './CampaignAdsTable';
 import { CampaignTrendCharts } from './CampaignTrendCharts';
 import { AdDetailModal } from '../ad-analysis';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
-import { useWorkspacePeriod } from '../../hooks/useWorkspacePeriod';
 import { Loading } from '../ui/Loading';
 import { Card } from '../ui/Card';
 
@@ -110,9 +109,6 @@ export function CampaignExtractedDataPage({
   onNavigateBack,
   initialCampaignId,
 }: CampaignExtractedDataPageProps) {
-  // Periodo global do workspace
-  const { dateRange: periodDateRange } = useWorkspacePeriod();
-
   // Estados principais
   const [selectedCampaign, setSelectedCampaign] = useState<ExtractedCampaign | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('adsets');
@@ -502,7 +498,6 @@ export function CampaignExtractedDataPage({
             campaign_name: selectedCampaign.campaign_name,
             adset_name: selectedAd.adset_name,
           }}
-          dateRange={{ start: periodDateRange.dateFrom, end: periodDateRange.dateTo }}
           preloadedCreative={getCreative(selectedAd.ad_id)}
         />
       )}
