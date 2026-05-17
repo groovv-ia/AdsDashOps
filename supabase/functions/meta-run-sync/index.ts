@@ -329,6 +329,9 @@ Deno.serve(async (req: Request) => {
     const allAdIds: { adId: string; metaAdAccountId: string }[] = [];
     const insightFields = "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,date_start,date_stop,spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values";
 
+    // Tamanho de lote para insercoes em batch (reduz chamadas ao banco)
+    const BATCH_SIZE = 50;
+
     for (const adAccount of adAccounts) {
       try {
         const syncStartTime = new Date();
@@ -350,6 +353,11 @@ Deno.serve(async (req: Request) => {
               url = data.paging?.next || null;
             }
 
+            // Processa insights em lotes para evitar timeout
+            const dailyBatch: Record<string, unknown>[] = [];
+            const rawBatch: Record<string, unknown>[] = [];
+            const now = new Date().toISOString();
+
             for (const insight of allInsights) {
               let entityId: string, entityName: string | null;
               if (level === "ad") {
@@ -367,17 +375,77 @@ Deno.serve(async (req: Request) => {
               }
               if (!entityId) continue;
 
-              await supabaseAdmin.from("meta_insights_raw").insert({ workspace_id: workspace.id, client_id: client_id || null, meta_ad_account_id: adAccount.meta_ad_account_id, level, entity_id: entityId, date_start: insight.date_start, date_stop: insight.date_stop, payload: insight });
+              // Acumula registros para meta_insights_raw com fetched_at para evitar conflito de unique constraint
+              rawBatch.push({
+                workspace_id: workspace.id,
+                client_id: client_id || null,
+                meta_ad_account_id: adAccount.meta_ad_account_id,
+                level,
+                entity_id: entityId,
+                date_start: insight.date_start,
+                date_stop: insight.date_stop,
+                payload: insight,
+                fetched_at: now,
+              });
 
-              await supabaseAdmin.from("meta_insights_daily").upsert({
-                workspace_id: workspace.id, client_id: client_id || null, meta_ad_account_id: adAccount.id, level, entity_id: entityId, entity_name: entityName, date: insight.date_start,
-                spend: parseFloat(insight.spend || "0"), impressions: parseInt(insight.impressions || "0", 10), reach: parseInt(insight.reach || "0", 10), clicks: parseInt(insight.clicks || "0", 10),
-                ctr: parseFloat(insight.ctr || "0"), cpc: parseFloat(insight.cpc || "0"), cpm: parseFloat(insight.cpm || "0"), frequency: parseFloat(insight.frequency || "0"), unique_clicks: parseInt(insight.unique_clicks || "0", 10),
-                actions_json: insight.actions || {}, action_values_json: insight.action_values || {}, leads: extractLeads(insight.actions), conversions: extractConversions(insight.actions),
-                conversion_value: extractConversionValue(insight.action_values), purchase_value: extractPurchaseValue(insight.action_values),
-                messaging_conversations_started: extractMessagingConversations(insight.actions), page_likes: extractPageLikes(insight.actions)
-              }, { onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date" });
-              totalRows++;
+              // Acumula registros para meta_insights_daily
+              dailyBatch.push({
+                workspace_id: workspace.id,
+                client_id: client_id || null,
+                meta_ad_account_id: adAccount.id,
+                level,
+                entity_id: entityId,
+                entity_name: entityName,
+                date: insight.date_start,
+                spend: parseFloat(insight.spend || "0"),
+                impressions: parseInt(insight.impressions || "0", 10),
+                reach: parseInt(insight.reach || "0", 10),
+                clicks: parseInt(insight.clicks || "0", 10),
+                ctr: parseFloat(insight.ctr || "0"),
+                cpc: parseFloat(insight.cpc || "0"),
+                cpm: parseFloat(insight.cpm || "0"),
+                frequency: parseFloat(insight.frequency || "0"),
+                unique_clicks: parseInt(insight.unique_clicks || "0", 10),
+                actions_json: insight.actions || [],
+                action_values_json: insight.action_values || [],
+                leads: extractLeads(insight.actions),
+                conversions: extractConversions(insight.actions),
+                conversion_value: extractConversionValue(insight.action_values),
+                purchase_value: extractPurchaseValue(insight.action_values),
+                messaging_conversations_started: extractMessagingConversations(insight.actions),
+                page_likes: extractPageLikes(insight.actions),
+              });
+
+              // Quando o lote atinge o tamanho maximo, envia para o banco
+              if (dailyBatch.length >= BATCH_SIZE) {
+                // Insere raw em batch (ignora conflitos com onConflict tratado via upsert)
+                await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
+                  onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date_start,date_stop,fetched_at",
+                  ignoreDuplicates: true,
+                });
+
+                await supabaseAdmin.from("meta_insights_daily").upsert(dailyBatch, {
+                  onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date",
+                });
+
+                totalRows += dailyBatch.length;
+                rawBatch.length = 0;
+                dailyBatch.length = 0;
+              }
+            }
+
+            // Envia registros restantes do ultimo lote parcial
+            if (dailyBatch.length > 0) {
+              await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
+                onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date_start,date_stop,fetched_at",
+                ignoreDuplicates: true,
+              });
+
+              await supabaseAdmin.from("meta_insights_daily").upsert(dailyBatch, {
+                onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date",
+              });
+
+              totalRows += dailyBatch.length;
             }
           } catch (levelError) {
             const errorMsg = levelError instanceof Error ? levelError.message : "Unknown";
@@ -410,6 +478,9 @@ Deno.serve(async (req: Request) => {
             });
             let reachPageUrl: string | null = `${reachUrl}?${reachParams.toString()}`;
 
+            // Acumula updates de reach para fazer em batch
+            const reachUpdates: { entityId: string; reach: number }[] = [];
+
             while (reachPageUrl) {
               const reachData = await fetchInsightsWithRetry(reachPageUrl);
               if (reachData.data && reachData.data.length > 0) {
@@ -418,21 +489,25 @@ Deno.serve(async (req: Request) => {
                     : level === "adset" ? row.adset_id
                     : row.ad_id;
                   if (!entityId) continue;
-                  const periodReach = parseInt(row.reach || "0", 10);
-
-                  // Atualiza o campo reach na primeira data do periodo para servir de
-                  // "reach consolidado" — componentes frontend usam este valor quando agregam
-                  await supabaseAdmin
-                    .from("meta_insights_daily")
-                    .update({ reach: periodReach })
-                    .eq("workspace_id", workspace.id)
-                    .eq("meta_ad_account_id", adAccount.id)
-                    .eq("level", level)
-                    .eq("entity_id", entityId)
-                    .eq("date", dateFrom);
+                  reachUpdates.push({ entityId, reach: parseInt(row.reach || "0", 10) });
                 }
               }
               reachPageUrl = reachData.paging?.next || null;
+            }
+
+            // Executa updates de reach em paralelo (maximo 10 de cada vez)
+            for (let i = 0; i < reachUpdates.length; i += 10) {
+              const batch = reachUpdates.slice(i, i + 10);
+              await Promise.all(batch.map(({ entityId, reach }) =>
+                supabaseAdmin
+                  .from("meta_insights_daily")
+                  .update({ reach })
+                  .eq("workspace_id", workspace.id)
+                  .eq("meta_ad_account_id", adAccount.id)
+                  .eq("level", level)
+                  .eq("entity_id", entityId)
+                  .eq("date", dateFrom)
+              ));
             }
           }
         } catch (reachError) {
