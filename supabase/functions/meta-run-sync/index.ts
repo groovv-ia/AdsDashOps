@@ -327,7 +327,34 @@ Deno.serve(async (req: Request) => {
     const { dateFrom, dateTo } = getDateRange(mode, days_back);
     const syncResult = { mode, date_from: dateFrom, date_to: dateTo, accounts_synced: 0, insights_synced: 0, creatives_synced: 0, errors: [] as string[], timed_out: false };
     const allAdIds: { adId: string; metaAdAccountId: string }[] = [];
-    const insightFields = "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,date_start,date_stop,spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values";
+
+    // Campos por level: inclui apenas IDs/nomes relevantes para reduzir a complexidade
+    // de dados calculada pela API do Meta (evita erro #1 "too much data")
+    const FIELDS_BY_LEVEL: Record<string, string> = {
+      campaign: "campaign_id,campaign_name,date_start,date_stop,spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values",
+      adset: "campaign_id,adset_id,adset_name,date_start,date_stop,spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values",
+      ad: "campaign_id,adset_id,ad_id,ad_name,date_start,date_stop,spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values",
+    };
+
+    // Divide intervalo em janelas de N dias para evitar limite de complexidade da API do Meta
+    function buildDateWindows(from: string, to: string, windowDays: number): Array<{ since: string; until: string }> {
+      const windows: Array<{ since: string; until: string }> = [];
+      let cursor = new Date(from);
+      const end = new Date(to);
+      while (cursor <= end) {
+        const windowEnd = new Date(cursor);
+        windowEnd.setDate(windowEnd.getDate() + windowDays - 1);
+        if (windowEnd > end) windowEnd.setTime(end.getTime());
+        windows.push({ since: formatDate(cursor), until: formatDate(windowEnd) });
+        cursor = new Date(windowEnd);
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return windows;
+    }
+
+    // Janela maxima por chamada: 30 dias para modos com muitos dados, 1 dia para intraday
+    const DATE_WINDOW_DAYS = mode === "intraday" ? 1 : mode === "daily" ? 1 : 30;
+    const dateWindows = buildDateWindows(dateFrom, dateTo, DATE_WINDOW_DAYS);
 
     // Guarda de timeout: retorna resultado parcial se estiver proximo do limite (50s)
     const startTime = Date.now();
@@ -360,122 +387,130 @@ Deno.serve(async (req: Request) => {
             break;
           }
 
+          const insightFields = FIELDS_BY_LEVEL[level] || FIELDS_BY_LEVEL.ad;
+
           try {
             const baseUrl = `https://graph.facebook.com/v21.0/${adAccount.meta_ad_account_id}/insights`;
-            const params = new URLSearchParams({ level: level === "adset" ? "adset" : level, fields: insightFields, time_range: JSON.stringify({ since: dateFrom, until: dateTo }), time_increment: "1", use_account_attribution_setting: "true", limit: "500", access_token: accessToken });
-            let url: string | null = `${baseUrl}?${params.toString()}`;
             let paginationTimedOut = false;
 
-            // Processa insights em STREAMING: grava no banco a cada pagina da API
-            // em vez de acumular tudo em memoria e gravar depois (evita timeout)
-            const dailyBatch: Record<string, unknown>[] = [];
-            const rawBatch: Record<string, unknown>[] = [];
-            const now = new Date().toISOString();
+            // Buffers compartilhados por todas as janelas do level (flush em BATCH_SIZE)
+            const windowDailyBatch: Record<string, unknown>[] = [];
+            const windowRawBatch: Record<string, unknown>[] = [];
+            const windowNow = new Date().toISOString();
 
-            while (url) {
+            // Itera sobre janelas de datas (max 30 dias cada) para evitar erro #1 da API do Meta
+            for (const window of dateWindows) {
               if (isNearTimeout()) {
                 paginationTimedOut = true;
-                console.warn(`[meta-run-sync] Timeout na paginacao do level '${level}'. ${totalRows} registros salvos ate aqui.`);
                 break;
               }
 
-              const pageData = await fetchInsightsWithRetry(url);
-              const pageRows = pageData.data || [];
-              url = pageData.paging?.next || null;
+              const params = new URLSearchParams({ level: level === "adset" ? "adset" : level, fields: insightFields, time_range: JSON.stringify({ since: window.since, until: window.until }), time_increment: "1", use_account_attribution_setting: "true", limit: "500", access_token: accessToken });
+              let url: string | null = `${baseUrl}?${params.toString()}`;
 
-              // Processa cada registro da pagina imediatamente
-              for (const insight of pageRows) {
-                let entityId: string, entityName: string | null;
-                if (level === "ad") {
-                  entityId = insight.ad_id || "";
-                  entityName = insight.ad_name || null;
-                  if (entityId && sync_creatives && !allAdIds.some(a => a.adId === entityId)) {
-                    allAdIds.push({ adId: entityId, metaAdAccountId: adAccount.meta_ad_account_id });
-                  }
-                } else if (level === "adset") {
-                  entityId = insight.adset_id || "";
-                  entityName = insight.adset_name || null;
-                } else {
-                  entityId = insight.campaign_id || "";
-                  entityName = insight.campaign_name || null;
+              // Processa esta janela em streaming: grava no banco a cada pagina
+              while (url) {
+                if (isNearTimeout()) {
+                  paginationTimedOut = true;
+                  console.warn(`[meta-run-sync] Timeout na paginacao do level '${level}' janela ${window.since}~${window.until}. ${totalRows} registros salvos.`);
+                  break;
                 }
-                if (!entityId) continue;
 
-                if (shouldWriteRaw) {
-                  rawBatch.push({
+                const pageData = await fetchInsightsWithRetry(url);
+                const pageRows = pageData.data || [];
+                url = pageData.paging?.next || null;
+
+                for (const insight of pageRows) {
+                  let entityId: string, entityName: string | null;
+                  if (level === "ad") {
+                    entityId = insight.ad_id || "";
+                    entityName = insight.ad_name || null;
+                    if (entityId && sync_creatives && !allAdIds.some(a => a.adId === entityId)) {
+                      allAdIds.push({ adId: entityId, metaAdAccountId: adAccount.meta_ad_account_id });
+                    }
+                  } else if (level === "adset") {
+                    entityId = insight.adset_id || "";
+                    entityName = insight.adset_name || null;
+                  } else {
+                    entityId = insight.campaign_id || "";
+                    entityName = insight.campaign_name || null;
+                  }
+                  if (!entityId) continue;
+
+                  if (shouldWriteRaw) {
+                    windowRawBatch.push({
+                      workspace_id: workspace.id,
+                      client_id: client_id || null,
+                      meta_ad_account_id: adAccount.meta_ad_account_id,
+                      level,
+                      entity_id: entityId,
+                      date_start: insight.date_start,
+                      date_stop: insight.date_stop,
+                      payload: insight,
+                      fetched_at: windowNow,
+                    });
+                  }
+
+                  windowDailyBatch.push({
                     workspace_id: workspace.id,
                     client_id: client_id || null,
-                    meta_ad_account_id: adAccount.meta_ad_account_id,
+                    meta_ad_account_id: adAccount.id,
                     level,
                     entity_id: entityId,
-                    date_start: insight.date_start,
-                    date_stop: insight.date_stop,
-                    payload: insight,
-                    fetched_at: now,
+                    entity_name: entityName,
+                    date: insight.date_start,
+                    spend: parseFloat(insight.spend || "0"),
+                    impressions: parseInt(insight.impressions || "0", 10),
+                    reach: parseInt(insight.reach || "0", 10),
+                    clicks: parseInt(insight.clicks || "0", 10),
+                    ctr: parseFloat(insight.ctr || "0"),
+                    cpc: parseFloat(insight.cpc || "0"),
+                    cpm: parseFloat(insight.cpm || "0"),
+                    frequency: parseFloat(insight.frequency || "0"),
+                    unique_clicks: parseInt(insight.unique_clicks || "0", 10),
+                    actions_json: insight.actions || [],
+                    action_values_json: insight.action_values || [],
+                    leads: extractLeads(insight.actions),
+                    conversions: extractConversions(insight.actions),
+                    conversion_value: extractConversionValue(insight.action_values),
+                    purchase_value: extractPurchaseValue(insight.action_values),
+                    messaging_conversations_started: extractMessagingConversations(insight.actions),
+                    page_likes: extractPageLikes(insight.actions),
                   });
                 }
 
-                dailyBatch.push({
-                  workspace_id: workspace.id,
-                  client_id: client_id || null,
-                  meta_ad_account_id: adAccount.id,
-                  level,
-                  entity_id: entityId,
-                  entity_name: entityName,
-                  date: insight.date_start,
-                  spend: parseFloat(insight.spend || "0"),
-                  impressions: parseInt(insight.impressions || "0", 10),
-                  reach: parseInt(insight.reach || "0", 10),
-                  clicks: parseInt(insight.clicks || "0", 10),
-                  ctr: parseFloat(insight.ctr || "0"),
-                  cpc: parseFloat(insight.cpc || "0"),
-                  cpm: parseFloat(insight.cpm || "0"),
-                  frequency: parseFloat(insight.frequency || "0"),
-                  unique_clicks: parseInt(insight.unique_clicks || "0", 10),
-                  actions_json: insight.actions || [],
-                  action_values_json: insight.action_values || [],
-                  leads: extractLeads(insight.actions),
-                  conversions: extractConversions(insight.actions),
-                  conversion_value: extractConversionValue(insight.action_values),
-                  purchase_value: extractPurchaseValue(insight.action_values),
-                  messaging_conversations_started: extractMessagingConversations(insight.actions),
-                  page_likes: extractPageLikes(insight.actions),
-                });
-              }
-
-              // Flush ao banco apos cada pagina da API (nao acumula tudo)
-              if (dailyBatch.length >= BATCH_SIZE) {
-                if (shouldWriteRaw && rawBatch.length > 0) {
-                  await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
-                    onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date_start,date_stop,fetched_at",
-                    ignoreDuplicates: true,
+                // Flush ao banco quando lote atinge o limite (nao acumula tudo em memoria)
+                if (windowDailyBatch.length >= BATCH_SIZE) {
+                  if (shouldWriteRaw && windowRawBatch.length > 0) {
+                    await supabaseAdmin.from("meta_insights_raw").upsert(windowRawBatch, {
+                      onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date_start,date_stop,fetched_at",
+                      ignoreDuplicates: true,
+                    });
+                    windowRawBatch.length = 0;
+                  }
+                  await supabaseAdmin.from("meta_insights_daily").upsert(windowDailyBatch, {
+                    onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date",
                   });
-                  rawBatch.length = 0;
+                  totalRows += windowDailyBatch.length;
+                  windowDailyBatch.length = 0;
                 }
+              } // fim while (url) -- paginacao da janela
 
-                await supabaseAdmin.from("meta_insights_daily").upsert(dailyBatch, {
-                  onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date",
-                });
+              if (paginationTimedOut) break; // interrompe iteracao de janelas
+            } // fim for (const window of dateWindows)
 
-                totalRows += dailyBatch.length;
-                dailyBatch.length = 0;
-              }
-            }
-
-            // Flush registros restantes do ultimo lote parcial
-            if (dailyBatch.length > 0) {
-              if (shouldWriteRaw && rawBatch.length > 0) {
-                await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
+            // Flush dos registros restantes do ultimo lote
+            if (windowDailyBatch.length > 0) {
+              if (shouldWriteRaw && windowRawBatch.length > 0) {
+                await supabaseAdmin.from("meta_insights_raw").upsert(windowRawBatch, {
                   onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date_start,date_stop,fetched_at",
                   ignoreDuplicates: true,
                 });
               }
-
-              await supabaseAdmin.from("meta_insights_daily").upsert(dailyBatch, {
+              await supabaseAdmin.from("meta_insights_daily").upsert(windowDailyBatch, {
                 onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date",
               });
-
-              totalRows += dailyBatch.length;
+              totalRows += windowDailyBatch.length;
             }
 
             // Se timeout na paginacao, marca para o frontend retentar
