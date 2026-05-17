@@ -34,9 +34,10 @@ import { CampaignWithMetrics } from '../../lib/services/CampaignDataService';
 interface CampaignCardProps {
   campaign: CampaignWithMetrics;
   onViewAnalysis: (campaignId: string) => void;
+  onCardClick?: (campaign: CampaignWithMetrics) => void;
 }
 
-export const CampaignCard: React.FC<CampaignCardProps> = ({ campaign, onViewAnalysis }) => {
+export const CampaignCard: React.FC<CampaignCardProps> = ({ campaign, onViewAnalysis, onCardClick }) => {
   /**
    * Retorna variante do badge de status baseado no status da campanha
    */
@@ -153,9 +154,17 @@ export const CampaignCard: React.FC<CampaignCardProps> = ({ campaign, onViewAnal
     campaign.metrics.spend > 0 ||
     campaign.metrics.clicks > 0;
 
+  /** Handler para click no card (navega para detalhe da campanha) */
+  const handleCardClick = () => {
+    if (onCardClick) {
+      onCardClick(campaign);
+    }
+  };
+
   return (
     <Card
-      className={`hover:shadow-xl transition-all duration-300 ${getPerformanceColor()} overflow-hidden`}
+      className={`hover:shadow-xl transition-all duration-300 ${getPerformanceColor()} overflow-hidden ${onCardClick ? 'cursor-pointer hover:scale-[1.01]' : ''}`}
+      onClick={handleCardClick}
     >
       {/* Header do card */}
       <div className="flex items-start justify-between mb-4">
@@ -316,7 +325,14 @@ export const CampaignCard: React.FC<CampaignCardProps> = ({ campaign, onViewAnal
       </div>
 
       {/* Botao de acao */}
-      <Button onClick={() => onViewAnalysis(campaign.id)} className="w-full" size="sm">
+      <Button
+        onClick={(e) => {
+          e.stopPropagation();
+          onViewAnalysis(campaign.id);
+        }}
+        className="w-full"
+        size="sm"
+      >
         <BarChart3 className="h-4 w-4 mr-2" />
         Ver Analise Completa
         <ExternalLink className="h-3 w-3 ml-2" />

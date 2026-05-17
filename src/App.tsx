@@ -21,6 +21,8 @@ import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import { CampaignsPage } from './components/campaigns/CampaignsPage';
 import { CampaignAnalysisPage } from './components/campaigns/CampaignAnalysisPage';
 import { CampaignExtractedDataPage } from './components/campaigns/CampaignExtractedDataPage';
+import { CampaignDetailPage } from './components/campaigns/CampaignDetailPage';
+import { AdSetDetailPage } from './components/campaigns/AdSetDetailPage';
 import { WorkspacesPage } from './components/workspaces/WorkspacesPage';
 import { MetaAdminPage, MetaAdsSyncPage } from './components/meta-admin';
 import { GoogleAdminPage, GoogleAdsSyncPage, GoogleCampaignsPage, GoogleCampaignDetailPage } from './components/google-admin';
@@ -62,6 +64,13 @@ function AppContent() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedGoogleCampaignId, setSelectedGoogleCampaignId] = useState<string | null>(null);
+  // Estado para drill-down: Campanha > AdSet
+  const [selectedCampaignMeta, setSelectedCampaignMeta] = useState<{
+    id: string; name: string; metaAdAccountId: string; status?: string; objective?: string;
+  } | null>(null);
+  const [selectedAdSetMeta, setSelectedAdSetMeta] = useState<{
+    id: string; name: string; campaignId: string; campaignName: string; metaAdAccountId: string;
+  } | null>(null);
   const [filters, setFilters] = useState({
     platforms: [] as string[],
     campaigns: [] as string[],
@@ -352,6 +361,61 @@ function AppContent() {
             }}
             onNavigateToExtractedData={() => {
               setCurrentPage('campaign-extracted-data');
+            }}
+            onNavigateToDetail={(id, name, metaAdAccountId, status, objective) => {
+              setSelectedCampaignMeta({ id, name, metaAdAccountId, status, objective });
+              setCurrentPage('campaign-detail');
+            }}
+          />
+        );
+      case 'campaign-detail':
+        if (!selectedCampaignMeta) {
+          setCurrentPage('campaigns');
+          return null;
+        }
+        return (
+          <CampaignDetailPage
+            campaignId={selectedCampaignMeta.id}
+            campaignName={selectedCampaignMeta.name}
+            metaAdAccountId={selectedCampaignMeta.metaAdAccountId}
+            campaignStatus={selectedCampaignMeta.status}
+            campaignObjective={selectedCampaignMeta.objective}
+            onBack={() => {
+              setSelectedCampaignMeta(null);
+              setCurrentPage('campaigns');
+            }}
+            onNavigateToAdSet={(adSetId, adSetName) => {
+              setSelectedAdSetMeta({
+                id: adSetId,
+                name: adSetName,
+                campaignId: selectedCampaignMeta.id,
+                campaignName: selectedCampaignMeta.name,
+                metaAdAccountId: selectedCampaignMeta.metaAdAccountId,
+              });
+              setCurrentPage('adset-detail');
+            }}
+          />
+        );
+      case 'adset-detail':
+        if (!selectedAdSetMeta) {
+          setCurrentPage('campaigns');
+          return null;
+        }
+        return (
+          <AdSetDetailPage
+            adSetId={selectedAdSetMeta.id}
+            adSetName={selectedAdSetMeta.name}
+            campaignId={selectedAdSetMeta.campaignId}
+            campaignName={selectedAdSetMeta.campaignName}
+            metaAdAccountId={selectedAdSetMeta.metaAdAccountId}
+            onBack={() => {
+              setSelectedAdSetMeta(null);
+              setCurrentPage('campaign-detail');
+            }}
+            onBackToCampaigns={() => {
+              setSelectedAdSetMeta(null);
+              setSelectedCampaignMeta(null);
+              setCurrentPage('campaigns');
             }}
           />
         );

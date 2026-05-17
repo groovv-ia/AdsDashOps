@@ -53,6 +53,7 @@ import { EnhancedPeriodSelector } from '../meta-admin/EnhancedPeriodSelector';
 interface CampaignsPageProps {
   onNavigateToAnalysis: (campaignId: string) => void;
   onNavigateToExtractedData?: () => void;
+  onNavigateToDetail?: (campaignId: string, campaignName: string, metaAdAccountId: string, status?: string, objective?: string) => void;
 }
 
 // Periodos pre-definidos
@@ -68,6 +69,7 @@ const DATE_PRESETS = [
 export const CampaignsPage: React.FC<CampaignsPageProps> = ({
   onNavigateToAnalysis,
   onNavigateToExtractedData,
+  onNavigateToDetail,
 }) => {
   // Contextos do workspace e cliente selecionados
   const { currentWorkspace } = useWorkspace();
@@ -692,6 +694,15 @@ export const CampaignsPage: React.FC<CampaignsPageProps> = ({
                 key={campaign.id}
                 campaign={campaign}
                 onViewAnalysis={onNavigateToAnalysis}
+                onCardClick={onNavigateToDetail ? (c) => {
+                  onNavigateToDetail(
+                    c.id,
+                    c.name,
+                    c.meta_ad_account_id || '',
+                    c.status,
+                    c.objective
+                  );
+                } : undefined}
               />
             ))}
           </div>
