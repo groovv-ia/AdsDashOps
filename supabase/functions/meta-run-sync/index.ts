@@ -336,8 +336,10 @@ Deno.serve(async (req: Request) => {
       return (Date.now() - startTime) > MAX_EXECUTION_MS;
     }
 
-    // Tamanho de lote para insercoes em batch (reduz chamadas ao banco)
-    const BATCH_SIZE = 50;
+    // Lotes maiores reduzem round-trips ao banco (principal causa de timeout)
+    const BATCH_SIZE = 200;
+    // Apenas grava raw no modo backfill (auditoria); daily/intraday pulam para economizar tempo
+    const shouldWriteRaw = mode === "backfill";
 
     for (const adAccount of adAccounts) {
       if (isNearTimeout()) {
@@ -360,19 +362,24 @@ Deno.serve(async (req: Request) => {
 
           try {
             const baseUrl = `https://graph.facebook.com/v21.0/${adAccount.meta_ad_account_id}/insights`;
-            // use_account_attribution_setting=true garante que a janela de atribuicao
-            // usada e exatamente a mesma configurada na conta — identica ao Gerenciador de Anuncios.
             const params = new URLSearchParams({ level: level === "adset" ? "adset" : level, fields: insightFields, time_range: JSON.stringify({ since: dateFrom, until: dateTo }), time_increment: "1", use_account_attribution_setting: "true", limit: "500", access_token: accessToken });
             let url: string | null = `${baseUrl}?${params.toString()}`;
             const allInsights: MetaInsightRow[] = [];
+            let paginationTimedOut = false;
 
             while (url) {
+              // Verifica timeout DENTRO do loop de paginacao
+              if (isNearTimeout()) {
+                paginationTimedOut = true;
+                console.warn(`[meta-run-sync] Timeout na paginacao do level '${level}'. Processando ${allInsights.length} registros parciais.`);
+                break;
+              }
               const data = await fetchInsightsWithRetry(url);
               if (data.data && data.data.length > 0) allInsights.push(...data.data);
               url = data.paging?.next || null;
             }
 
-            // Processa insights em lotes para evitar timeout
+            // Processa insights coletados (mesmo que parciais por timeout)
             const dailyBatch: Record<string, unknown>[] = [];
             const rawBatch: Record<string, unknown>[] = [];
             const now = new Date().toISOString();
@@ -394,20 +401,21 @@ Deno.serve(async (req: Request) => {
               }
               if (!entityId) continue;
 
-              // Acumula registros para meta_insights_raw com fetched_at para evitar conflito de unique constraint
-              rawBatch.push({
-                workspace_id: workspace.id,
-                client_id: client_id || null,
-                meta_ad_account_id: adAccount.meta_ad_account_id,
-                level,
-                entity_id: entityId,
-                date_start: insight.date_start,
-                date_stop: insight.date_stop,
-                payload: insight,
-                fetched_at: now,
-              });
+              // Acumula raw apenas em modo backfill
+              if (shouldWriteRaw) {
+                rawBatch.push({
+                  workspace_id: workspace.id,
+                  client_id: client_id || null,
+                  meta_ad_account_id: adAccount.meta_ad_account_id,
+                  level,
+                  entity_id: entityId,
+                  date_start: insight.date_start,
+                  date_stop: insight.date_stop,
+                  payload: insight,
+                  fetched_at: now,
+                });
+              }
 
-              // Acumula registros para meta_insights_daily
               dailyBatch.push({
                 workspace_id: workspace.id,
                 client_id: client_id || null,
@@ -435,36 +443,52 @@ Deno.serve(async (req: Request) => {
                 page_likes: extractPageLikes(insight.actions),
               });
 
-              // Quando o lote atinge o tamanho maximo, envia para o banco
+              // Flush batch quando atinge o limite
               if (dailyBatch.length >= BATCH_SIZE) {
-                // Insere raw em batch (ignora conflitos com onConflict tratado via upsert)
-                await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
-                  onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date_start,date_stop,fetched_at",
-                  ignoreDuplicates: true,
-                });
+                if (shouldWriteRaw && rawBatch.length > 0) {
+                  await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
+                    onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date_start,date_stop,fetched_at",
+                    ignoreDuplicates: true,
+                  });
+                  rawBatch.length = 0;
+                }
 
                 await supabaseAdmin.from("meta_insights_daily").upsert(dailyBatch, {
                   onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date",
                 });
 
                 totalRows += dailyBatch.length;
-                rawBatch.length = 0;
                 dailyBatch.length = 0;
+
+                // Verifica timeout apos cada flush ao banco
+                if (isNearTimeout()) {
+                  syncResult.timed_out = true;
+                  break;
+                }
               }
             }
 
             // Envia registros restantes do ultimo lote parcial
             if (dailyBatch.length > 0) {
-              await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
-                onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date_start,date_stop,fetched_at",
-                ignoreDuplicates: true,
-              });
+              if (shouldWriteRaw && rawBatch.length > 0) {
+                await supabaseAdmin.from("meta_insights_raw").upsert(rawBatch, {
+                  onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date_start,date_stop,fetched_at",
+                  ignoreDuplicates: true,
+                });
+              }
 
               await supabaseAdmin.from("meta_insights_daily").upsert(dailyBatch, {
                 onConflict: "workspace_id,meta_ad_account_id,level,entity_id,date",
               });
 
               totalRows += dailyBatch.length;
+            }
+
+            // Se a paginacao deu timeout, marca e interrompe os demais levels
+            if (paginationTimedOut) {
+              syncResult.timed_out = true;
+              syncResult.errors.push(`Paginacao parcial no level '${level}' (${allInsights.length} registros salvos). Execute novamente para completar.`);
+              break;
             }
           } catch (levelError) {
             const errorMsg = levelError instanceof Error ? levelError.message : "Unknown";
