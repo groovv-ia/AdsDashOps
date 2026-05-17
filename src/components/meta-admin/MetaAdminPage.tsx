@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { PermissionsScopeDisplay } from '../ui/PermissionsScopeDisplay';
 import {
   validateMetaConnection,
   listMetaAdAccounts,
@@ -471,17 +472,11 @@ export const MetaAdminPage: React.FC = () => {
 
           {connectionStatus.scopes && connectionStatus.scopes.length > 0 && (
             <div className="mt-4 pt-4 border-t border-gray-100">
-              <p className="text-sm font-medium text-gray-700 mb-2">Permissoes concedidas:</p>
-              <div className="flex flex-wrap gap-2">
-                {connectionStatus.scopes.map((scope) => (
-                  <span
-                    key={scope}
-                    className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs rounded-lg border border-blue-200 font-medium"
-                  >
-                    {scope}
-                  </span>
-                ))}
-              </div>
+              <PermissionsScopeDisplay
+                scopes={connectionStatus.scopes}
+                initialVisibleCount={5}
+                showMissingIndicator={true}
+              />
             </div>
           )}
         </Card>
