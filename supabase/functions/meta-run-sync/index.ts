@@ -325,20 +325,39 @@ Deno.serve(async (req: Request) => {
     }
 
     const { dateFrom, dateTo } = getDateRange(mode, days_back);
-    const syncResult = { mode, date_from: dateFrom, date_to: dateTo, accounts_synced: 0, insights_synced: 0, creatives_synced: 0, errors: [] as string[] };
+    const syncResult = { mode, date_from: dateFrom, date_to: dateTo, accounts_synced: 0, insights_synced: 0, creatives_synced: 0, errors: [] as string[], timed_out: false };
     const allAdIds: { adId: string; metaAdAccountId: string }[] = [];
     const insightFields = "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,date_start,date_stop,spend,impressions,reach,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values";
+
+    // Guarda de timeout: retorna resultado parcial se estiver proximo do limite (50s)
+    const startTime = Date.now();
+    const MAX_EXECUTION_MS = 50000;
+    function isNearTimeout(): boolean {
+      return (Date.now() - startTime) > MAX_EXECUTION_MS;
+    }
 
     // Tamanho de lote para insercoes em batch (reduz chamadas ao banco)
     const BATCH_SIZE = 50;
 
     for (const adAccount of adAccounts) {
+      if (isNearTimeout()) {
+        syncResult.timed_out = true;
+        syncResult.errors.push("Sync interrompido por limite de tempo. Execute novamente para continuar.");
+        break;
+      }
+
       try {
         const syncStartTime = new Date();
         const { data: syncJob } = await supabaseAdmin.from("meta_sync_jobs").insert({ workspace_id: workspace.id, client_id: client_id || null, meta_ad_account_id: adAccount.meta_ad_account_id, job_type: mode === "backfill" ? "backfill" : mode === "daily" ? "daily" : "fast", date_from: dateFrom, date_to: dateTo, status: "running", started_at: syncStartTime.toISOString() }).select("id").single();
         let totalRows = 0;
 
         for (const level of levels) {
+          if (isNearTimeout()) {
+            syncResult.timed_out = true;
+            syncResult.errors.push(`Timeout atingido durante level '${level}'. Execute novamente.`);
+            break;
+          }
+
           try {
             const baseUrl = `https://graph.facebook.com/v21.0/${adAccount.meta_ad_account_id}/insights`;
             // use_account_attribution_setting=true garante que a janela de atribuicao
@@ -458,61 +477,9 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // Busca reach consolidado do periodo completo (sem time_increment)
-        // O reach diario nao pode ser somado pois e contagem unica de pessoas.
-        // Esta chamada retorna o reach real do periodo, identico ao Gerenciador de Anuncios.
-        try {
-          for (const level of levels) {
-            const reachUrl = `https://graph.facebook.com/v21.0/${adAccount.meta_ad_account_id}/insights`;
-            const reachParams = new URLSearchParams({
-              level: level === "adset" ? "adset" : level,
-              fields: level === "campaign"
-                ? "campaign_id,reach"
-                : level === "adset"
-                  ? "adset_id,reach"
-                  : "ad_id,reach",
-              time_range: JSON.stringify({ since: dateFrom, until: dateTo }),
-              use_account_attribution_setting: "true",
-              limit: "500",
-              access_token: accessToken,
-            });
-            let reachPageUrl: string | null = `${reachUrl}?${reachParams.toString()}`;
-
-            // Acumula updates de reach para fazer em batch
-            const reachUpdates: { entityId: string; reach: number }[] = [];
-
-            while (reachPageUrl) {
-              const reachData = await fetchInsightsWithRetry(reachPageUrl);
-              if (reachData.data && reachData.data.length > 0) {
-                for (const row of reachData.data) {
-                  const entityId = level === "campaign" ? row.campaign_id
-                    : level === "adset" ? row.adset_id
-                    : row.ad_id;
-                  if (!entityId) continue;
-                  reachUpdates.push({ entityId, reach: parseInt(row.reach || "0", 10) });
-                }
-              }
-              reachPageUrl = reachData.paging?.next || null;
-            }
-
-            // Executa updates de reach em paralelo (maximo 10 de cada vez)
-            for (let i = 0; i < reachUpdates.length; i += 10) {
-              const batch = reachUpdates.slice(i, i + 10);
-              await Promise.all(batch.map(({ entityId, reach }) =>
-                supabaseAdmin
-                  .from("meta_insights_daily")
-                  .update({ reach })
-                  .eq("workspace_id", workspace.id)
-                  .eq("meta_ad_account_id", adAccount.id)
-                  .eq("level", level)
-                  .eq("entity_id", entityId)
-                  .eq("date", dateFrom)
-              ));
-            }
-          }
-        } catch (reachError) {
-          console.warn("[meta-run-sync] Erro ao buscar reach consolidado:", reachError);
-        }
+        // NOTA: Reach ja e retornado na chamada principal de insights (com time_increment=1).
+        // O reach diario nao e somavel entre dias, mas o dado por dia ja e suficiente
+        // para exibicao. A chamada separada de reach foi removida para evitar timeout.
 
         if (syncJob) {
           const durationSeconds = Math.floor((new Date().getTime() - syncStartTime.getTime()) / 1000);
@@ -542,7 +509,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (sync_creatives && allAdIds.length > 0) {
+    if (sync_creatives && allAdIds.length > 0 && !isNearTimeout()) {
       console.log(`Buscando criativos para ${allAdIds.length} ads`);
       const imageHashCache = new Map<string, string>();
 
@@ -637,8 +604,10 @@ Deno.serve(async (req: Request) => {
       }
 
       for (const [accountMetaId, adIds] of adsByAccount) {
+        if (isNearTimeout()) { syncResult.timed_out = true; break; }
         try {
           for (let i = 0; i < adIds.length; i += 50) {
+            if (isNearTimeout()) { syncResult.timed_out = true; break; }
             const batch = adIds.slice(i, i + 50);
             const batchRequests = batch.map(adId => ({ method: "GET", relative_url: `${adId}?fields=${encodeURIComponent(adFields)}` }));
             const batchResponse = await fetch("https://graph.facebook.com/v21.0/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ access_token: accessToken, batch: JSON.stringify(batchRequests) }) });
