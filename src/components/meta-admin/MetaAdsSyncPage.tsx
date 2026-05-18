@@ -1993,232 +1993,6 @@ export const MetaAdsSyncPage: React.FC = () => {
         )}
       </Card>
 
-      {/* Barra de progresso ao carregar metricas do periodo */}
-      {loadingInsights && (
-        <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
-          <div className="h-full bg-blue-500 rounded-full"
-            style={{ animation: 'loadingBar 1.4s ease-in-out infinite' }} />
-        </div>
-      )}
-
-      {/* KPIs Principais */}
-      <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 transition-opacity duration-200 ${loadingInsights ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-        {/* Gasto Total */}
-        <Card className="bg-gradient-to-br from-green-50 to-white border-green-100">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-green-600">Gasto Total</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCurrency(kpis.totalSpend)}
-              </p>
-            </div>
-            <div className="p-2 bg-green-100 rounded-lg">
-              <DollarSign className="w-5 h-5 text-green-600" />
-            </div>
-          </div>
-        </Card>
-
-        {/* Impressoes */}
-        <Card className="bg-gradient-to-br from-blue-50 to-white border-blue-100">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-blue-600">Impressoes</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCompact(kpis.totalImpressions)}
-              </p>
-            </div>
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Eye className="w-5 h-5 text-blue-600" />
-            </div>
-          </div>
-        </Card>
-
-        {/* Cliques */}
-        <Card className="bg-gradient-to-br from-cyan-50 to-white border-cyan-100">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-cyan-600">Cliques</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCompact(kpis.totalClicks)}
-              </p>
-            </div>
-            <div className="p-2 bg-cyan-100 rounded-lg">
-              <MousePointer className="w-5 h-5 text-cyan-600" />
-            </div>
-          </div>
-        </Card>
-
-        {/* ROAS */}
-        <Card className="bg-gradient-to-br from-teal-50 to-white border-teal-100">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-teal-600">ROAS Medio</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">
-                {kpis.roas !== null ? `${kpis.roas.toFixed(2)}x` : '—'}
-              </p>
-              {kpis.roas !== null && kpis.totalPurchaseValue > 0 && (
-                <p className="text-xs text-teal-500 mt-1">
-                  Receita: {formatCurrency(kpis.totalPurchaseValue)}
-                </p>
-              )}
-              {kpis.roas === null && (
-                <p className="text-xs text-gray-400 mt-1" title="ROAS indisponivel: campanha sem evento de compra configurado">
-                  Sem evento de compra
-                </p>
-              )}
-            </div>
-            <div className="p-2 bg-teal-100 rounded-lg">
-              <TrendingUp className="w-5 h-5 text-teal-600" />
-            </div>
-          </div>
-        </Card>
-
-        {/* Conversas Iniciadas (separado de Leads) */}
-        {kpis.totalMessagingConversations > 0 && (
-          <Card className="bg-gradient-to-br from-sky-50 to-white border-sky-100">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium text-sky-600">Conversas Iniciadas</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {formatCompact(kpis.totalMessagingConversations)}
-                </p>
-                {kpis.totalSpend > 0 && (
-                  <p className="text-xs text-sky-500 mt-1">
-                    Custo: {formatCurrency(kpis.totalSpend / kpis.totalMessagingConversations)}
-                  </p>
-                )}
-              </div>
-              <div className="p-2 bg-sky-100 rounded-lg">
-                <MessageSquare className="w-5 h-5 text-sky-600" />
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Novos seguidores no periodo - apenas incremento, nao total vitalicio */}
-        {kpis.totalPageLikes > 0 && (
-          <Card className="bg-gradient-to-br from-slate-50 to-white border-slate-200">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Novos Seguidores</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  +{formatCompact(kpis.totalPageLikes)}
-                </p>
-                {kpis.totalSpend > 0 && (
-                  <p className="text-xs text-slate-500 mt-1">
-                    Custo/Seguidor: {formatCurrency(kpis.totalSpend / kpis.totalPageLikes)}
-                  </p>
-                )}
-              </div>
-              <div className="p-2 bg-slate-100 rounded-lg">
-                <Users className="w-5 h-5 text-slate-600" />
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Leads de formulario - visivel apenas quando ha dados */}
-        {kpis.totalLeads > 0 && (
-          <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium text-emerald-600">Leads</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {formatCompact(kpis.totalLeads)}
-                </p>
-                {kpis.totalSpend > 0 && kpis.totalLeads > 0 && (
-                  <p className="text-xs text-emerald-500 mt-1">
-                    CPL: {formatCurrency(kpis.totalSpend / kpis.totalLeads)}
-                  </p>
-                )}
-              </div>
-              <div className="p-2 bg-emerald-100 rounded-lg">
-                <FileText className="w-5 h-5 text-emerald-600" />
-              </div>
-            </div>
-          </Card>
-        )}
-      </div>
-
-      {/* Graficos */}
-      {chartData.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Grafico de Gasto */}
-          <Card>
-            <h3 className="font-semibold text-gray-900 mb-4">Gasto por Dia</h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(v) => v.slice(5)}
-                    stroke="#9ca3af"
-                    fontSize={12}
-                  />
-                  <YAxis tickFormatter={(v) => `R$${v}`} stroke="#9ca3af" fontSize={12} />
-                  <Tooltip
-                    formatter={(value: number) => [formatCurrency(value), 'Gasto']}
-                    labelFormatter={(label) => `Data: ${label}`}
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Bar dataKey="spend" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-          {/* Grafico de Impressoes e Cliques */}
-          <Card>
-            <h3 className="font-semibold text-gray-900 mb-4">Impressoes e Cliques por Dia</h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(v) => v.slice(5)}
-                    stroke="#9ca3af"
-                    fontSize={12}
-                  />
-                  <YAxis stroke="#9ca3af" fontSize={12} />
-                  <Tooltip
-                    formatter={(value: number, name: string) => [
-                      formatNumber(value),
-                      name === 'impressions' ? 'Impressoes' : 'Cliques',
-                    ]}
-                    labelFormatter={(label) => `Data: ${label}`}
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="impressions"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="clicks"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-        </div>
-      )}
-
       {/* Lista de Entidades — layout card-hierarchy */}
       <div>
         {/* Cabecalho da secao: titulo contextual + acoes */}
@@ -2510,6 +2284,232 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Barra de progresso ao carregar metricas do periodo */}
+      {loadingInsights && (
+        <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-blue-500 rounded-full"
+            style={{ animation: 'loadingBar 1.4s ease-in-out infinite' }} />
+        </div>
+      )}
+
+      {/* KPIs Principais */}
+      <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 transition-opacity duration-200 ${loadingInsights ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+        {/* Gasto Total */}
+        <Card className="bg-gradient-to-br from-green-50 to-white border-green-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-green-600">Gasto Total</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {formatCurrency(kpis.totalSpend)}
+              </p>
+            </div>
+            <div className="p-2 bg-green-100 rounded-lg">
+              <DollarSign className="w-5 h-5 text-green-600" />
+            </div>
+          </div>
+        </Card>
+
+        {/* Impressoes */}
+        <Card className="bg-gradient-to-br from-blue-50 to-white border-blue-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-blue-600">Impressoes</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {formatCompact(kpis.totalImpressions)}
+              </p>
+            </div>
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Eye className="w-5 h-5 text-blue-600" />
+            </div>
+          </div>
+        </Card>
+
+        {/* Cliques */}
+        <Card className="bg-gradient-to-br from-cyan-50 to-white border-cyan-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-cyan-600">Cliques</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {formatCompact(kpis.totalClicks)}
+              </p>
+            </div>
+            <div className="p-2 bg-cyan-100 rounded-lg">
+              <MousePointer className="w-5 h-5 text-cyan-600" />
+            </div>
+          </div>
+        </Card>
+
+        {/* ROAS */}
+        <Card className="bg-gradient-to-br from-teal-50 to-white border-teal-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-teal-600">ROAS Medio</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {kpis.roas !== null ? `${kpis.roas.toFixed(2)}x` : '—'}
+              </p>
+              {kpis.roas !== null && kpis.totalPurchaseValue > 0 && (
+                <p className="text-xs text-teal-500 mt-1">
+                  Receita: {formatCurrency(kpis.totalPurchaseValue)}
+                </p>
+              )}
+              {kpis.roas === null && (
+                <p className="text-xs text-gray-400 mt-1" title="ROAS indisponivel: campanha sem evento de compra configurado">
+                  Sem evento de compra
+                </p>
+              )}
+            </div>
+            <div className="p-2 bg-teal-100 rounded-lg">
+              <TrendingUp className="w-5 h-5 text-teal-600" />
+            </div>
+          </div>
+        </Card>
+
+        {/* Conversas Iniciadas (separado de Leads) */}
+        {kpis.totalMessagingConversations > 0 && (
+          <Card className="bg-gradient-to-br from-sky-50 to-white border-sky-100">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-sky-600">Conversas Iniciadas</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {formatCompact(kpis.totalMessagingConversations)}
+                </p>
+                {kpis.totalSpend > 0 && (
+                  <p className="text-xs text-sky-500 mt-1">
+                    Custo: {formatCurrency(kpis.totalSpend / kpis.totalMessagingConversations)}
+                  </p>
+                )}
+              </div>
+              <div className="p-2 bg-sky-100 rounded-lg">
+                <MessageSquare className="w-5 h-5 text-sky-600" />
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Novos seguidores no periodo - apenas incremento, nao total vitalicio */}
+        {kpis.totalPageLikes > 0 && (
+          <Card className="bg-gradient-to-br from-slate-50 to-white border-slate-200">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Novos Seguidores</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  +{formatCompact(kpis.totalPageLikes)}
+                </p>
+                {kpis.totalSpend > 0 && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    Custo/Seguidor: {formatCurrency(kpis.totalSpend / kpis.totalPageLikes)}
+                  </p>
+                )}
+              </div>
+              <div className="p-2 bg-slate-100 rounded-lg">
+                <Users className="w-5 h-5 text-slate-600" />
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Leads de formulario - visivel apenas quando ha dados */}
+        {kpis.totalLeads > 0 && (
+          <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm font-medium text-emerald-600">Leads</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">
+                  {formatCompact(kpis.totalLeads)}
+                </p>
+                {kpis.totalSpend > 0 && kpis.totalLeads > 0 && (
+                  <p className="text-xs text-emerald-500 mt-1">
+                    CPL: {formatCurrency(kpis.totalSpend / kpis.totalLeads)}
+                  </p>
+                )}
+              </div>
+              <div className="p-2 bg-emerald-100 rounded-lg">
+                <FileText className="w-5 h-5 text-emerald-600" />
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* Graficos */}
+      {chartData.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Grafico de Gasto */}
+          <Card>
+            <h3 className="font-semibold text-gray-900 mb-4">Gasto por Dia</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(v) => v.slice(5)}
+                    stroke="#9ca3af"
+                    fontSize={12}
+                  />
+                  <YAxis tickFormatter={(v) => `R$${v}`} stroke="#9ca3af" fontSize={12} />
+                  <Tooltip
+                    formatter={(value: number) => [formatCurrency(value), 'Gasto']}
+                    labelFormatter={(label) => `Data: ${label}`}
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                    }}
+                  />
+                  <Bar dataKey="spend" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          {/* Grafico de Impressoes e Cliques */}
+          <Card>
+            <h3 className="font-semibold text-gray-900 mb-4">Impressoes e Cliques por Dia</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(v) => v.slice(5)}
+                    stroke="#9ca3af"
+                    fontSize={12}
+                  />
+                  <YAxis stroke="#9ca3af" fontSize={12} />
+                  <Tooltip
+                    formatter={(value: number, name: string) => [
+                      formatNumber(value),
+                      name === 'impressions' ? 'Impressoes' : 'Cliques',
+                    ]}
+                    labelFormatter={(label) => `Data: ${label}`}
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="impressions"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="clicks"
+                    stroke="#10b981"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Modal de Detalhes do Anuncio */}
       {/* Passa os insights pre-carregados filtrados pelo ad_id do anuncio selecionado */}
