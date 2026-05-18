@@ -1389,6 +1389,8 @@ export const MetaAdsSyncPage: React.FC = () => {
             leads: 0,
             conversions: 0,
             page_likes: 0,
+            // messaging_conversations_started: somado por dia pois cada dia e uma janela diferente
+            messaging_conversations_started: 0,
           };
         }
         acc[key].spend += row.spend || 0;
@@ -1398,9 +1400,10 @@ export const MetaAdsSyncPage: React.FC = () => {
         acc[key].leads += row.leads || 0;
         acc[key].conversions += row.conversions || 0;
         acc[key].page_likes += row.page_likes || 0;
+        acc[key].messaging_conversations_started += row.messaging_conversations_started || 0;
         return acc;
       },
-      {} as Record<string, { entity_id: string; entity_name: string; spend: number; impressions: number; clicks: number; leads: number; conversions: number; page_likes: number }>
+      {} as Record<string, { entity_id: string; entity_name: string; spend: number; impressions: number; clicks: number; leads: number; conversions: number; page_likes: number; messaging_conversations_started: number }>
     );
 
     return Object.values(grouped)
@@ -2216,55 +2219,69 @@ export const MetaAdsSyncPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tabela de Entidades */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            {/* Titulo contextual baseado na view atual */}
+      {/* Lista de Entidades — layout card-hierarchy */}
+      <div>
+        {/* Cabecalho da secao: titulo contextual + acoes */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            {/* Icone e titulo mudam conforme a view */}
             {navigationState.currentView === 'adset-detail' ? (
-              <>
-                <div className="flex items-center gap-2 mb-1">
-                  <Layers className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-500">Anuncios do conjunto:</span>
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-violet-50 rounded-lg">
+                  <Image className="w-4 h-4 text-violet-600" />
                 </div>
-                <h3 className="font-semibold text-gray-900">
-                  {navigationState.selectedAdsetName} ({tableData.length})
-                </h3>
-              </>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Anuncios</p>
+                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                    {navigationState.selectedAdsetName}
+                    <span className="ml-2 text-xs font-normal text-gray-400">({tableData.length})</span>
+                  </h3>
+                </div>
+              </div>
             ) : navigationState.currentView === 'campaign-detail' ? (
-              <>
-                <div className="flex items-center gap-2 mb-1">
-                  <Target className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-500">Conjuntos da campanha:</span>
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-blue-50 rounded-lg">
+                  <Layers className="w-4 h-4 text-blue-600" />
                 </div>
-                <h3 className="font-semibold text-gray-900">
-                  {navigationState.selectedCampaignName} ({tableData.length})
-                </h3>
-              </>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Conjuntos de Anuncios</p>
+                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                    {navigationState.selectedCampaignName}
+                    <span className="ml-2 text-xs font-normal text-gray-400">({tableData.length})</span>
+                  </h3>
+                </div>
+              </div>
             ) : (
-              <h3 className="font-semibold text-gray-900">
-                {LEVELS.find((l) => l.value === selectedLevel)?.label} ({tableData.length})
-              </h3>
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-gray-100 rounded-lg">
+                  <Target className="w-4 h-4 text-gray-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+                    {LEVELS.find((l) => l.value === selectedLevel)?.label}
+                  </p>
+                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                    Todos os resultados
+                    <span className="ml-2 text-xs font-normal text-gray-400">({tableData.length})</span>
+                  </h3>
+                </div>
+              </div>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Botao para voltar para campanhas quando estiver em campaign-detail */}
             {navigationState.currentView === 'campaign-detail' && (
               <Button variant="outline" size="sm" onClick={handleBackToCampaigns}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Voltar para Campanhas
+                Campanhas
               </Button>
             )}
-
-            {/* Botao para voltar para conjuntos quando estiver em adset-detail */}
             {navigationState.currentView === 'adset-detail' && (
               <Button variant="outline" size="sm" onClick={handleBackToAdsets}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                {navigationState.selectedCampaignId ? 'Voltar para Campanha' : 'Voltar para Conjuntos'}
+                {navigationState.selectedCampaignId ? 'Conjuntos' : 'Conjuntos'}
               </Button>
             )}
-
             {tableData.length > 0 && (
               <Button variant="outline" size="sm" onClick={() => setShowExportModal(true)}>
                 <Download className="w-4 h-4 mr-2" />
@@ -2274,212 +2291,225 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50">
-                {/* Coluna de thumbnail para ads */}
-                {(selectedLevel === 'ad' || navigationState.currentView === 'adset-detail') && (
-                  <th className="text-center py-3 px-4 text-sm font-medium text-gray-700 w-16">Criativo</th>
-                )}
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-700">Nome</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">Gasto</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">Impressoes</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">Cliques</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CTR</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPC</th>
-                <th className="text-right py-3 px-4 text-sm font-medium text-gray-700">CPM</th>
-                {/* Colunas de engajamento separadas */}
-                {kpis.totalMessagingConversations > 0 && (
-                  <th className="text-right py-3 px-4 text-sm font-medium text-sky-600">Conversas</th>
-                )}
-                {kpis.totalPageLikes > 0 && (
-                  <th className="text-right py-3 px-4 text-sm font-medium text-slate-600">Seguidores</th>
-                )}
-                {(kpis.totalLeads > 0 || kpis.totalLeadGrouped > 0) && (
-                  <th className="text-right py-3 px-4 text-sm font-medium text-emerald-600">Leads</th>
-                )}
-                {/* Coluna de acoes (campanhas, adsets e ads) */}
-                {(selectedLevel === 'campaign' || selectedLevel === 'ad' || selectedLevel === 'adset' || navigationState.currentView === 'adset-detail') && (
-                  <th className="text-center py-3 px-4 text-sm font-medium text-gray-700">Acoes</th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {tableData.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="text-center py-12 text-gray-500">
-                    <div className="flex flex-col items-center">
-                      <BarChart3 className="w-12 h-12 text-gray-300 mb-4" />
-                      <p className="font-medium">Nenhum dado encontrado</p>
-                      <p className="text-sm mt-1">
-                        {navigationState.currentView === 'adset-detail'
-                          ? 'Nenhum anuncio encontrado neste conjunto'
-                          : 'Clique em "Sincronizar" para extrair metricas do Meta Ads'}
+        {/* Estado vazio */}
+        {tableData.length === 0 ? (
+          <Card>
+            <div className="flex flex-col items-center py-16 text-gray-400">
+              <BarChart3 className="w-14 h-14 text-gray-200 mb-4" />
+              <p className="font-medium text-gray-500">Nenhum dado encontrado</p>
+              <p className="text-sm mt-1">
+                {navigationState.currentView === 'adset-detail'
+                  ? 'Nenhum anuncio encontrado neste conjunto'
+                  : 'Clique em "Sincronizar" para extrair metricas do Meta Ads'}
+              </p>
+            </div>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {tableData.map((row) => {
+              const isAdRow = selectedLevel === 'ad' || navigationState.currentView === 'adset-detail';
+              const isAdsetRow = selectedLevel === 'adset' && navigationState.currentView !== 'adset-detail';
+              const isCampaignRow = selectedLevel === 'campaign' && navigationState.currentView !== 'campaign-detail';
+
+              const creative = isAdRow ? getCreative(row.entity_id) : null;
+              const loadingState = isAdRow ? getLoadingState(row.entity_id) : { isLoading: false, hasError: false };
+
+              const rowMessagingConversations = row.messaging_conversations_started || 0;
+              const rowPageLikes = row.page_likes || 0;
+              const rowLeads = row.leads || 0;
+
+              // Cor do marcador lateral conforme nivel
+              const levelAccent = isCampaignRow
+                ? 'border-l-blue-500 bg-blue-50/30'
+                : isAdsetRow
+                ? 'border-l-cyan-500 bg-cyan-50/20'
+                : 'border-l-gray-300 bg-white';
+
+              const levelIconBg = isCampaignRow
+                ? 'bg-blue-100'
+                : isAdsetRow
+                ? 'bg-cyan-100'
+                : 'bg-gray-100';
+
+              const levelIcon = isCampaignRow ? (
+                <Target className="w-3.5 h-3.5 text-blue-600" />
+              ) : isAdsetRow ? (
+                <Layers className="w-3.5 h-3.5 text-cyan-600" />
+              ) : (
+                <Image className="w-3.5 h-3.5 text-gray-500" />
+              );
+
+              return (
+                <div
+                  key={row.entity_id}
+                  className={`rounded-xl border border-gray-200 border-l-4 ${levelAccent} shadow-sm hover:shadow-md transition-all duration-150 overflow-hidden ${
+                    isAdRow || isAdsetRow || isCampaignRow ? 'cursor-pointer' : ''
+                  }`}
+                  onClick={() => {
+                    if (isAdRow) handleOpenAdDetail(row);
+                    else if (isAdsetRow) handleSelectAdset(row.entity_id, row.entity_name);
+                    else if (isCampaignRow) handleSelectCampaign(row.entity_id, row.entity_name);
+                  }}
+                >
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    {/* Thumbnail para ads OU icone de nivel */}
+                    {isAdRow ? (
+                      <div className="flex-shrink-0" onClick={(e) => { e.stopPropagation(); handleOpenAdDetail(row); }}>
+                        <AdCreativeThumbnail
+                          creative={creative}
+                          loading={loadingState.isLoading}
+                          error={loadingState.hasError ? loadingState.errorMessage : null}
+                          size="sm"
+                          onClick={() => handleOpenAdDetail(row)}
+                        />
+                      </div>
+                    ) : (
+                      <div className={`flex-shrink-0 p-1.5 rounded-lg ${levelIconBg}`}>
+                        {levelIcon}
+                      </div>
+                    )}
+
+                    {/* Nome e ID */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate leading-tight">
+                        {row.entity_name}
+                      </p>
+                      <p className="text-xs text-gray-400 font-mono truncate mt-0.5">
+                        {row.entity_id}
                       </p>
                     </div>
-                  </td>
-                </tr>
-              ) : (
-                tableData.map((row) => {
-                  // Determina o tipo da linha para comportamento de clique
-                  const isAdRow = selectedLevel === 'ad' || navigationState.currentView === 'adset-detail';
-                  const isAdsetRow = selectedLevel === 'adset' && navigationState.currentView !== 'adset-detail';
-                  const isCampaignRow = selectedLevel === 'campaign' && navigationState.currentView !== 'campaign-detail';
 
-                  // Busca criativo e estado de loading apenas para ads
-                  const creative = isAdRow ? getCreative(row.entity_id) : null;
-                  const loadingState = isAdRow ? getLoadingState(row.entity_id) : { isLoading: false, hasError: false };
+                    {/* Metricas em linha — responsivas */}
+                    <div className="hidden sm:flex items-center gap-1 flex-shrink-0">
+                      {/* Gasto */}
+                      <div className="flex flex-col items-end px-3 py-1 rounded-lg bg-white/70 border border-gray-100 min-w-[80px]">
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">Gasto</span>
+                        <span className="text-sm font-bold text-gray-900">{formatCurrency(row.spend)}</span>
+                      </div>
 
-                  // Metricas de engajamento desta linha (separadas)
-                  const rowMessagingConversations = (row as InsightRow & { messaging_conversations_started?: number }).messaging_conversations_started || 0;
-                  const rowPageLikes = (row as InsightRow & { page_likes?: number }).page_likes || 0;
-                  const rowLeads = row.leads || 0;
+                      {/* Impressoes */}
+                      <div className="flex flex-col items-end px-3 py-1 rounded-lg bg-white/70 border border-gray-100 min-w-[72px]">
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">Impr.</span>
+                        <span className="text-sm font-semibold text-gray-700">{formatNumber(row.impressions)}</span>
+                      </div>
 
-                  return (
-                    <tr
-                      key={row.entity_id}
-                      className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                        isAdRow || isAdsetRow || isCampaignRow ? 'cursor-pointer' : ''
-                      }`}
-                      onClick={() => {
-                        if (isAdRow) {
-                          handleOpenAdDetail(row);
-                        } else if (isAdsetRow) {
-                          handleSelectAdset(row.entity_id, row.entity_name);
-                        } else if (isCampaignRow) {
-                          handleSelectCampaign(row.entity_id, row.entity_name);
-                        }
-                      }}
-                    >
-                      {/* Celula de thumbnail para ads */}
-                      {isAdRow && (
-                        <td className="py-3 px-4">
-                          <div className="flex justify-center">
-                            <AdCreativeThumbnail
-                              creative={creative}
-                              loading={loadingState.isLoading}
-                              error={loadingState.hasError ? loadingState.errorMessage : null}
-                              size="sm"
-                              onClick={() => handleOpenAdDetail(row)}
-                            />
-                          </div>
-                        </td>
-                      )}
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          {/* Icone indicando que e um adset clicavel */}
-                          {isAdsetRow && (
-                            <Layers className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                          )}
-                          {/* Icone indicando que e uma campanha clicavel */}
-                          {isCampaignRow && (
-                            <Target className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                          )}
-                          <div>
-                            <span className="text-sm font-medium text-gray-900">{row.entity_name}</span>
-                            <span className="block text-xs text-gray-500 font-mono">{row.entity_id}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="text-right py-3 px-4 text-sm font-medium text-gray-900">
-                        {formatCurrency(row.spend)}
-                      </td>
-                      <td className="text-right py-3 px-4 text-sm text-gray-600">
-                        {formatNumber(row.impressions)}
-                      </td>
-                      <td className="text-right py-3 px-4 text-sm text-gray-600">
-                        {formatNumber(row.clicks)}
-                      </td>
-                      <td className="text-right py-3 px-4 text-sm text-gray-600">
-                        {formatPercent(row.ctr)}
-                      </td>
-                      <td className="text-right py-3 px-4 text-sm text-gray-600">
-                        {formatCurrency(row.cpc)}
-                      </td>
-                      <td className="text-right py-3 px-4 text-sm text-gray-600">
-                        {formatCurrency(row.cpm)}
-                      </td>
+                      {/* Cliques */}
+                      <div className="flex flex-col items-end px-3 py-1 rounded-lg bg-white/70 border border-gray-100 min-w-[64px]">
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">Cliques</span>
+                        <span className="text-sm font-semibold text-gray-700">{formatNumber(row.clicks)}</span>
+                      </div>
 
-                      {/* Coluna de Conversas Iniciadas */}
+                      {/* CTR */}
+                      <div className="flex flex-col items-end px-3 py-1 rounded-lg bg-white/70 border border-gray-100 min-w-[56px]">
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">CTR</span>
+                        <span className="text-sm font-semibold text-gray-700">{formatPercent(row.ctr)}</span>
+                      </div>
+
+                      {/* CPC */}
+                      <div className="flex flex-col items-end px-3 py-1 rounded-lg bg-white/70 border border-gray-100 min-w-[64px]">
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">CPC</span>
+                        <span className="text-sm font-semibold text-gray-700">{formatCurrency(row.cpc)}</span>
+                      </div>
+
+                      {/* CPM */}
+                      <div className="flex flex-col items-end px-3 py-1 rounded-lg bg-white/70 border border-gray-100 min-w-[64px]">
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">CPM</span>
+                        <span className="text-sm font-semibold text-gray-700">{formatCurrency(row.cpm)}</span>
+                      </div>
+
+                      {/* Conversas — mostrado apenas quando ha dados de conversas */}
                       {kpis.totalMessagingConversations > 0 && (
-                        <td className="text-right py-3 px-4 text-sm text-sky-700 font-medium">
-                          {rowMessagingConversations > 0 ? formatNumber(rowMessagingConversations) : <span className="text-gray-300">—</span>}
-                        </td>
+                        <div className="flex flex-col items-end px-3 py-1 rounded-lg border min-w-[72px] bg-sky-50/80 border-sky-100">
+                          <span className="text-[10px] text-sky-500 uppercase tracking-wide font-medium">Conversas</span>
+                          <span className={`text-sm font-semibold ${rowMessagingConversations > 0 ? 'text-sky-700' : 'text-gray-300'}`}>
+                            {rowMessagingConversations > 0 ? formatNumber(rowMessagingConversations) : '—'}
+                          </span>
+                        </div>
                       )}
 
-                      {/* Coluna de Seguidores (incremento no periodo) */}
+                      {/* Seguidores — mostrado apenas quando ha dados */}
                       {kpis.totalPageLikes > 0 && (
-                        <td className="text-right py-3 px-4 text-sm text-slate-700 font-medium">
-                          {rowPageLikes > 0 ? formatNumber(rowPageLikes) : <span className="text-gray-300">—</span>}
-                        </td>
+                        <div className="flex flex-col items-end px-3 py-1 rounded-lg border min-w-[72px] bg-slate-50/80 border-slate-100">
+                          <span className="text-[10px] text-slate-500 uppercase tracking-wide font-medium">Seguidores</span>
+                          <span className={`text-sm font-semibold ${rowPageLikes > 0 ? 'text-slate-700' : 'text-gray-300'}`}>
+                            {rowPageLikes > 0 ? formatNumber(rowPageLikes) : '—'}
+                          </span>
+                        </div>
                       )}
 
-                      {/* Coluna de Leads (visivel quando ha leads diretos ou de formulario) */}
+                      {/* Leads — mostrado apenas quando ha dados de leads */}
                       {(kpis.totalLeads > 0 || kpis.totalLeadGrouped > 0) && (
-                        <td className="text-right py-3 px-4 text-sm text-emerald-700 font-medium">
-                          {rowLeads > 0 ? formatNumber(rowLeads) : <span className="text-gray-300">—</span>}
-                        </td>
+                        <div className="flex flex-col items-end px-3 py-1 rounded-lg border min-w-[60px] bg-emerald-50/80 border-emerald-100">
+                          <span className="text-[10px] text-emerald-600 uppercase tracking-wide font-medium">Leads</span>
+                          <span className={`text-sm font-semibold ${rowLeads > 0 ? 'text-emerald-700' : 'text-gray-300'}`}>
+                            {rowLeads > 0 ? formatNumber(rowLeads) : '—'}
+                          </span>
+                        </div>
                       )}
+                    </div>
 
-                      {/* Coluna de acoes para campanhas - botao para ver conjuntos */}
+                    {/* Metricas compactas para mobile */}
+                    <div className="flex sm:hidden flex-col items-end gap-0.5 flex-shrink-0">
+                      <span className="text-sm font-bold text-gray-900">{formatCurrency(row.spend)}</span>
+                      <span className="text-xs text-gray-500">{formatNumber(row.impressions)} impr.</span>
+                      {rowMessagingConversations > 0 && (
+                        <span className="text-xs font-medium text-sky-600">{formatNumber(rowMessagingConversations)} conv.</span>
+                      )}
+                      {rowLeads > 0 && (
+                        <span className="text-xs font-medium text-emerald-600">{formatNumber(rowLeads)} leads</span>
+                      )}
+                    </div>
+
+                    {/* Botao de acao */}
+                    <div className="flex-shrink-0 ml-2">
                       {isCampaignRow && (
-                        <td className="text-center py-3 px-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectCampaign(row.entity_id, row.entity_name);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Ver conjuntos de anuncios desta campanha"
-                          >
-                            Ver Conjuntos
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleSelectCampaign(row.entity_id, row.entity_name); }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-100 bg-blue-50 rounded-lg transition-colors border border-blue-100"
+                          title="Ver conjuntos de anuncios"
+                        >
+                          Conjuntos
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
                       )}
-
-                      {/* Coluna de acoes para adsets - botao para ver anuncios */}
                       {isAdsetRow && (
-                        <td className="text-center py-3 px-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectAdset(row.entity_id, row.entity_name);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Ver anuncios deste conjunto"
-                          >
-                            Ver Anuncios
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleSelectAdset(row.entity_id, row.entity_name); }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-cyan-600 hover:text-cyan-700 hover:bg-cyan-100 bg-cyan-50 rounded-lg transition-colors border border-cyan-100"
+                          title="Ver anuncios deste conjunto"
+                        >
+                          Anuncios
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
                       )}
-
-                      {/* Coluna de acoes para ads - botao de detalhes */}
                       {isAdRow && (
-                        <td className="text-center py-3 px-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenAdDetail(row);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Ver detalhes e analisar com IA"
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            Detalhes
-                          </button>
-                        </td>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleOpenAdDetail(row); }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-gray-800 hover:bg-gray-100 bg-gray-50 rounded-lg transition-colors border border-gray-200"
+                          title="Ver detalhes e analisar com IA"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          Detalhes
+                        </button>
                       )}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                    </div>
+                  </div>
+
+                  {/* Faixa inferior mobile: metricas expandidas */}
+                  <div className="flex sm:hidden items-center gap-3 px-4 pb-3 pt-0 text-xs text-gray-500 border-t border-gray-100">
+                    <span>CTR {formatPercent(row.ctr)}</span>
+                    <span>·</span>
+                    <span>CPC {formatCurrency(row.cpc)}</span>
+                    <span>·</span>
+                    <span>CPM {formatCurrency(row.cpm)}</span>
+                    {rowPageLikes > 0 && <><span>·</span><span className="text-slate-600">{formatNumber(rowPageLikes)} seg.</span></>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Modal de Detalhes do Anuncio */}
       {/* Passa os insights pre-carregados filtrados pelo ad_id do anuncio selecionado */}
