@@ -251,6 +251,8 @@ Deno.serve(async (req: Request) => {
         level,
         fields: insightFields,
         time_range: timeRange,
+        // Janela de atribuicao identica ao Gerenciador de Anuncios: 7 dias de clique + 1 dia de visualizacao
+        action_attribution_windows: '["7d_click","1d_view"]',
         use_account_attribution_setting: "true",
         limit: "500",
         access_token: accessToken,
@@ -266,6 +268,8 @@ Deno.serve(async (req: Request) => {
         fields: insightFields,
         time_range: timeRange,
         time_increment: "1",
+        // Janela de atribuicao identica ao Gerenciador de Anuncios: 7 dias de clique + 1 dia de visualizacao
+        action_attribution_windows: '["7d_click","1d_view"]',
         use_account_attribution_setting: "true",
         limit: "500",
         access_token: accessToken,

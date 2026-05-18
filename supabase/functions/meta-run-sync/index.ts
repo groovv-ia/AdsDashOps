@@ -409,7 +409,8 @@ Deno.serve(async (req: Request) => {
                 break;
               }
 
-              const params = new URLSearchParams({ level: level === "adset" ? "adset" : level, fields: insightFields, time_range: JSON.stringify({ since: window.since, until: window.until }), time_increment: "1", use_account_attribution_setting: "true", limit: "500", access_token: accessToken });
+              // action_attribution_windows="7d_click,1d_view" garante valores identicos ao Gerenciador de Anuncios
+              const params = new URLSearchParams({ level: level === "adset" ? "adset" : level, fields: insightFields, time_range: JSON.stringify({ since: window.since, until: window.until }), time_increment: "1", "action_attribution_windows": '["7d_click","1d_view"]', use_account_attribution_setting: "true", limit: "500", access_token: accessToken });
               let url: string | null = `${baseUrl}?${params.toString()}`;
 
               // Processa esta janela em streaming: grava no banco a cada pagina
