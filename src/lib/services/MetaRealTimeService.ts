@@ -211,13 +211,18 @@ function extractMessagingConversations(actions?: Array<{ action_type: string; va
   return 0;
 }
 
-/** Extrai seguidores da pagina adquiridos via anuncio */
+/** Extrai seguidores/reacoes da pagina via anuncio
+ *  Ordem de prioridade alinhada com o Gerenciador de Anuncios:
+ *  1. page_fan_add  — seguidores diretos (campanhas objetivo Seguidores)
+ *  2. post_reaction — reacoes em posts impulsionados (coluna "Seguidores Novos" do Gerenciador)
+ *  3. like          — fallback legado
+ */
 function extractPageLikes(actions?: Array<{ action_type: string; value: string }>): number {
   if (!actions || actions.length === 0) return 0;
-  // Prioridade 1: page_fan_add — seguidores diretos via anuncio (valor oficial do Gerenciador)
   const fanAdd = actions.find(a => a.action_type === 'page_fan_add');
   if (fanAdd) return parseInt(fanAdd.value || '0', 10);
-  // Prioridade 2: like — curtidas na pagina (fallback)
+  const reaction = actions.find(a => a.action_type === 'post_reaction');
+  if (reaction) return parseInt(reaction.value || '0', 10);
   const like = actions.find(a => a.action_type === 'like');
   return like ? parseInt(like.value || '0', 10) : 0;
 }
