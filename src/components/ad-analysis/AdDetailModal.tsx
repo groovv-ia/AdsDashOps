@@ -1312,10 +1312,10 @@ const MetricsTab: React.FC<MetricsTabProps> = ({ metrics, loading, startDate, en
           <p className="text-xl font-bold text-gray-900">{formatCompact(metrics.total_clicks)}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-amber-50 to-white border border-amber-100 rounded-lg p-4">
+        <div className="bg-gradient-to-br from-violet-50 to-white border border-violet-100 rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-gray-500">Alcance</span>
-            <Users className="w-4 h-4 text-amber-500" />
+            <span className="text-xs text-violet-500">Alcance</span>
+            <Users className="w-4 h-4 text-violet-500" />
           </div>
           <p className="text-xl font-bold text-gray-900">{formatCompact(metrics.total_reach)}</p>
         </div>
