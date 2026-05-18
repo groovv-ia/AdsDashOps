@@ -1,8 +1,14 @@
 /**
  * Edge Function: meta-analyze-metrics-ai
  *
- * Analisa metricas de campanhas/anuncios usando IA (GPT-4) para
+ * Analisa metricas de campanhas/anuncios usando IA (GPT-4o) para
  * gerar insights acionaveis sobre performance, tendencias e otimizacao.
+ *
+ * Melhorias:
+ * - ROAS e ignorado quando nao configurado (campanha sem evento de compra)
+ * - Leads e conversas de mensagens incluidos quando disponiveis
+ * - Analise ajustada ao objetivo real da campanha
+ * - Instrucoes explicitas para nao penalizar campanhas sem evento de compra
  *
  * POST /functions/v1/meta-analyze-metrics-ai
  * Body: {
@@ -12,8 +18,6 @@
  *   meta_ad_account_id: string,
  *   metrics_data: MetricsInputData
  * }
- *
- * Retorna: { analysis: MetricsAIAnalysis, tokens_used: number, saved: boolean }
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -43,7 +47,13 @@ interface MetricsInputData {
   avg_frequency: number;
   avg_conversion_rate: number;
   avg_cost_per_conversion: number;
+  // Campos condicionais — presentes apenas quando configurados na campanha
   roas?: number;
+  total_purchase_value?: number;
+  total_leads?: number;
+  avg_cost_per_lead?: number;
+  total_messaging_conversations?: number;
+  avg_cost_per_messaging_conversation?: number;
   daily_metrics?: DailyMetricPoint[];
   previous_period?: PreviousPeriodComparison;
   benchmarks?: MetricsBenchmarks;
@@ -86,117 +96,247 @@ interface RequestPayload {
   metrics_data: MetricsInputData;
 }
 
-const SYSTEM_PROMPT = `Voce e um analista senior de marketing digital especializado em publicidade Meta Ads (Facebook/Instagram), com mais de 15 anos de experiencia em otimizacao de campanhas e analise de dados.
+/**
+ * Detecta quais metricas de resultado estao disponiveis e determina o contexto de avaliacao.
+ */
+function detectCampaignContext(data: MetricsInputData): {
+  hasRoas: boolean;
+  hasLeads: boolean;
+  hasMessaging: boolean;
+  hasConversions: boolean;
+  contextDescription: string;
+} {
+  const hasRoas = typeof data.roas === "number" && data.roas > 0;
+  const hasLeads = typeof data.total_leads === "number" && data.total_leads > 0;
+  const hasMessaging =
+    typeof data.total_messaging_conversations === "number" &&
+    data.total_messaging_conversations > 0;
+  const hasConversions =
+    data.total_conversions > 0 || data.avg_conversion_rate > 0;
+
+  let contextDescription = "";
+  if (data.campaign_objective) {
+    contextDescription = `Objetivo da campanha: ${data.campaign_objective}. `;
+  }
+
+  if (hasRoas) {
+    contextDescription += "Esta campanha tem evento de compra configurado e gera dados de receita/ROAS.";
+  } else if (hasLeads && hasMessaging) {
+    contextDescription +=
+      "Esta campanha gera leads E conversas de mensagens. Avalie pelos resultados combinados.";
+  } else if (hasLeads) {
+    contextDescription +=
+      "Esta campanha tem objetivo de geracao de leads. Avalie principalmente pelo custo por lead e volume de leads.";
+  } else if (hasMessaging) {
+    contextDescription +=
+      "Esta campanha tem objetivo de mensagens (Messenger/WhatsApp/Instagram Direct). Avalie pelo custo por conversa iniciada.";
+  } else if (hasConversions) {
+    contextDescription +=
+      "Esta campanha registra conversoes (sem valor monetario configurado). Avalie pelo custo por conversao e taxa de conversao.";
+  } else {
+    contextDescription +=
+      "Esta campanha nao possui evento de conversao configurado. Avalie exclusivamente por metricas de alcance, engajamento (CTR, CPM, frequencia) e eficiencia de custo por clique.";
+  }
+
+  return { hasRoas, hasLeads, hasMessaging, hasConversions, contextDescription };
+}
+
+const SYSTEM_PROMPT = `Você é um analista sênior de marketing digital especializado em publicidade Meta Ads (Facebook/Instagram), com mais de 15 anos de experiência em otimização de campanhas e análise de dados.
 
 Sua especialidade inclui:
-- Analise profunda de metricas de performance (CTR, CPC, CPM, ROAS, Conversoes)
-- Identificacao de tendencias e padroes em dados historicos
-- Deteccao de anomalias e problemas de performance
-- Recomendacoes estrategicas baseadas em dados
-- Benchmarking e analise comparativa
-- Previsao de resultados e otimizacao de orcamento
+- Análise profunda de métricas de performance (CTR, CPC, CPM, Conversões, Leads, Mensagens)
+- Interpretação de campanhas com diferentes objetivos: vendas, leads, mensagens, alcance, tráfego
+- Identificação de tendências e padrões em dados históricos
+- Detecção de anomalias e problemas de performance
+- Recomendações estratégicas baseadas nos objetivos reais da campanha
+- Benchmarking e análise comparativa
+- Previsão de resultados e otimização de orçamento
 
-IMPORTANTE:
-- Analise os dados ESPECIFICOS fornecidos, nao faca suposicoes genericas
-- Seja PRECISO com numeros e percentuais
-- Forneca insights ACIONAVEIS e PRATICOS
-- Priorize recomendacoes por IMPACTO POTENCIAL
-- Considere o contexto do periodo analisado
-- Compare com benchmarks quando disponiveis
+REGRAS CRÍTICAS:
+1. NUNCA mencione ROAS, receita ou retorno sobre investimento financeiro se esses dados não estiverem presentes nos dados fornecidos. A ausência de ROAS NÃO é um problema — significa apenas que a campanha não tem evento de compra configurado, o que é completamente normal para campanhas de leads, mensagens ou tráfego.
+2. SEMPRE avalie a campanha pelos objetivos e métricas disponíveis. Uma campanha de leads deve ser julgada pelo custo por lead, não por ROAS.
+3. NUNCA sugira "configurar ROAS" como recomendação se não houver indício de que esse é o objetivo da campanha.
+4. Seja PRECISO com números e percentuais — mencione os valores reais dos dados fornecidos.
+5. Forneça insights ACIONÁVEIS e PRÁTICOS para o objetivo real da campanha.
+6. Priorize recomendações por IMPACTO POTENCIAL dentro do contexto disponível.
+7. O conversion_score deve refletir a performance de conversão disponível: use leads, mensagens ou conversões genéricas — nunca penalize pela ausência de ROAS.
 
-Sempre responda em portugues brasileiro com linguagem profissional mas acessivel.
+Sempre responda em português brasileiro com linguagem profissional mas acessível.
+Retorne APENAS um JSON válido no formato especificado, sem texto adicional ou markdown.`;
 
-Retorne APENAS um JSON valido no formato especificado, sem texto adicional ou markdown.`;
-
+/**
+ * Monta o prompt de analise com base apenas nas metricas disponíveis.
+ * Omite completamente secoes de ROAS/receita quando nao configuradas.
+ */
 function buildAnalysisPrompt(data: MetricsInputData): string {
+  const ctx = detectCampaignContext(data);
+
+  const entityLabel =
+    data.entity_level === "ad"
+      ? "anúncio"
+      : data.entity_level === "adset"
+      ? "conjunto de anúncios"
+      : data.entity_level === "campaign"
+      ? "campanha"
+      : "conta";
+
   const metricsSection = `
-=== METRICAS DO PERIODO (${data.start_date} ate ${data.end_date} - ${data.days_count} dias) ===
+=== MÉTRICAS DO PERÍODO (${data.start_date} até ${data.end_date} — ${data.days_count} dias) ===
 
 📊 VOLUME E ALCANCE:
-- Impressoes: ${data.total_impressions.toLocaleString('pt-BR')}
-- Alcance: ${data.total_reach.toLocaleString('pt-BR')}
-- Frequencia Media: ${data.avg_frequency.toFixed(2)}
+- Impressões: ${data.total_impressions.toLocaleString("pt-BR")}
+- Alcance único: ${data.total_reach.toLocaleString("pt-BR")}
+- Frequência média: ${data.avg_frequency.toFixed(2)}
 
 🖱️ ENGAJAMENTO:
-- Cliques: ${data.total_clicks.toLocaleString('pt-BR')}
+- Cliques: ${data.total_clicks.toLocaleString("pt-BR")}
 - CTR (Taxa de Cliques): ${data.avg_ctr.toFixed(2)}%
 
 💰 CUSTOS:
-- Investimento Total: R$ ${data.total_spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+- Investimento total: R$ ${data.total_spend.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
 - CPC (Custo por Clique): R$ ${data.avg_cpc.toFixed(2)}
-- CPM (Custo por Mil): R$ ${data.avg_cpm.toFixed(2)}
+- CPM (Custo por Mil Impressões): R$ ${data.avg_cpm.toFixed(2)}`;
 
-🎯 CONVERSOES:
-- Conversoes: ${data.total_conversions}
-- Taxa de Conversao: ${data.avg_conversion_rate.toFixed(2)}%
-- Custo por Conversao: R$ ${data.avg_cost_per_conversion.toFixed(2)}
-${data.roas ? `- ROAS: ${data.roas.toFixed(2)}` : ''}`;
+  // Secao de resultados — exibe apenas o que existe
+  let resultsSection = "";
 
-  let previousPeriodSection = '';
-  if (data.previous_period) {
-    const pp = data.previous_period;
-    const formatChange = (v: number) => v >= 0 ? `+${v.toFixed(1)}%` : `${v.toFixed(1)}%`;
-    previousPeriodSection = `
+  if (ctx.hasRoas && data.roas != null) {
+    resultsSection = `
 
-📈 COMPARATIVO COM PERIODO ANTERIOR:
-- Impressoes: ${formatChange(pp.impressions_change_percent)}
-- Cliques: ${formatChange(pp.clicks_change_percent)}
-- CTR: ${formatChange(pp.ctr_change_percent)}
-- CPC: ${formatChange(pp.cpc_change_percent)}
-- Investimento: ${formatChange(pp.spend_change_percent)}
-- Conversoes: ${formatChange(pp.conversions_change_percent)}`;
+🎯 RESULTADOS DE CONVERSÃO (COMPRAS):
+- Conversões (compras): ${data.total_conversions.toLocaleString("pt-BR")}
+- Taxa de Conversão: ${data.avg_conversion_rate.toFixed(2)}%
+- Custo por Conversão: R$ ${data.avg_cost_per_conversion.toFixed(2)}
+- Receita total gerada: R$ ${(data.total_purchase_value ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+- ROAS: ${data.roas.toFixed(2)}x`;
+  } else if (ctx.hasLeads && ctx.hasMessaging) {
+    resultsSection = `
+
+🎯 RESULTADOS DE LEADS:
+- Total de leads: ${data.total_leads?.toLocaleString("pt-BR")}
+- Custo por Lead (CPL): R$ ${data.avg_cost_per_lead?.toFixed(2)}
+
+💬 RESULTADOS DE MENSAGENS:
+- Conversas iniciadas: ${data.total_messaging_conversations?.toLocaleString("pt-BR")}
+- Custo por Conversa: R$ ${data.avg_cost_per_messaging_conversation?.toFixed(2)}`;
+  } else if (ctx.hasLeads) {
+    resultsSection = `
+
+🎯 RESULTADOS DE LEADS:
+- Total de leads gerados: ${data.total_leads?.toLocaleString("pt-BR")}
+- Custo por Lead (CPL): R$ ${data.avg_cost_per_lead?.toFixed(2)}`;
+  } else if (ctx.hasMessaging) {
+    resultsSection = `
+
+💬 RESULTADOS DE MENSAGENS:
+- Conversas iniciadas: ${data.total_messaging_conversations?.toLocaleString("pt-BR")}
+- Custo por Conversa iniciada: R$ ${data.avg_cost_per_messaging_conversation?.toFixed(2)}`;
+  } else if (ctx.hasConversions) {
+    resultsSection = `
+
+🎯 CONVERSÕES:
+- Total de conversões: ${data.total_conversions.toLocaleString("pt-BR")}
+- Taxa de Conversão: ${data.avg_conversion_rate.toFixed(2)}%
+- Custo por Conversão: R$ ${data.avg_cost_per_conversion.toFixed(2)}`;
   }
 
-  let benchmarkSection = '';
+  let previousPeriodSection = "";
+  if (data.previous_period) {
+    const pp = data.previous_period;
+    const fmt = (v: number) => (v >= 0 ? `+${v.toFixed(1)}%` : `${v.toFixed(1)}%`);
+    previousPeriodSection = `
+
+📈 COMPARATIVO COM PERÍODO ANTERIOR:
+- Impressões: ${fmt(pp.impressions_change_percent)}
+- Cliques: ${fmt(pp.clicks_change_percent)}
+- CTR: ${fmt(pp.ctr_change_percent)}
+- CPC: ${fmt(pp.cpc_change_percent)}
+- Investimento: ${fmt(pp.spend_change_percent)}
+${ctx.hasRoas || ctx.hasConversions ? `- Conversões: ${fmt(pp.conversions_change_percent)}` : ""}`;
+  }
+
+  let benchmarkSection = "";
   if (data.benchmarks) {
     const b = data.benchmarks;
     benchmarkSection = `
 
 📊 BENCHMARKS (${b.context_name}):
-- CTR Medio: ${b.avg_ctr.toFixed(2)}%
-- CPC Medio: R$ ${b.avg_cpc.toFixed(2)}
-- CPM Medio: R$ ${b.avg_cpm.toFixed(2)}`;
+- CTR médio: ${b.avg_ctr.toFixed(2)}%
+- CPC médio: R$ ${b.avg_cpc.toFixed(2)}
+- CPM médio: R$ ${b.avg_cpm.toFixed(2)}`;
   }
 
-  let trendSection = '';
+  let trendSection = "";
   if (data.daily_metrics && data.daily_metrics.length > 0) {
     const first3 = data.daily_metrics.slice(0, 3);
     const last3 = data.daily_metrics.slice(-3);
     trendSection = `
 
-📅 TENDENCIA DIARIA (amostra):
-Primeiros dias: ${first3.map(d => `${d.date}: CTR ${d.ctr.toFixed(2)}%, CPC R$${d.cpc.toFixed(2)}`).join(' | ')}
-Ultimos dias: ${last3.map(d => `${d.date}: CTR ${d.ctr.toFixed(2)}%, CPC R$${d.cpc.toFixed(2)}`).join(' | ')}`;
+📅 TENDÊNCIA DIÁRIA (amostra):
+Primeiros dias: ${first3.map((d) => `${d.date}: CTR ${d.ctr.toFixed(2)}%, CPC R$${d.cpc.toFixed(2)}`).join(" | ")}
+Últimos dias: ${last3.map((d) => `${d.date}: CTR ${d.ctr.toFixed(2)}%, CPC R$${d.cpc.toFixed(2)}`).join(" | ")}`;
   }
 
-  return `Analise as metricas de performance deste ${data.entity_level === 'ad' ? 'anuncio' : data.entity_level === 'adset' ? 'conjunto de anuncios' : 'campanha'}: "${data.entity_name}"
-${metricsSection}${previousPeriodSection}${benchmarkSection}${trendSection}
+  const conversionScoreInstruction = ctx.hasRoas
+    ? "conversion_score: Performance de conversões e ROAS (0=péssimo, 100=excelente)"
+    : ctx.hasLeads
+    ? "conversion_score: Performance de geração de leads — volume e custo por lead (0=péssimo, 100=excelente). IGNORE ROAS pois não está configurado."
+    : ctx.hasMessaging
+    ? "conversion_score: Performance de mensagens — volume e custo por conversa (0=péssimo, 100=excelente). IGNORE ROAS pois não está configurado."
+    : ctx.hasConversions
+    ? "conversion_score: Performance de conversões genéricas — volume e custo por conversão (0=péssimo, 100=excelente). IGNORE ROAS."
+    : "conversion_score: Avalie com base em CTR e engajamento, pois não há evento de conversão configurado. NÃO penalize por ausência de ROAS ou conversões.";
 
-=== INSTRUCOES DE ANALISE ===
+  const criticalAlerts = [
+    !ctx.hasRoas
+      ? "- Esta campanha NÃO tem ROAS configurado. NÃO mencione ROAS, receita nem retorno financeiro em nenhuma parte da análise, diagnóstico, insights ou recomendações."
+      : "",
+    ctx.hasLeads
+      ? "- Avalie o sucesso principalmente pelo CPL (custo por lead) e volume de leads."
+      : "",
+    ctx.hasMessaging
+      ? "- Avalie o sucesso principalmente pelo custo por conversa iniciada e volume de conversas."
+      : "",
+    !ctx.hasRoas && !ctx.hasLeads && !ctx.hasMessaging && !ctx.hasConversions
+      ? "- Esta campanha não tem evento de conversão. Foque em métricas de eficiência (CTR, CPM, CPC) e alcance."
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
-Com base nos dados acima, forneca uma analise DETALHADA e ESPECIFICA incluindo:
+  return `Analise as métricas de performance deste ${entityLabel}: "${data.entity_name}"
+
+CONTEXTO DA CAMPANHA: ${ctx.contextDescription}
+${metricsSection}${resultsSection}${previousPeriodSection}${benchmarkSection}${trendSection}
+
+=== INSTRUÇÕES DE ANÁLISE ===
+
+Com base nos dados acima, forneça uma análise DETALHADA e ESPECÍFICA incluindo:
 
 1. SCORES DE PERFORMANCE (0-100):
-   - overall_score: Avaliacao geral considerando todos os fatores
-   - efficiency_score: Eficiencia de CTR e engajamento
-   - cost_score: Otimizacao de custos (CPC, CPM)
-   - reach_score: Alcance e frequencia
-   - conversion_score: Performance de conversoes
-   - trend_score: Tendencia de evolucao
+   - overall_score: Avaliação geral considerando todos os fatores disponíveis
+   - efficiency_score: Eficiência de CTR e engajamento vs benchmarks
+   - cost_score: Otimização de custos (CPC, CPM)
+   - reach_score: Alcance e frequência
+   - ${conversionScoreInstruction}
+   - trend_score: Tendência de evolução
 
-2. RESUMO EXECUTIVO: Sintese em 2-3 frases do status geral
+2. RESUMO EXECUTIVO: Síntese em 2-3 frases focada nos objetivos reais da campanha
 
-3. DIAGNOSTICO: Analise detalhada dos pontos fortes e fracos
+3. DIAGNÓSTICO: Análise detalhada dos pontos fortes e fracos
 
-4. TENDENCIAS: Identificar padroes de melhora/piora nas metricas
+4. TENDÊNCIAS: Identificar padrões de melhora/piora nas métricas disponíveis
 
-5. ANOMALIAS: Detectar valores fora do padrao que requerem atencao
+5. ANOMALIAS: Detectar valores fora do padrão
 
-6. COMPARACAO COM BENCHMARKS: Como esta em relacao as medias
+6. COMPARAÇÃO COM BENCHMARKS: Como está em relação às médias (quando disponíveis)
 
-7. INSIGHTS: 3-5 insights acionaveis priorizados por impacto
+7. INSIGHTS: 3-5 insights acionáveis priorizados por impacto
 
-8. RECOMENDACOES: 3-5 acoes praticas para otimizacao
+8. RECOMENDAÇÕES: 3-5 ações práticas para otimização dentro do objetivo da campanha
+
+ATENÇÃO CRÍTICA:
+${criticalAlerts}
 
 Retorne um JSON com esta estrutura:
 {
@@ -209,50 +349,50 @@ Retorne um JSON com esta estrutura:
     "trend_score": <0-100>
   },
   "executive_summary": "<resumo executivo em 2-3 frases>",
-  "overall_diagnosis": "<diagnostico detalhado da performance>",
+  "overall_diagnosis": "<diagnóstico detalhado da performance>",
   "trends": [
     {
-      "metric": "<nome da metrica>",
+      "metric": "<nome da métrica>",
       "direction": "<improving|declining|stable|volatile>",
-      "change_percent": <numero>,
-      "period_description": "<descricao do periodo>",
-      "interpretation": "<interpretacao da tendencia>",
-      "action_suggested": "<acao sugerida>"
+      "change_percent": <número>,
+      "period_description": "<descrição do período>",
+      "interpretation": "<interpretação da tendência>",
+      "action_suggested": "<ação sugerida>"
     }
   ],
   "anomalies": [
     {
-      "metric": "<metrica afetada>",
+      "metric": "<métrica afetada>",
       "anomaly_type": "<spike|drop|pattern_break>",
       "severity": "<critical|high|medium|low>",
-      "date_detected": "<data ou periodo>",
-      "description": "<descricao da anomalia>",
+      "date_detected": "<data ou período>",
+      "description": "<descrição da anomalia>",
       "possible_causes": ["<causa 1>", "<causa 2>"],
-      "recommended_actions": ["<acao 1>", "<acao 2>"]
+      "recommended_actions": ["<ação 1>", "<ação 2>"]
     }
   ],
   "benchmark_comparisons": [
     {
-      "metric": "<nome da metrica>",
+      "metric": "<nome da métrica>",
       "current_value": <valor atual>,
       "benchmark_value": <valor benchmark>,
-      "difference_percent": <diferenca %>,
+      "difference_percent": <diferença %>,
       "status": "<excellent|good|average|below_average|poor>",
-      "interpretation": "<interpretacao>"
+      "interpretation": "<interpretação>"
     }
   ],
   "insights": [
     {
-      "id": "<id unico>",
+      "id": "<id único>",
       "type": "<performance|trend|anomaly|optimization|alert|benchmark>",
-      "title": "<titulo do insight>",
-      "description": "<descricao detalhada>",
+      "title": "<título do insight>",
+      "description": "<descrição detalhada>",
       "impact": "<critical|high|medium|low>",
       "confidence": <0-100>,
-      "metric_affected": "<metrica principal>",
+      "metric_affected": "<métrica principal>",
       "current_value": "<valor atual formatado>",
       "expected_value": "<valor esperado/ideal>",
-      "recommendation": "<recomendacao especifica>",
+      "recommendation": "<recomendação específica>",
       "potential_improvement": "<melhoria potencial estimada>"
     }
   ],
@@ -260,16 +400,16 @@ Retorne um JSON com esta estrutura:
     {
       "priority": "<critical|high|medium|low>",
       "category": "<budget|targeting|bidding|schedule|creative|general>",
-      "title": "<titulo da recomendacao>",
-      "description": "<descricao detalhada>",
+      "title": "<título da recomendação>",
+      "description": "<descrição detalhada>",
       "expected_impact": "<impacto esperado>",
       "implementation_steps": ["<passo 1>", "<passo 2>"],
-      "metrics_to_monitor": ["<metrica 1>", "<metrica 2>"],
-      "estimated_improvement": "<melhoria estimada ex: +15% CTR>"
+      "metrics_to_monitor": ["<métrica 1>", "<métrica 2>"],
+      "estimated_improvement": "<melhoria estimada>"
     }
   ],
-  "short_term_forecast": "<previsao para os proximos 7-14 dias>",
-  "priority_areas": ["<area 1>", "<area 2>", "<area 3>"]
+  "short_term_forecast": "<previsão para os próximos 7-14 dias>",
+  "priority_areas": ["<área 1>", "<área 2>", "<área 3>"]
 }`;
 }
 
@@ -283,7 +423,7 @@ async function analyzeWithGPT4(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${openaiApiKey}`,
+      Authorization: `Bearer ${openaiApiKey}`,
     },
     body: JSON.stringify({
       model: "gpt-4o",
@@ -291,8 +431,8 @@ async function analyzeWithGPT4(
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
-      max_tokens: 3000,
-      temperature: 0.4,
+      max_tokens: 3500,
+      temperature: 0.3,
     }),
   });
 
@@ -302,13 +442,17 @@ async function analyzeWithGPT4(
     console.error("OpenAI API error:", errorMessage, "Status:", response.status);
 
     if (response.status === 429) {
-      throw new Error("Limite de requisicoes da IA atingido. Aguarde alguns minutos e tente novamente.");
+      throw new Error(
+        "Limite de requisições da IA atingido. Aguarde alguns minutos e tente novamente."
+      );
     } else if (response.status === 401) {
-      throw new Error("Erro de autenticacao com servico de IA. Contate o suporte.");
+      throw new Error("Erro de autenticação com serviço de IA. Contate o suporte.");
     } else if (response.status >= 500) {
-      throw new Error("Servico de IA temporariamente indisponivel. Tente novamente em alguns minutos.");
+      throw new Error(
+        "Serviço de IA temporariamente indisponível. Tente novamente em alguns minutos."
+      );
     }
-    throw new Error(`Erro ao processar analise: ${errorMessage}`);
+    throw new Error(`Erro ao processar análise: ${errorMessage}`);
   }
 
   const data = await response.json();
@@ -319,12 +463,15 @@ async function analyzeWithGPT4(
     throw new Error("No response content from OpenAI");
   }
 
-  const cleanContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  const cleanContent = content
+    .replace(/```json\n?/g, "")
+    .replace(/```\n?/g, "")
+    .trim();
 
   try {
     const analysis = JSON.parse(cleanContent);
     return { analysis, tokensUsed };
-  } catch (parseError) {
+  } catch (_parseError) {
     console.error("Failed to parse OpenAI response:", cleanContent);
     throw new Error("Failed to parse AI analysis response");
   }
@@ -337,10 +484,10 @@ Deno.serve(async (req: Request) => {
 
   try {
     if (req.method !== "POST") {
-      return new Response(
-        JSON.stringify({ error: "Method not allowed" }),
-        { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const authHeader = req.headers.get("Authorization");
@@ -352,11 +499,14 @@ Deno.serve(async (req: Request) => {
     }
 
     const payload: RequestPayload = await req.json();
-    const { entity_id, entity_name, entity_level, meta_ad_account_id, metrics_data } = payload;
+    const { entity_id, entity_name, entity_level, meta_ad_account_id, metrics_data } =
+      payload;
 
     if (!entity_id || !entity_name || !entity_level || !metrics_data) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: entity_id, entity_name, entity_level, metrics_data" }),
+        JSON.stringify({
+          error: "Missing required fields: entity_id, entity_name, entity_level, metrics_data",
+        }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -364,8 +514,8 @@ Deno.serve(async (req: Request) => {
     if (!metrics_data.total_impressions || metrics_data.total_impressions === 0) {
       return new Response(
         JSON.stringify({
-          error: "Dados insuficientes para analise",
-          details: "O anuncio precisa ter pelo menos algumas impressoes para ser analisado."
+          error: "Dados insuficientes para análise",
+          details: "O anúncio precisa ter pelo menos algumas impressões para ser analisado.",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -374,8 +524,8 @@ Deno.serve(async (req: Request) => {
     if (!metrics_data.start_date || !metrics_data.end_date) {
       return new Response(
         JSON.stringify({
-          error: "Periodo de analise invalido",
-          details: "As datas de inicio e fim do periodo sao obrigatorias."
+          error: "Período de análise inválido",
+          details: "As datas de início e fim do período são obrigatórias.",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -383,10 +533,10 @@ Deno.serve(async (req: Request) => {
 
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {
-      return new Response(
-        JSON.stringify({ error: "OpenAI API key not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -397,12 +547,16 @@ Deno.serve(async (req: Request) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseAuth.auth.getUser();
+
     if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -435,30 +589,31 @@ Deno.serve(async (req: Request) => {
       return new Response(
         JSON.stringify({
           error: "Nenhum workspace encontrado",
-          details: "Voce precisa criar ou participar de um workspace para usar esta funcionalidade."
+          details:
+            "Você precisa criar ou participar de um workspace para usar esta funcionalidade.",
         }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const workspace = { id: workspaceId };
+    const ctx = detectCampaignContext(metrics_data);
+    console.log("Starting metrics analysis — context:", ctx.contextDescription);
 
-    console.log("Starting metrics analysis with GPT-4...");
     const { analysis, tokensUsed } = await analyzeWithGPT4(metrics_data, openaiApiKey);
     console.log("Metrics analysis completed successfully");
 
     const analysisRecord = {
-      workspace_id: workspace.id,
-      entity_id: entity_id,
-      entity_name: entity_name,
-      entity_level: entity_level,
+      workspace_id: workspaceId,
+      entity_id,
+      entity_name,
+      entity_level,
       analysis_period: {
         start_date: metrics_data.start_date,
         end_date: metrics_data.end_date,
       },
       performance_scores: analysis.performance_scores || {},
-      executive_summary: analysis.executive_summary || '',
-      overall_diagnosis: analysis.overall_diagnosis || '',
+      executive_summary: analysis.executive_summary || "",
+      overall_diagnosis: analysis.overall_diagnosis || "",
       trends: analysis.trends || [],
       anomalies: analysis.anomalies || [],
       benchmark_comparisons: analysis.benchmark_comparisons || [],
@@ -481,7 +636,7 @@ Deno.serve(async (req: Request) => {
       console.error("Insert error:", insertError);
       return new Response(
         JSON.stringify({
-          analysis: { ...analysisRecord, id: 'temp-' + Date.now() },
+          analysis: { ...analysisRecord, id: "temp-" + Date.now() },
           tokens_used: tokensUsed,
           saved: false,
           save_error: insertError.message,
@@ -491,14 +646,9 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(
-      JSON.stringify({
-        analysis: savedAnalysis,
-        tokens_used: tokensUsed,
-        saved: true,
-      }),
+      JSON.stringify({ analysis: savedAnalysis, tokens_used: tokensUsed, saved: true }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-
   } catch (error) {
     console.error("Unexpected error:", error);
     return new Response(

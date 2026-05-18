@@ -97,26 +97,35 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
   // Verifica se ha dados pre-carregados
   const hasPreloadedData = preloadedMetrics.length > 0;
 
-  // Prepara dados pre-carregados para o hook de analise de metricas com IA
-  // Este formato e necessario para evitar nova query ao banco durante analise
+  // Prepara dados pre-carregados para o hook de analise de metricas com IA.
+  // Inclui todos os campos opcionais (leads, mensagens, roas) para que a IA
+  // receba apenas as metricas que realmente existem na campanha.
   const preloadedMetricsForAI: PreloadedMetricsData | null = useMemo(() => {
     if (!hasPreloadedData || !adData?.entity_name) return null;
 
-    // Reach nao e aditivo — usa o maior valor diario como aproximacao
+    // Agrega todos os campos — reach nao e aditivo, usa o maior valor diario
     const totals = preloadedMetrics.reduce(
       (acc, row) => ({
         impressions: acc.impressions + (row.impressions || 0),
         reach: Math.max(acc.reach, row.reach || 0),
         clicks: acc.clicks + (row.clicks || 0),
         spend: acc.spend + (row.spend || 0),
+        leads: acc.leads + ((row as any).leads || 0),
+        messaging_conversations: acc.messaging_conversations + ((row as any).messaging_conversations_started || 0),
+        purchase_value: acc.purchase_value + ((row as any).purchase_value || 0),
       }),
-      { impressions: 0, reach: 0, clicks: 0, spend: 0 }
+      { impressions: 0, reach: 0, clicks: 0, spend: 0, leads: 0, messaging_conversations: 0, purchase_value: 0 }
     );
 
     const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
     const avgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
     const avgCpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
     const avgFrequency = totals.reach > 0 ? totals.impressions / totals.reach : 0;
+
+    // ROAS calculado apenas quando ha receita real registrada
+    const roas = totals.purchase_value > 0 && totals.spend > 0
+      ? totals.purchase_value / totals.spend
+      : undefined;
 
     const dailyMetrics = [...preloadedMetrics]
       .sort((a, b) => a.date.localeCompare(b.date))
@@ -141,6 +150,14 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
       avgCpm,
       avgFrequency,
       dailyMetrics,
+      // Campos opcionais — incluidos apenas quando disponiveis
+      ...(roas != null ? { roas } : {}),
+      ...(totals.purchase_value > 0 ? { totalPurchaseValue: totals.purchase_value } : {}),
+      ...(totals.leads > 0 ? { totalLeads: totals.leads } : {}),
+      ...(totals.messaging_conversations > 0
+        ? { totalMessagingConversations: totals.messaging_conversations }
+        : {}),
+      ...(adData.campaign_objective ? { campaignObjective: adData.campaign_objective } : {}),
     };
   }, [hasPreloadedData, preloadedMetrics, adData?.entity_name]);
 

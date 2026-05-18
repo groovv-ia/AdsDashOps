@@ -353,6 +353,7 @@ export interface AdDetailModalState {
     status?: string;
     campaign_name?: string;
     adset_name?: string;
+    campaign_objective?: string;
   } | null;
 }
 

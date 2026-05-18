@@ -53,8 +53,23 @@ export interface MetricsInputData {
   avg_conversion_rate: number;
   avg_cost_per_conversion: number;
 
-  // ROAS se disponível
+  // ROAS — presente APENAS quando a campanha tem evento de compra configurado
   roas?: number;
+
+  // Valor total de compras (revenue) — presente apenas com evento de compra
+  total_purchase_value?: number;
+
+  // Leads gerados — presente em campanhas de geração de leads
+  total_leads?: number;
+
+  // Conversas iniciadas via Messenger/WhatsApp/Instagram Direct
+  total_messaging_conversations?: number;
+
+  // Custo por lead calculado
+  avg_cost_per_lead?: number;
+
+  // Custo por conversa calculado
+  avg_cost_per_messaging_conversation?: number;
 
   // Dados de tendência (últimos N dias)
   daily_metrics?: DailyMetricPoint[];
@@ -164,7 +179,7 @@ export interface PerformanceScore {
   efficiency_score: number; // CTR, CPC optimization
   cost_score: number; // Custo-benefício
   reach_score: number; // Alcance e frequência
-  conversion_score: number; // Conversões e ROAS
+  conversion_score: number; // Conversões, leads, mensagens ou ROAS — conforme objetivo da campanha
   trend_score: number; // Tendência de evolução
 }
 

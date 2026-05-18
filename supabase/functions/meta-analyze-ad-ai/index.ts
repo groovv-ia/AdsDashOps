@@ -1,47 +1,53 @@
 /**
  * Edge Function: meta-analyze-ad-ai
- * 
- * Analisa um anúncio usando GPT-4 Vision para fornecer insights sobre
- * o criativo visual e a copy/texto do anúncio.
- * 
- * IMPORTANTE: Baixa a imagem e converte para base64 antes de enviar para OpenAI
- * pois URLs do Facebook requerem autenticação e não podem ser acessadas diretamente.
- * 
+ *
+ * Analisa um anuncio usando GPT-4 Vision para fornecer insights sobre
+ * o criativo visual e a copy/texto do anuncio.
+ *
+ * Melhorias:
+ * - Corrigido bug onde alcance era exibido igual a impressoes
+ * - ROAS omitido quando nao configurado na campanha
+ * - Leads e conversas de mensagens incluidos quando disponiveis
+ * - Correlacao de performance ajustada ao objetivo real da campanha
+ *
  * POST /functions/v1/meta-analyze-ad-ai
- * Body: { 
- *   ad_id: string, 
+ * Body: {
+ *   ad_id: string,
  *   meta_ad_account_id: string,
  *   image_url: string,
- *   copy_data: { title?: string, body?: string, description?: string, cta?: string }
+ *   copy_data: { title?: string, body?: string, description?: string, cta?: string },
+ *   performance_context?: PerformanceContext
  * }
- * 
- * Retorna: { analysis: AdAIAnalysis }
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-// Headers CORS padrão
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Interface para contexto de performance
 interface PerformanceContext {
   total_impressions: number;
+  total_reach?: number;
   total_clicks: number;
   ctr: number;
   cpc: number;
   cpm: number;
   total_spend: number;
-  conversions: number;
-  conversion_rate: number;
+  conversions?: number;
+  conversion_rate?: number;
+  roas?: number;
+  total_purchase_value?: number;
+  total_leads?: number;
+  avg_cost_per_lead?: number;
+  total_messaging_conversations?: number;
+  avg_cost_per_messaging_conversation?: number;
   campaign_objective?: string;
 }
 
-// Interface para o payload expandido da requisição
 interface RequestPayload {
   ad_id: string;
   meta_ad_account_id: string;
@@ -52,11 +58,9 @@ interface RequestPayload {
     description?: string;
     cta?: string;
   };
-  // Novo: contexto de performance para análise correlacionada
   performance_context?: PerformanceContext;
 }
 
-// Interface para elementos visuais detalhados
 interface VisualElements {
   detected_objects: string[];
   color_palette: string[];
@@ -66,7 +70,6 @@ interface VisualElements {
   contrast_level: string;
 }
 
-// Interface para análise psicológica
 interface PsychologicalAnalysis {
   primary_emotion: string;
   emotional_triggers: string[];
@@ -76,7 +79,6 @@ interface PsychologicalAnalysis {
   trust_signals: string[];
 }
 
-// Interface para primeiro impacto
 interface FirstImpressionAnalysis {
   attention_score: number;
   scrollstopper_potential: string;
@@ -85,7 +87,6 @@ interface FirstImpressionAnalysis {
   focal_point: string;
 }
 
-// Interface para análise de placement
 interface PlacementAnalysis {
   feed_suitability: string;
   stories_suitability: string;
@@ -94,7 +95,6 @@ interface PlacementAnalysis {
   desktop_friendliness: string;
 }
 
-// Interface para análise visual expandida
 interface VisualAnalysis {
   composition_score: number;
   color_usage: string;
@@ -111,7 +111,6 @@ interface VisualAnalysis {
   modernization_suggestions: string[];
 }
 
-// Interface para análise de mensagem
 interface MessageAnalysis {
   value_proposition_clarity: string;
   message_match_visual: string;
@@ -121,7 +120,6 @@ interface MessageAnalysis {
   power_words_used: string[];
 }
 
-// Interface para análise de copy expandida
 interface CopyAnalysis {
   clarity_score: number;
   persuasion_level: string;
@@ -137,7 +135,6 @@ interface CopyAnalysis {
   benefits_vs_features: string;
 }
 
-// Interface para sugestões de teste A/B
 interface ABTestSuggestion {
   test_type: string;
   hypothesis: string;
@@ -148,7 +145,6 @@ interface ABTestSuggestion {
   priority: "high" | "medium" | "low";
 }
 
-// Interface para recomendações expandidas
 interface Recommendation {
   priority: "high" | "medium" | "low";
   category: "visual" | "copy" | "cta" | "targeting" | "general";
@@ -160,7 +156,6 @@ interface Recommendation {
   ab_test_suggestion?: ABTestSuggestion;
 }
 
-// Interface para correlação com performance
 interface PerformanceCorrelation {
   performance_summary: string;
   visual_performance_link: string;
@@ -170,7 +165,6 @@ interface PerformanceCorrelation {
   optimization_priority: string;
 }
 
-// Interface para resposta completa e expandida da análise
 interface AIAnalysisResponse {
   creative_score: number;
   copy_score: number;
@@ -185,7 +179,6 @@ interface AIAnalysisResponse {
   strategic_recommendations: string;
 }
 
-// Prompt expandido e detalhado do sistema para análise profunda de anúncios
 const SYSTEM_PROMPT = `Você é um especialista sênior em marketing digital, análise de criativos publicitários e psicologia do consumidor, com mais de 15 anos de experiência em otimização de campanhas Meta Ads (Facebook/Instagram).
 
 Sua especialidade inclui:
@@ -196,268 +189,274 @@ Sua especialidade inclui:
 - Identificação de oportunidades de otimização baseadas em dados
 - Design de testes A/B para maximizar resultados
 
-IMPORTANTE: Cada anúncio é único. Sua análise deve ser específica e detalhada para ESTE anúncio em particular, mencionando elementos visuais específicos, cores exatas, textos presentes, e fazendo conexões diretas com a performance quando disponível.
+IMPORTANTE: Cada anúncio é único. Sua análise deve ser específica e detalhada para ESTE anúncio em particular, mencionando elementos visuais específicos, cores exatas, textos presentes.
 
-NUNCA forneça análises genéricas ou que poderiam se aplicar a qualquer anúncio. Sempre mencione especificidades visuais e textuais observadas na imagem.
+REGRA CRÍTICA: Quando dados de performance estiverem disponíveis, avalie o anúncio pelo objetivo real da campanha. Se não houver dados de ROAS/receita, NÃO mencione ROAS nem retorno financeiro — avalie pelo objetivo disponível (leads, mensagens, cliques ou conversões).
 
-Quando dados de performance estiverem disponíveis, correlacione elementos específicos do criativo com os resultados obtidos, explicando POR QUE determinados elementos podem estar gerando os resultados observados.
+NUNCA forneça análises genéricas. Sempre mencione especificidades visuais e textuais observadas.
 
 Sempre responda em português brasileiro com linguagem profissional mas acessível.
-
 Retorne APENAS um JSON válido no formato especificado, sem texto adicional ou markdown.`;
 
-// Função para construir o prompt expandido e detalhado de análise
+function detectPerformanceContext(ctx: PerformanceContext): {
+  hasRoas: boolean;
+  hasLeads: boolean;
+  hasMessaging: boolean;
+  hasConversions: boolean;
+  primaryMetric: string;
+} {
+  const hasRoas = typeof ctx.roas === "number" && ctx.roas > 0;
+  const hasLeads = typeof ctx.total_leads === "number" && ctx.total_leads > 0;
+  const hasMessaging =
+    typeof ctx.total_messaging_conversations === "number" &&
+    ctx.total_messaging_conversations > 0;
+  const hasConversions =
+    typeof ctx.conversions === "number" && ctx.conversions > 0;
+
+  let primaryMetric = "CTR e CPC";
+  if (hasRoas) primaryMetric = "ROAS e conversões";
+  else if (hasLeads && hasMessaging) primaryMetric = "leads e conversas geradas";
+  else if (hasLeads) primaryMetric = "leads gerados e custo por lead";
+  else if (hasMessaging) primaryMetric = "conversas iniciadas e custo por conversa";
+  else if (hasConversions) primaryMetric = "conversões e custo por conversão";
+
+  return { hasRoas, hasLeads, hasMessaging, hasConversions, primaryMetric };
+}
+
+function buildPerformanceSection(ctx: PerformanceContext): string {
+  const pctx = detectPerformanceContext(ctx);
+
+  const reachLine =
+    ctx.total_reach != null && ctx.total_reach > 0
+      ? `\n👁️ Alcance único: ${ctx.total_reach.toLocaleString("pt-BR")}`
+      : "";
+
+  const baseSection = `📈 Impressões: ${ctx.total_impressions.toLocaleString("pt-BR")}${reachLine}
+🖱️ Cliques: ${ctx.total_clicks.toLocaleString("pt-BR")}
+📊 CTR: ${ctx.ctr.toFixed(2)}%
+💰 CPC: R$ ${ctx.cpc.toFixed(2)}
+💵 CPM: R$ ${ctx.cpm.toFixed(2)}
+💸 Investimento: R$ ${ctx.total_spend.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+${ctx.campaign_objective ? `🎯 Objetivo: ${ctx.campaign_objective}` : ""}`;
+
+  let resultsSection = "";
+
+  if (pctx.hasRoas && ctx.roas != null) {
+    resultsSection = `\n🎯 Conversões: ${ctx.conversions ?? 0}
+📈 Taxa de Conversão: ${(ctx.conversion_rate ?? 0).toFixed(2)}%
+💰 Receita: R$ ${(ctx.total_purchase_value ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+🔄 ROAS: ${ctx.roas.toFixed(2)}x`;
+  } else if (pctx.hasLeads && pctx.hasMessaging) {
+    resultsSection = `\n🎯 Leads: ${ctx.total_leads?.toLocaleString("pt-BR")} | CPL: R$ ${ctx.avg_cost_per_lead?.toFixed(2)}
+💬 Conversas: ${ctx.total_messaging_conversations?.toLocaleString("pt-BR")} | Custo/conversa: R$ ${ctx.avg_cost_per_messaging_conversation?.toFixed(2)}`;
+  } else if (pctx.hasLeads) {
+    resultsSection = `\n🎯 Leads: ${ctx.total_leads?.toLocaleString("pt-BR")} | CPL: R$ ${ctx.avg_cost_per_lead?.toFixed(2)}`;
+  } else if (pctx.hasMessaging) {
+    resultsSection = `\n💬 Conversas iniciadas: ${ctx.total_messaging_conversations?.toLocaleString("pt-BR")} | Custo/conversa: R$ ${ctx.avg_cost_per_messaging_conversation?.toFixed(2)}`;
+  } else if (pctx.hasConversions) {
+    resultsSection = `\n🎯 Conversões: ${ctx.conversions} | Taxa: ${(ctx.conversion_rate ?? 0).toFixed(2)}%`;
+  }
+
+  const noRoasWarning = !pctx.hasRoas
+    ? "\n⚠️ Esta campanha NÃO tem ROAS configurado. NÃO mencione ROAS na análise de correlação."
+    : "";
+
+  return `\n\n═══════════════════════════════════════\n📊 DADOS DE PERFORMANCE ATUAL\n═══════════════════════════════════════
+${baseSection}${resultsSection}${noRoasWarning}
+
+⚠️ CORRELAÇÃO OBRIGATÓRIA:
+1. CTR de ${ctx.ctr.toFixed(2)}%: quais elementos visuais/textuais explicam?
+2. CPC de R$ ${ctx.cpc.toFixed(2)}: o que isso sugere sobre competitividade?
+3. Objetivo principal (${pctx.primaryMetric}): como o criativo suporta este objetivo?
+4. Quais elementos específicos mudar para melhorar ${pctx.primaryMetric}?`;
+}
+
 function buildAnalysisPrompt(
   copyData: RequestPayload["copy_data"],
   performanceContext?: PerformanceContext
 ): string {
-  // Seção de textos do anúncio
-  const copyInfo = [];
+  const copyInfo: string[] = [];
   if (copyData.title) copyInfo.push(`📌 Título/Headline: "${copyData.title}"`);
-  if (copyData.body) copyInfo.push(`📝 Corpo do anúncio: "${copyData.body}"`);
+  if (copyData.body) copyInfo.push(`📝 Corpo: "${copyData.body}"`);
   if (copyData.description) copyInfo.push(`💬 Descrição: "${copyData.description}"`);
-  if (copyData.cta) copyInfo.push(`🎯 Call-to-Action: "${copyData.cta}"`);
+  if (copyData.cta) copyInfo.push(`🎯 CTA: "${copyData.cta}"`);
 
-  const copySection = copyInfo.length > 0
-    ? `\n\n═══════════════════════════════════════\n📱 TEXTOS DO ANÚNCIO\n═══════════════════════════════════════\n${copyInfo.join("\n")}`
-    : "\n\nNenhum texto disponível para análise.";
+  const copySection =
+    copyInfo.length > 0
+      ? `\n\n═══════════════════════════════════════\n📱 TEXTOS DO ANÚNCIO\n═══════════════════════════════════════\n${copyInfo.join("\n")}`
+      : "\n\nNenhum texto disponível para análise.";
 
-  // Seção de dados de performance (se disponível)
-  let performanceSection = "";
-  if (performanceContext) {
-    performanceSection = `\n\n═══════════════════════════════════════\n📊 DADOS DE PERFORMANCE ATUAL\n═══════════════════════════════════════
-📈 Impressões: ${performanceContext.total_impressions.toLocaleString('pt-BR')}
-👁️ Alcance: ${performanceContext.total_impressions.toLocaleString('pt-BR')}
-🖱️ Cliques: ${performanceContext.total_clicks.toLocaleString('pt-BR')}
-📊 CTR (Taxa de Cliques): ${performanceContext.ctr.toFixed(2)}%
-💰 CPC (Custo por Clique): R$ ${performanceContext.cpc.toFixed(2)}
-💵 CPM (Custo por Mil Impressões): R$ ${performanceContext.cpm.toFixed(2)}
-💸 Investimento Total: R$ ${performanceContext.total_spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-🎯 Conversões: ${performanceContext.conversions}
-📈 Taxa de Conversão: ${performanceContext.conversion_rate.toFixed(2)}%
-${performanceContext.campaign_objective ? `🎯 Objetivo da Campanha: ${performanceContext.campaign_objective}` : ''}
+  const performanceSection = performanceContext
+    ? buildPerformanceSection(performanceContext)
+    : "";
 
-⚠️ IMPORTANTE: Use estes dados de performance para:
-1. Identificar quais elementos visuais/textuais podem estar contribuindo para o CTR atual
-2. Explicar por que a taxa de conversão está neste nível
-3. Sugerir otimizações específicas baseadas nos resultados observados
-4. Correlacionar cores, mensagem e design com as métricas`;
-  }
+  const hasPerf = !!performanceContext;
+  const perfCtx = performanceContext ? detectPerformanceContext(performanceContext) : null;
+
+  const noRoasNote = hasPerf && !perfCtx?.hasRoas
+    ? "\n- NÃO mencione ROAS na análise de correlação de performance."
+    : "";
 
   return `═══════════════════════════════════════════════════════════════
 🎨 ANÁLISE PROFUNDA DE ANÚNCIO META ADS
 ═══════════════════════════════════════════════════════════════
 
-Analise este anúncio do Meta Ads de forma DETALHADA e ESPECÍFICA. Esta análise será usada para otimização real de campanhas publicitárias.
+Analise este anúncio de forma DETALHADA e ESPECÍFICA.
 ${copySection}${performanceSection}
 
 ═══════════════════════════════════════════════════════════════
-🔍 INSTRUÇÕES DE ANÁLISE DETALHADA
+🔍 INSTRUÇÕES DE ANÁLISE
 ═══════════════════════════════════════════════════════════════
 
 1️⃣ ANÁLISE VISUAL PROFUNDA:
-   - Identifique TODOS os elementos visuais específicos (pessoas, produtos, objetos, ambientes)
-   - Extraia e mencione as cores EXATAS usadas (use nomes descritivos de cores ou hex se possível)
-   - Analise a composição visual (regra dos terços, simetria, ponto focal, etc)
-   - Identifique qualquer texto visível NA IMAGEM (não apenas no copy)
-   - Avalie tipografia, fontes e legibilidade
-   - Analise contraste, hierarquia visual e fluxo do olhar
+   - Todos os elementos visuais específicos, cores EXATAS, texto visível na imagem
+   - Composição, tipografia, contraste, hierarquia visual e fluxo do olhar
 
-2️⃣ ANÁLISE PSICOLÓGICA E EMOCIONAL:
-   - Qual emoção primária este anúncio evoca? Seja específico
-   - Quais gatilhos emocionais estão presentes? (escassez, urgência, prova social, autoridade, etc)
-   - Qual é a carga cognitiva? (fácil de processar ou exige esforço mental?)
-   - Quais sinais de confiança estão presentes ou faltando?
-   - Para qual público-alvo este criativo é mais adequado? Seja específico (idade, interesses, comportamentos)
+2️⃣ ANÁLISE PSICOLÓGICA:
+   - Emoção primária, gatilhos, carga cognitiva, sinais de confiança, público-alvo
 
-3️⃣ ANÁLISE DE PRIMEIRO IMPACTO (primeiros 3 segundos):
-   - O que o usuário capta imediatamente ao ver o anúncio?
-   - Qual o potencial de "parar o scroll"? Por quê?
-   - Onde o olho é naturalmente atraído primeiro?
-   - A mensagem principal é clara em 3 segundos?
+3️⃣ PRIMEIRO IMPACTO (3 segundos):
+   - Potencial de parar o scroll, mensagem captada, ponto focal
 
-4️⃣ ANÁLISE DE COPY E MENSAGEM:
-   - A proposta de valor é clara? Como ela está comunicada?
-   - Há coerência entre mensagem visual e textual?
-   - O tom de voz é adequado? Qual é ele?
-   - O CTA é efetivo? Por quê sim ou não?
-   - Existem palavras poderosas (power words)? Quais?
-   - O texto vende benefícios ou apenas características?
+4️⃣ ANÁLISE DE COPY:
+   - Proposta de valor, coerência visual-textual, tom de voz, power words, CTA
 
-5️⃣ ANÁLISE DE PLACEMENT E CONTEXTO:
-   - Este anúncio funciona bem no feed do Facebook/Instagram? Por quê?
-   - E nos stories? E em reels?
-   - É mobile-friendly? E em desktop?
-   - Há elementos que podem não aparecer bem em diferentes tamanhos?
+5️⃣ PLACEMENT:
+   - Feed, Stories, Reels, mobile, desktop
 
-6️⃣ CORRELAÇÃO COM PERFORMANCE ${performanceContext ? '(OBRIGATÓRIO - DADOS DISPONÍVEIS)' : '(quando disponível)'}:
-   ${performanceContext ? `
-   - Por que o CTR está em ${performanceContext.ctr.toFixed(2)}%? Quais elementos visuais/textuais explicam isso?
-   - A taxa de conversão de ${performanceContext.conversion_rate.toFixed(2)}% indica o quê sobre clareza da oferta?
-   - O CPC de R$ ${performanceContext.cpc.toFixed(2)} sugere o quê sobre a competitividade do criativo?
-   - Quais elementos específicos você mudaria para melhorar estas métricas?` :
-   'Se dados estiverem disponíveis, correlacione elementos específicos com resultados'}
+6️⃣ CORRELAÇÃO COM PERFORMANCE ${hasPerf ? "(OBRIGATÓRIO)" : "(hipotética)"}:
+   ${hasPerf ? `- Explique por que CTR=${performanceContext!.ctr.toFixed(2)}%, CPC=R$${performanceContext!.cpc.toFixed(2)}
+   - Quais elementos do criativo apoiam ${perfCtx?.primaryMetric}?
+   - Recomendações específicas para melhorar ${perfCtx?.primaryMetric}` : "- Análise hipotética baseada no criativo"}${noRoasNote}
 
-7️⃣ TENDÊNCIAS E MODERNIDADE:
-   - Este criativo segue tendências atuais de design?
-   - Há elementos que parecem datados?
-   - Como ele se compara com anúncios de sucesso atuais?
+7️⃣ TENDÊNCIAS E MODERNIDADE
 
-8️⃣ RECOMENDAÇÕES ACIONÁVEIS:
-   - Forneça 5-8 recomendações ESPECÍFICAS e PRÁTICAS
-   - Para cada recomendação, explique o impacto esperado e dificuldade de implementação
-   - Priorize por impacto potencial (high/medium/low)
+8️⃣ RECOMENDAÇÕES (5-8 ações específicas e práticas)
 
-9️⃣ SUGESTÕES DE TESTES A/B:
-   - Sugira 3-5 testes A/B específicos com hipóteses claras
-   - Para cada teste, explique o que mudar, por que, e que métrica deve melhorar
+9️⃣ TESTES A/B (3-5 testes com hipóteses)
 
-═══════════════════════════════════════════════════════════════
-
-Retorne um JSON com esta estrutura COMPLETA E DETALHADA:
+Retorne JSON:
 {
-  "creative_score": <número de 0 a 100 - baseado em visual e design>,
-  "copy_score": <número de 0 a 100 - baseado em mensagem e copy>,
-  "overall_score": <número de 0 a 100 - média ponderada considerando contexto>,
-
+  "creative_score": <0-100>,
+  "copy_score": <0-100>,
+  "overall_score": <0-100>,
   "visual_analysis": {
-    "composition_score": <número de 0 a 100>,
-    "color_usage": "<descrição ESPECÍFICA das cores usadas, mencione cores exatas>",
-    "text_visibility": "<avaliação detalhada de legibilidade com exemplos específicos>",
-    "brand_consistency": "<avaliação da consistência visual com detalhes>",
-    "attention_grabbing": "<análise detalhada da capacidade de capturar atenção>",
-    "key_strengths": ["<ponto forte específico 1>", "<ponto forte específico 2>", "..."],
-    "improvement_areas": ["<área específica de melhoria 1>", "<área específica 2>", "..."],
-
+    "composition_score": <0-100>,
+    "color_usage": "<cores específicas>",
+    "text_visibility": "<legibilidade>",
+    "brand_consistency": "<consistência>",
+    "attention_grabbing": "<capacidade de atenção>",
+    "key_strengths": ["<ponto 1>"],
+    "improvement_areas": ["<área 1>"],
     "visual_elements": {
-      "detected_objects": ["<objeto/pessoa/produto 1>", "<objeto 2>", "..."],
-      "color_palette": ["<cor 1 ex: azul royal #0047AB>", "<cor 2>", "..."],
-      "typography_analysis": "<análise detalhada de fontes e textos visíveis>",
-      "composition_type": "<tipo de composição: regra dos terços, centralizado, assimétrico, etc>",
-      "visual_hierarchy": "<análise da hierarquia visual e fluxo do olhar>",
-      "contrast_level": "<alto|médio|baixo - com justificativa>"
+      "detected_objects": ["<objeto 1>"],
+      "color_palette": ["<cor 1>"],
+      "typography_analysis": "<análise>",
+      "composition_type": "<tipo>",
+      "visual_hierarchy": "<hierarquia>",
+      "contrast_level": "<alto|médio|baixo>"
     },
-
     "psychological_analysis": {
-      "primary_emotion": "<emoção primária evocada - seja específico>",
-      "emotional_triggers": ["<gatilho 1: ex: escassez>", "<gatilho 2>", "..."],
-      "persuasion_techniques": ["<técnica 1>", "<técnica 2>", "..."],
-      "target_audience_fit": "<descrição detalhada do público-alvo ideal>",
-      "cognitive_load": "<baixa|média|alta - com explicação>",
-      "trust_signals": ["<sinal de confiança 1>", "<sinal 2>", "..."]
+      "primary_emotion": "<emoção>",
+      "emotional_triggers": ["<gatilho 1>"],
+      "persuasion_techniques": ["<técnica 1>"],
+      "target_audience_fit": "<público>",
+      "cognitive_load": "<baixa|média|alta>",
+      "trust_signals": ["<sinal 1>"]
     },
-
     "first_impression": {
-      "attention_score": <número de 0 a 100>,
-      "scrollstopper_potential": "<alto|médio|baixo - com justificativa detalhada>",
-      "three_second_message": "<o que se capta em 3 segundos>",
-      "visual_clarity": "<análise da claridade visual imediata>",
-      "focal_point": "<onde o olho é atraído primeiro - seja específico>"
+      "attention_score": <0-100>,
+      "scrollstopper_potential": "<alto|médio|baixo>",
+      "three_second_message": "<mensagem>",
+      "visual_clarity": "<claridade>",
+      "focal_point": "<ponto focal>"
     },
-
     "placement_analysis": {
-      "feed_suitability": "<análise detalhada para feed>",
-      "stories_suitability": "<análise para stories>",
-      "reels_suitability": "<análise para reels>",
-      "mobile_friendliness": "<análise de mobile com detalhes>",
-      "desktop_friendliness": "<análise de desktop com detalhes>"
+      "feed_suitability": "<feed>",
+      "stories_suitability": "<stories>",
+      "reels_suitability": "<reels>",
+      "mobile_friendliness": "<mobile>",
+      "desktop_friendliness": "<desktop>"
     },
-
-    "design_trends": "<análise de aderência a tendências atuais>",
-    "modernization_suggestions": ["<sugestão 1>", "<sugestão 2>", "..."]
+    "design_trends": "<tendências>",
+    "modernization_suggestions": ["<sugestão 1>"]
   },
-
   "copy_analysis": {
-    "clarity_score": <número de 0 a 100>,
+    "clarity_score": <0-100>,
     "persuasion_level": "<baixo|médio|alto>",
     "urgency_present": <true|false>,
-    "cta_effectiveness": "<avaliação detalhada do CTA>",
-    "emotional_appeal": "<análise do apelo emocional com exemplos>",
-    "key_strengths": ["<ponto forte específico>", "..."],
-    "improvement_areas": ["<área de melhoria específica>", "..."],
-
+    "cta_effectiveness": "<avaliação>",
+    "emotional_appeal": "<apelo>",
+    "key_strengths": ["<ponto 1>"],
+    "improvement_areas": ["<área 1>"],
     "message_analysis": {
-      "value_proposition_clarity": "<análise da clareza da proposta>",
-      "message_match_visual": "<análise de coerência visual-textual>",
-      "tone_of_voice": "<identificação do tom - ex: casual, profissional, urgente>",
-      "readability_score": <número de 0 a 100>,
-      "word_count": <número de palavras>,
-      "power_words_used": ["<palavra poderosa 1>", "<palavra 2>", "..."]
+      "value_proposition_clarity": "<clareza>",
+      "message_match_visual": "<coerência>",
+      "tone_of_voice": "<tom>",
+      "readability_score": <0-100>,
+      "word_count": <número>,
+      "power_words_used": ["<palavra 1>"]
     },
-
-    "headline_effectiveness": "<análise específica do headline>",
-    "body_copy_effectiveness": "<análise do corpo do texto>",
-    "cta_placement_analysis": "<análise do posicionamento do CTA>",
-    "benefits_vs_features": "<análise se foca em benefícios ou características>"
+    "headline_effectiveness": "<headline>",
+    "body_copy_effectiveness": "<body>",
+    "cta_placement_analysis": "<CTA>",
+    "benefits_vs_features": "<benefícios vs características>"
   },
-
   "recommendations": [
     {
       "priority": "<high|medium|low>",
       "category": "<visual|copy|cta|targeting|general>",
-      "title": "<título específico da recomendação>",
-      "description": "<descrição DETALHADA e ESPECÍFICA do que fazer>",
-      "expected_impact": "<impacto esperado com justificativa>",
+      "title": "<título>",
+      "description": "<descrição detalhada>",
+      "expected_impact": "<impacto>",
       "implementation_difficulty": "<easy|medium|hard>",
-      "estimated_impact_percentage": "<ex: +15-25% no CTR>",
+      "estimated_impact_percentage": "<ex: +15% CTR>",
       "ab_test_suggestion": {
-        "test_type": "<visual|copy|cta|layout|color>",
-        "hypothesis": "<hipótese clara do teste>",
-        "variant_description": "<descrição da variante>",
-        "what_to_change": "<o que mudar especificamente>",
-        "expected_outcome": "<resultado esperado>",
-        "metrics_to_track": ["<métrica 1>", "<métrica 2>", "..."],
+        "test_type": "<tipo>",
+        "hypothesis": "<hipótese>",
+        "variant_description": "<variante>",
+        "what_to_change": "<mudança>",
+        "expected_outcome": "<resultado>",
+        "metrics_to_track": ["<métrica>"],
         "priority": "<high|medium|low>"
       }
     }
   ],
-
-  ${performanceContext ? `"performance_correlation": {
-    "performance_summary": "<resumo da performance atual com números>",
-    "visual_performance_link": "<como elementos visuais ESPECÍFICOS impactam as métricas>",
-    "copy_performance_link": "<como a copy ESPECÍFICA impacta as métricas>",
-    "underperforming_areas": ["<área 1>", "<área 2>", "..."],
-    "high_performing_elements": ["<elemento 1>", "<elemento 2>", "..."],
-    "optimization_priority": "<qual otimização priorizar baseado em dados>"
-  },` : ''}
-
+  ${hasPerf ? `"performance_correlation": {
+    "performance_summary": "<resumo com números reais>",
+    "visual_performance_link": "<elementos visuais vs métricas>",
+    "copy_performance_link": "<copy vs métricas>",
+    "underperforming_areas": ["<área 1>"],
+    "high_performing_elements": ["<elemento 1>"],
+    "optimization_priority": "<prioridade>"
+  },` : ""}
   "ab_test_suggestions": [
     {
-      "test_type": "<visual|copy|cta|layout|color>",
-      "hypothesis": "<hipótese do teste>",
-      "variant_description": "<descrição da variante>",
-      "what_to_change": "<mudança específica>",
-      "expected_outcome": "<resultado esperado>",
-      "metrics_to_track": ["<métrica 1>", "..."],
+      "test_type": "<tipo>",
+      "hypothesis": "<hipótese>",
+      "variant_description": "<variante>",
+      "what_to_change": "<mudança>",
+      "expected_outcome": "<resultado>",
+      "metrics_to_track": ["<métrica>"],
       "priority": "<high|medium|low>"
     }
   ],
-
-  "competitive_analysis": "<análise comparativa com padrões do mercado>",
-  "audience_insights": "<insights sobre público-alvo ideal baseado no criativo>",
-  "strategic_recommendations": "<recomendações estratégicas de alto nível>"
+  "competitive_analysis": "<comparação com mercado>",
+  "audience_insights": "<insights de público>",
+  "strategic_recommendations": "<recomendações estratégicas>"
+}`;
 }
 
-⚠️ IMPORTANTE:
-- Forneça 5-8 recomendações detalhadas priorizadas
-- Inclua 3-5 sugestões de testes A/B práticos
-- Seja ESPECÍFICO em cada campo - mencione cores, objetos, textos exatos
-- Correlacione com performance quando dados disponíveis
-- NUNCA use análises genéricas que servem para qualquer anúncio`;
-}
+async function downloadImageAsBase64(
+  imageUrl: string
+): Promise<{ base64: string; mimeType: string }> {
+  console.log("Downloading image:", imageUrl);
 
-/**
- * Baixa uma imagem de uma URL e converte para base64
- * Necessário porque URLs do Facebook requerem autenticação
- * e não podem ser acessadas diretamente pelo OpenAI
- */
-async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
-  console.log("Downloading image from:", imageUrl);
-  
   const response = await fetch(imageUrl, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "image/*,*/*;q=0.8",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+      Accept: "image/*,*/*;q=0.8",
     },
   });
 
@@ -465,23 +464,15 @@ async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string
     throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
   }
 
-  // Detecta o tipo MIME da imagem
   const contentType = response.headers.get("content-type") || "image/jpeg";
   let mimeType = "image/jpeg";
-  
-  if (contentType.includes("png")) {
-    mimeType = "image/png";
-  } else if (contentType.includes("gif")) {
-    mimeType = "image/gif";
-  } else if (contentType.includes("webp")) {
-    mimeType = "image/webp";
-  }
+  if (contentType.includes("png")) mimeType = "image/png";
+  else if (contentType.includes("gif")) mimeType = "image/gif";
+  else if (contentType.includes("webp")) mimeType = "image/webp";
 
-  // Converte a imagem para ArrayBuffer e depois para base64
   const arrayBuffer = await response.arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
-  
-  // Converte para base64 usando método compatível com Deno
+
   let binary = "";
   const chunkSize = 8192;
   for (let i = 0; i < uint8Array.length; i += chunkSize) {
@@ -490,12 +481,10 @@ async function downloadImageAsBase64(imageUrl: string): Promise<{ base64: string
   }
   const base64 = btoa(binary);
 
-  console.log(`Image downloaded: ${uint8Array.length} bytes, type: ${mimeType}`);
-  
+  console.log(`Image: ${uint8Array.length} bytes, type: ${mimeType}`);
   return { base64, mimeType };
 }
 
-// Função expandida para chamar a API do OpenAI com GPT-4 Vision usando base64 e contexto de performance
 async function analyzeWithGPT4Vision(
   imageBase64: string,
   imageMimeType: string,
@@ -504,43 +493,29 @@ async function analyzeWithGPT4Vision(
   openaiApiKey: string
 ): Promise<{ analysis: AIAnalysisResponse; tokensUsed: number }> {
   const userPrompt = buildAnalysisPrompt(copyData, performanceContext);
-
-  // Monta a URL de dados base64 para a imagem
   const imageDataUrl = `data:${imageMimeType};base64,${imageBase64}`;
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${openaiApiKey}`,
+      Authorization: `Bearer ${openaiApiKey}`,
     },
     body: JSON.stringify({
       model: "gpt-4o",
       messages: [
-        {
-          role: "system",
-          content: SYSTEM_PROMPT,
-        },
+        { role: "system", content: SYSTEM_PROMPT },
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: userPrompt,
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: imageDataUrl,
-                detail: "high",
-              },
-            },
+            { type: "text", text: userPrompt },
+            { type: "image_url", image_url: { url: imageDataUrl, detail: "high" } },
           ],
         },
       ],
-      max_tokens: 4000, // Aumentado para permitir análises mais profundas e detalhadas
-      temperature: 0.5, // Ajustado para respostas mais criativas e específicas
-      top_p: 0.9, // Controle de diversidade de respostas
+      max_tokens: 4000,
+      temperature: 0.4,
+      top_p: 0.9,
     }),
   });
 
@@ -553,52 +528,46 @@ async function analyzeWithGPT4Vision(
   const content = data.choices?.[0]?.message?.content;
   const tokensUsed = data.usage?.total_tokens || 0;
 
-  if (!content) {
-    throw new Error("No response content from OpenAI");
-  }
+  if (!content) throw new Error("No response content from OpenAI");
 
-  // Parse do JSON da resposta
-  // Remove possíveis backticks de code block
-  const cleanContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  
+  const cleanContent = content
+    .replace(/```json\n?/g, "")
+    .replace(/```\n?/g, "")
+    .trim();
+
   try {
     const analysis: AIAnalysisResponse = JSON.parse(cleanContent);
     return { analysis, tokensUsed };
-  } catch (parseError) {
+  } catch (_e) {
     console.error("Failed to parse OpenAI response:", cleanContent);
     throw new Error("Failed to parse AI analysis response");
   }
 }
 
 Deno.serve(async (req: Request) => {
-  // Trata requisições OPTIONS para CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    // Valida método HTTP
     if (req.method !== "POST") {
-      return new Response(
-        JSON.stringify({ error: "Method not allowed" }),
-        { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        status: 405,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Valida header de autorização
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Missing authorization header" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Parse do body da requisição expandido com contexto de performance
     const payload: RequestPayload = await req.json();
     const { ad_id, meta_ad_account_id, image_url, copy_data, performance_context } = payload;
 
-    // Valida campos obrigatórios
     if (!ad_id || !meta_ad_account_id || !image_url) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: ad_id, meta_ad_account_id, image_url" }),
@@ -606,36 +575,32 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Verifica chave da API OpenAI
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiApiKey) {
-      return new Response(
-        JSON.stringify({ error: "OpenAI API key not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Inicializa clientes Supabase
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verifica usuário autenticado
     const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
 
     const { data: { user }, error: userError } = await supabaseAuth.auth.getUser();
     if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Busca workspace do usuario (pega o mais antigo se houver multiplos)
     const { data: workspacesList } = await supabaseAdmin
       .from("workspaces")
       .select("id")
@@ -645,22 +610,22 @@ Deno.serve(async (req: Request) => {
 
     const workspace = workspacesList?.[0] || null;
     if (!workspace) {
-      return new Response(
-        JSON.stringify({ error: "No workspace found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "No workspace found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Baixa a imagem e converte para base64
-    console.log("Starting image download...");
-    const { base64: imageBase64, mimeType: imageMimeType } = await downloadImageAsBase64(image_url);
-    console.log("Image downloaded successfully");
+    console.log("Downloading image...");
+    const { base64: imageBase64, mimeType: imageMimeType } =
+      await downloadImageAsBase64(image_url);
 
-    // Executa análise expandida com GPT-4 Vision usando imagem em base64 e contexto de performance
-    console.log("Starting AI analysis with GPT-4 Vision...");
     if (performance_context) {
-      console.log("Performance context provided:", performance_context);
+      const pctx = detectPerformanceContext(performance_context);
+      console.log("Performance primary metric:", pctx.primaryMetric);
     }
+
+    console.log("Running GPT-4 Vision analysis...");
     const { analysis, tokensUsed } = await analyzeWithGPT4Vision(
       imageBase64,
       imageMimeType,
@@ -668,26 +633,24 @@ Deno.serve(async (req: Request) => {
       performance_context,
       openaiApiKey
     );
-    console.log("AI analysis completed successfully");
+    console.log("Analysis complete");
 
-    // Prepara registro para salvar no banco
     const analysisRecord = {
       workspace_id: workspace.id,
-      ad_id: ad_id,
-      meta_ad_account_id: meta_ad_account_id,
+      ad_id,
+      meta_ad_account_id,
       creative_score: analysis.creative_score,
       copy_score: analysis.copy_score,
       overall_score: analysis.overall_score,
       visual_analysis: analysis.visual_analysis,
       copy_analysis: analysis.copy_analysis,
       recommendations: analysis.recommendations,
-      image_url: image_url,
+      image_url,
       model_used: "gpt-4o",
       tokens_used: tokensUsed,
       analyzed_at: new Date().toISOString(),
     };
 
-    // Salva análise no banco (insere nova a cada análise para manter histórico)
     const { data: savedAnalysis, error: insertError } = await supabaseAdmin
       .from("meta_ad_ai_analyses")
       .insert(analysisRecord)
@@ -696,27 +659,21 @@ Deno.serve(async (req: Request) => {
 
     if (insertError) {
       console.error("Insert error:", insertError);
-      // Retorna análise mesmo se o save falhar
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           analysis: { ...analysis, analyzed_at: analysisRecord.analyzed_at },
           tokens_used: tokensUsed,
           saved: false,
-          save_error: insertError.message 
+          save_error: insertError.message,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     return new Response(
-      JSON.stringify({ 
-        analysis: savedAnalysis,
-        tokens_used: tokensUsed,
-        saved: true 
-      }),
+      JSON.stringify({ analysis: savedAnalysis, tokens_used: tokensUsed, saved: true }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-
   } catch (error) {
     console.error("Unexpected error:", error);
     return new Response(

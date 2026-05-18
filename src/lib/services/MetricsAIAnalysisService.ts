@@ -41,10 +41,21 @@ export interface PreloadedMetricsData {
     cpc: number;
     cpm: number;
   }>;
+  // Campos opcionais — presentes conforme objetivo da campanha
+  roas?: number;
+  totalPurchaseValue?: number;
+  totalLeads?: number;
+  totalMessagingConversations?: number;
+  totalConversions?: number;
+  avgConversionRate?: number;
+  avgCostPerConversion?: number;
+  campaignObjective?: string;
 }
 
 /**
- * Constroi MetricsInputData a partir de dados pre-carregados
+ * Constroi MetricsInputData a partir de dados pre-carregados.
+ * Propaga todos os campos opcionais de objetivo de campanha para que
+ * a IA receba apenas as metricas disponiveis e nao infira ROAS ausente.
  */
 function buildMetricsInputFromPreloaded(
   entityId: string,
@@ -53,6 +64,21 @@ function buildMetricsInputFromPreloaded(
   endDate: string,
   data: PreloadedMetricsData
 ): MetricsInputData {
+  const totalConversions = data.totalConversions ?? 0;
+  const avgConversionRate = data.avgConversionRate ?? 0;
+  const avgCostPerConversion = data.avgCostPerConversion ?? 0;
+
+  // Calcula custo por lead e custo por conversa se disponiveis
+  const avgCostPerLead =
+    data.totalLeads && data.totalLeads > 0
+      ? data.totalSpend / data.totalLeads
+      : undefined;
+
+  const avgCostPerMessagingConversation =
+    data.totalMessagingConversations && data.totalMessagingConversations > 0
+      ? data.totalSpend / data.totalMessagingConversations
+      : undefined;
+
   return {
     entity_id: entityId,
     entity_name: data.entityName,
@@ -64,13 +90,29 @@ function buildMetricsInputFromPreloaded(
     total_reach: data.totalReach,
     total_clicks: data.totalClicks,
     total_spend: data.totalSpend,
-    total_conversions: 0,
+    total_conversions: totalConversions,
     avg_ctr: data.avgCtr,
     avg_cpc: data.avgCpc,
     avg_cpm: data.avgCpm,
     avg_frequency: data.avgFrequency,
-    avg_conversion_rate: 0,
-    avg_cost_per_conversion: 0,
+    avg_conversion_rate: avgConversionRate,
+    avg_cost_per_conversion: avgCostPerConversion,
+    // Campos condicionais: apenas incluidos quando realmente disponiveis
+    ...(data.roas != null && data.roas > 0 ? { roas: data.roas } : {}),
+    ...(data.totalPurchaseValue != null && data.totalPurchaseValue > 0
+      ? { total_purchase_value: data.totalPurchaseValue }
+      : {}),
+    ...(data.totalLeads != null && data.totalLeads > 0
+      ? { total_leads: data.totalLeads }
+      : {}),
+    ...(data.totalMessagingConversations != null && data.totalMessagingConversations > 0
+      ? { total_messaging_conversations: data.totalMessagingConversations }
+      : {}),
+    ...(avgCostPerLead != null ? { avg_cost_per_lead: avgCostPerLead } : {}),
+    ...(avgCostPerMessagingConversation != null
+      ? { avg_cost_per_messaging_conversation: avgCostPerMessagingConversation }
+      : {}),
+    ...(data.campaignObjective ? { campaign_objective: data.campaignObjective } : {}),
     daily_metrics: data.dailyMetrics.map(d => ({
       date: d.date,
       impressions: d.impressions,
