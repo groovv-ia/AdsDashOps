@@ -186,6 +186,8 @@ export const MetaAdsSyncPage: React.FC = () => {
   // Estado de dados
   const [insights, setInsights] = useState<InsightRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Estado de carregamento especifico para insights/metricas do periodo selecionado
+  const [loadingInsights, setLoadingInsights] = useState(false);
   const [kpis, setKpis] = useState<KPIs>({
     totalSpend: 0,
     totalImpressions: 0,
@@ -358,6 +360,7 @@ export const MetaAdsSyncPage: React.FC = () => {
     const account = getAccountById(navigationState.selectedAccountId);
     if (!account?.meta_id) return;
 
+    setLoadingInsights(true);
     try {
       // Determina o nivel a buscar conforme a view atual
       let level: 'campaign' | 'adset' | 'ad' = selectedLevel as 'campaign' | 'adset' | 'ad';
@@ -455,6 +458,8 @@ export const MetaAdsSyncPage: React.FC = () => {
       } catch (fallbackErr) {
         console.error('Fallback tambem falhou:', fallbackErr);
       }
+    } finally {
+      setLoadingInsights(false);
     }
   };
 
@@ -481,7 +486,7 @@ export const MetaAdsSyncPage: React.FC = () => {
       avgCpc: kpis.avgCpc,
       avgCpm: kpis.avgCpm,
       totalLeads: kpis.totalLeads,
-      totalLeadGrouped: kpis.totalLeads,
+      totalLeadGrouped: kpis.totalLeadGrouped ?? 0,
       totalMessagingConversations: kpis.totalMessagingConversations,
       totalPageLikes: kpis.totalPageLikes,
       totalConversions: kpis.totalConversions,
@@ -1948,8 +1953,16 @@ export const MetaAdsSyncPage: React.FC = () => {
         )}
       </Card>
 
+      {/* Barra de progresso ao carregar metricas do periodo */}
+      {loadingInsights && (
+        <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-blue-500 rounded-full"
+            style={{ animation: 'loadingBar 1.4s ease-in-out infinite' }} />
+        </div>
+      )}
+
       {/* KPIs Principais */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 transition-opacity duration-200 ${loadingInsights ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
         {/* Gasto Total */}
         <Card className="bg-gradient-to-br from-green-50 to-white border-green-100">
           <div className="flex items-start justify-between">
@@ -2065,17 +2078,17 @@ export const MetaAdsSyncPage: React.FC = () => {
         )}
 
         {/* Leads de formulario - visivel apenas quando ha dados */}
-        {(kpis.totalLeads > 0 || kpis.totalLeadGrouped > 0) && (
+        {kpis.totalLeads > 0 && (
           <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm font-medium text-emerald-600">Leads</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {formatCompact(kpis.totalLeads + kpis.totalLeadGrouped)}
+                  {formatCompact(kpis.totalLeads)}
                 </p>
-                {kpis.totalSpend > 0 && (
+                {kpis.totalSpend > 0 && kpis.totalLeads > 0 && (
                   <p className="text-xs text-emerald-500 mt-1">
-                    CPL: {formatCurrency(kpis.totalSpend / (kpis.totalLeads + kpis.totalLeadGrouped))}
+                    CPL: {formatCurrency(kpis.totalSpend / kpis.totalLeads)}
                   </p>
                 )}
               </div>

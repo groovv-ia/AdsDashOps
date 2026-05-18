@@ -211,9 +211,13 @@ function extractMessagingConversations(actions?: Array<{ action_type: string; va
   return 0;
 }
 
-/** Extrai curtidas na pagina */
+/** Extrai seguidores da pagina adquiridos via anuncio */
 function extractPageLikes(actions?: Array<{ action_type: string; value: string }>): number {
   if (!actions || actions.length === 0) return 0;
+  // Prioridade 1: page_fan_add — seguidores diretos via anuncio (valor oficial do Gerenciador)
+  const fanAdd = actions.find(a => a.action_type === 'page_fan_add');
+  if (fanAdd) return parseInt(fanAdd.value || '0', 10);
+  // Prioridade 2: like — curtidas na pagina (fallback)
   const like = actions.find(a => a.action_type === 'like');
   return like ? parseInt(like.value || '0', 10) : 0;
 }

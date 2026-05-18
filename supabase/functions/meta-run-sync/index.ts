@@ -145,6 +145,10 @@ function extractMessagingConversations(actions?: Array<{ action_type: string; va
 
 function extractPageLikes(actions?: Array<{ action_type: string; value: string }>): number {
   if (!actions || !Array.isArray(actions)) return 0;
+  // Prioridade 1: page_fan_add — seguidores adquiridos diretamente via anuncio (valor oficial)
+  const fanAdd = actions.find((a) => a.action_type === 'page_fan_add');
+  if (fanAdd) return parseInt(fanAdd.value || '0', 10);
+  // Prioridade 2: like — curtidas na pagina (fallback para campanhas de engajamento)
   const like = actions.find((a) => a.action_type === 'like');
   if (like) return parseInt(like.value || '0', 10);
   return 0;

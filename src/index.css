@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Animacao da barra de carregamento de metricas */
+@keyframes loadingBar {
+  0% { transform: translateX(-100%); width: 40%; }
+  50% { width: 60%; }
+  100% { transform: translateX(300%); width: 40%; }
+}
+
 /* Theme Variables - Light Theme Only */
 :root {
   --spacing-unit: 1rem;
