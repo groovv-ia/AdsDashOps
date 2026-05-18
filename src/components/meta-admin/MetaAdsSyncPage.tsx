@@ -2341,21 +2341,21 @@ export const MetaAdsSyncPage: React.FC = () => {
         </Card>
 
         {/* Alcance */}
-        <Card className="bg-gradient-to-br from-orange-50 to-white border-orange-100">
+        <Card className="bg-gradient-to-br from-violet-50 to-white border-violet-100">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-orange-600">Alcance</p>
+              <p className="text-sm font-medium text-violet-500">Alcance</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
                 {formatCompact(kpis.totalReach)}
               </p>
               {kpis.totalReach > 0 && (
-                <p className="text-xs text-orange-400 mt-1">
+                <p className="text-xs text-violet-400 mt-1">
                   Freq. {(kpis.totalImpressions / kpis.totalReach).toFixed(1)}x
                 </p>
               )}
             </div>
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <Users className="w-5 h-5 text-orange-600" />
+            <div className="p-2 bg-violet-100 rounded-lg">
+              <Users className="w-5 h-5 text-violet-500" />
             </div>
           </div>
         </Card>
