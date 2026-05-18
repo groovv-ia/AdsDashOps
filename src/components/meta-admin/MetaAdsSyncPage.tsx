@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { InlineNotice } from '../ui/InlineNotice';
 import { AdAccountCard, AdAccountData } from './AdAccountCard';
 import { BreadcrumbNav, BreadcrumbItem, NavigationState, createBreadcrumbItems } from './BreadcrumbNav';
 import { EnhancedPeriodSelector } from './EnhancedPeriodSelector';
@@ -1617,35 +1618,21 @@ export const MetaAdsSyncPage: React.FC = () => {
 
         {/* Aviso quando contas estão aguardando primeira sincronização */}
         {syncStatus.health_status === 'pending_first_sync' && accountCards.length > 0 && (
-          <Card className="bg-blue-50 border-blue-200">
-            <div className="flex items-start space-x-3">
-              <CheckCircle2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h3 className="font-medium text-blue-900">Contas Conectadas - Aguardando Primeira Sincronização</h3>
-                <p className="text-sm text-blue-700 mt-1">
-                  {accountCards.length} conta{accountCards.length !== 1 ? 's' : ''} de anúncio{accountCards.length !== 1 ? 's foram' : ' foi'} conectada{accountCards.length !== 1 ? 's' : ''} com sucesso.
-                  Clique no botão "Sincronizar" em cada conta abaixo para começar a importar os dados de campanhas, conjuntos e anúncios.
-                </p>
-              </div>
-            </div>
-          </Card>
+          <InlineNotice
+            variant="success"
+            title="Contas Conectadas — Aguardando Primeira Sincronização"
+            description={`${accountCards.length} conta${accountCards.length !== 1 ? 's' : ''} de anúncio${accountCards.length !== 1 ? 's foram' : ' foi'} conectada${accountCards.length !== 1 ? 's' : ''} com sucesso. Clique no botão "Sincronizar" em cada conta abaixo para começar a importar os dados de campanhas, conjuntos e anúncios.`}
+            dismissible
+          />
         )}
 
         {/* Informativo sobre periodo de sincronizacao */}
-        <Card className="bg-gradient-to-r from-blue-50/50 to-white border-blue-100">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 p-1.5 rounded-lg bg-blue-50">
-              <RefreshCw className="w-4 h-4 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="font-medium text-gray-900">Sincronizacao Completa</h3>
-              <p className="text-sm text-gray-500">
-                A sincronizacao baixa automaticamente os ultimos 365 dias de dados do Meta Ads.
-                Apos sincronizar, selecione o periodo de analise na pagina de detalhes da conta.
-              </p>
-            </div>
-          </div>
-        </Card>
+        <InlineNotice
+          variant="tip"
+          title="Sincronização Completa"
+          description="A sincronização baixa automaticamente os últimos 365 dias de dados do Meta Ads. Após sincronizar, selecione o período de análise na página de detalhes da conta."
+          dismissible
+        />
 
         {/* Mensagem de resultado de sincronizacao */}
         {syncResult && (
