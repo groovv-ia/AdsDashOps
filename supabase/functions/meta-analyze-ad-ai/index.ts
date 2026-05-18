@@ -422,14 +422,14 @@ Retorne JSON:
       }
     }
   ],
-  ${hasPerf ? `"performance_correlation": {
-    "performance_summary": "<resumo com números reais>",
-    "visual_performance_link": "<elementos visuais vs métricas>",
-    "copy_performance_link": "<copy vs métricas>",
-    "underperforming_areas": ["<área 1>"],
-    "high_performing_elements": ["<elemento 1>"],
-    "optimization_priority": "<prioridade>"
-  },` : ""}
+  "performance_correlation": ${hasPerf ? `{
+    "performance_summary": "<resumo com números reais da performance>",
+    "visual_performance_link": "<como elementos visuais ESPECÍFICOS impactam as métricas>",
+    "copy_performance_link": "<como a copy ESPECÍFICA impacta as métricas>",
+    "underperforming_areas": ["<área que precisa melhorar>"],
+    "high_performing_elements": ["<elemento que está funcionando bem>"],
+    "optimization_priority": "<qual otimização priorizar baseado nos dados>"
+  }` : "null"},
   "ab_test_suggestions": [
     {
       "test_type": "<tipo>",
