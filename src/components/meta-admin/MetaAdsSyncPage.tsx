@@ -48,6 +48,7 @@ import {
   runMetaSync,
   getMetaSyncStatus,
   getInsightsFromDatabase,
+  getLeadsByPeriod,
   getAdInsightsByAdset,
   getInsightsByCampaign,
   fetchLiveInsights,
@@ -370,14 +371,24 @@ export const MetaAdsSyncPage: React.FC = () => {
         level = 'adset';
       }
 
-      // Busca dados em tempo real da Meta API (totais + diario)
-      const response = await fetchRealTimeInsights({
-        meta_ad_account_id: account.meta_id,
-        level,
-        date_from: dateRange.dateFrom,
-        date_to: dateRange.dateTo,
-        mode: 'dual',
-      });
+      // Busca dados em tempo real da Meta API e leads do banco em paralelo.
+      // Leads sao buscados do banco porque a Meta API omite lead action types
+      // para campanhas de Trafego/Mensagens — o banco (populado pelo sync) tem o valor correto.
+      const [response, dbLeadsMap] = await Promise.all([
+        fetchRealTimeInsights({
+          meta_ad_account_id: account.meta_id,
+          level,
+          date_from: dateRange.dateFrom,
+          date_to: dateRange.dateTo,
+          mode: 'dual',
+        }),
+        getLeadsByPeriod({
+          metaAdAccountId: navigationState.selectedAccountId,
+          level,
+          dateFrom: dateRange.dateFrom,
+          dateTo: dateRange.dateTo,
+        }),
+      ]);
 
       // Processa totais consolidados do periodo (reach exato da Meta)
       const periodTotals = processToTotalsByEntity(response.totals, level);
@@ -412,27 +423,53 @@ export const MetaAdsSyncPage: React.FC = () => {
         filteredDaily = dailyRows.filter(d => adIdsInAdset.has(d.entity_id));
       }
 
-      // Converte para formato InsightRow (usado pela tabela existente)
-      const insightRows: InsightRow[] = filteredDaily.map(row => ({
-        id: row.id,
-        level: row.level,
-        entity_id: row.entity_id,
-        entity_name: row.entity_name,
-        date: row.date,
-        spend: row.spend,
-        impressions: row.impressions,
-        reach: row.reach,
-        clicks: row.clicks,
-        ctr: row.ctr,
-        cpc: row.cpc,
-        cpm: row.cpm,
-        leads: row.leads,
-        messaging_conversations_started: row.messaging_conversations_started,
-        page_likes: row.page_likes,
-        conversions: row.conversions,
-        conversion_value: row.conversion_value,
-        purchase_value: row.purchase_value,
-      }));
+      // Enriquece os totais com leads do banco quando a API retornou 0.
+      // A Meta API omite lead actions para campanhas de Trafego/Mensagens,
+      // mas o sync (meta-run-sync) captura corretamente via actions do periodo completo.
+      if (dbLeadsMap.size > 0) {
+        for (const total of filteredTotals) {
+          if (total.leads === 0) {
+            // Soma leads de todos os dias do periodo para esta entidade
+            let summedLeads = 0;
+            for (const [key, val] of dbLeadsMap) {
+              if (key.startsWith(`${total.entity_id}|`)) {
+                summedLeads += val;
+              }
+            }
+            if (summedLeads > 0) {
+              total.leads = summedLeads;
+              total.cost_per_lead = total.spend > 0 ? total.spend / summedLeads : 0;
+            }
+          }
+        }
+      }
+
+      // Converte para formato InsightRow (usado pela tabela existente) e
+      // mescla leads do banco para linhas diarias onde a API retornou 0.
+      const insightRows: InsightRow[] = filteredDaily.map(row => {
+        const dbLeads = dbLeadsMap.get(`${row.entity_id}|${row.date}`) ?? 0;
+        const leads = row.leads > 0 ? row.leads : dbLeads;
+        return {
+          id: row.id,
+          level: row.level,
+          entity_id: row.entity_id,
+          entity_name: row.entity_name,
+          date: row.date,
+          spend: row.spend,
+          impressions: row.impressions,
+          reach: row.reach,
+          clicks: row.clicks,
+          ctr: row.ctr,
+          cpc: row.cpc,
+          cpm: row.cpm,
+          leads,
+          messaging_conversations_started: row.messaging_conversations_started,
+          page_likes: row.page_likes,
+          conversions: row.conversions,
+          conversion_value: row.conversion_value,
+          purchase_value: row.purchase_value,
+        };
+      });
 
       setInsights(insightRows);
 

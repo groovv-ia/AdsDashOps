@@ -571,6 +571,37 @@ function processRowActions(row: Record<string, unknown>) {
 }
 
 /**
+ * Busca leads agregados do banco por entidade+data para um periodo e conta especificos.
+ * Retorna um Map com chave "entity_id|date" → valor de leads armazenado pelo sync.
+ * Usado para enriquecer dados em tempo real quando a API Meta nao retorna lead actions.
+ */
+export async function getLeadsByPeriod(options: {
+  metaAdAccountId: string;
+  level: string;
+  dateFrom: string;
+  dateTo: string;
+}): Promise<Map<string, number>> {
+  const { metaAdAccountId, level, dateFrom, dateTo } = options;
+
+  const { data, error } = await supabase
+    .from('meta_insights_daily')
+    .select('entity_id, date, leads')
+    .eq('meta_ad_account_id', metaAdAccountId)
+    .eq('level', level)
+    .gte('date', dateFrom)
+    .lte('date', dateTo)
+    .gt('leads', 0); // Traz apenas linhas com leads reais para eficiencia
+
+  if (error || !data) return new Map();
+
+  const leadsMap = new Map<string, number>();
+  for (const row of data) {
+    leadsMap.set(`${row.entity_id}|${row.date}`, row.leads as number);
+  }
+  return leadsMap;
+}
+
+/**
  * Busca insights do banco de dados local
  * Processa o actions_json para extrair metricas de conversas e leads
  */
