@@ -202,8 +202,9 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
         spend: acc.spend + (row.spend || 0),
         leads: acc.leads + ((row as any).leads || 0),
         messaging_conversations_started: acc.messaging_conversations_started + ((row as any).messaging_conversations_started || 0),
+        purchase_value: acc.purchase_value + ((row as any).purchase_value || 0),
       }),
-      { impressions: 0, reach: 0, clicks: 0, spend: 0, leads: 0, messaging_conversations_started: 0 }
+      { impressions: 0, reach: 0, clicks: 0, spend: 0, leads: 0, messaging_conversations_started: 0, purchase_value: 0 }
     );
 
     const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
@@ -233,6 +234,11 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
         cost_per_conversion: 0,
       }));
 
+    // ROAS calculado apenas quando ha valor de compra registrado
+    const roas = totals.purchase_value > 0 && totals.spend > 0
+      ? totals.purchase_value / totals.spend
+      : null;
+
     return {
       total_impressions: totals.impressions,
       total_reach: totals.reach,
@@ -249,6 +255,8 @@ export const AdDetailModal: React.FC<AdDetailModalProps> = ({
       avg_cost_per_lead: avgCostPerLead,
       total_messaging_conversations_started: totals.messaging_conversations_started,
       avg_cost_per_messaging_conversation_started: avgCostPerConversation,
+      total_purchase_value: totals.purchase_value,
+      roas,
       daily_metrics: dailyMetrics,
     };
   }, [hasPreloadedData, preloadedMetrics]);
@@ -1319,6 +1327,29 @@ const MetricsTab: React.FC<MetricsTabProps> = ({ metrics, loading, startDate, en
         <MetricBadge label="CPC" value={formatCurrency(metrics.avg_cpc)} />
         <MetricBadge label="CPM" value={formatCurrency(metrics.avg_cpm)} />
         <MetricBadge label="Frequência" value={metrics.avg_frequency.toFixed(2)} />
+      </div>
+
+      {/* ROAS — exibido apenas no detalhe do anuncio, quando ha dados de compra */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-gradient-to-br from-teal-50 to-white border border-teal-100 rounded-lg px-3 py-2.5 flex items-center justify-between">
+          <div>
+            <span className="text-xs text-teal-600 font-medium">ROAS</span>
+            <p className="text-sm font-bold text-gray-900 mt-0.5">
+              {(metrics as any).roas != null
+                ? `${((metrics as any).roas as number).toFixed(2)}x`
+                : '—'}
+            </p>
+            {(metrics as any).total_purchase_value > 0 && (
+              <p className="text-[10px] text-teal-400 leading-tight">
+                Receita: {formatCurrency((metrics as any).total_purchase_value)}
+              </p>
+            )}
+            {(metrics as any).roas == null && (
+              <p className="text-[10px] text-gray-400 leading-tight">Sem compra</p>
+            )}
+          </div>
+          <TrendingUp className="w-4 h-4 text-teal-400 flex-shrink-0" />
+        </div>
       </div>
 
       {/* Novas metricas de conversas e leads */}

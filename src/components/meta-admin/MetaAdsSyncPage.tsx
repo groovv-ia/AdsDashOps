@@ -2340,27 +2340,22 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* ROAS */}
-        <Card className="bg-gradient-to-br from-teal-50 to-white border-teal-100">
+        {/* Alcance */}
+        <Card className="bg-gradient-to-br from-orange-50 to-white border-orange-100">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-medium text-teal-600">ROAS Medio</p>
+              <p className="text-sm font-medium text-orange-600">Alcance</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
-                {kpis.roas !== null ? `${kpis.roas.toFixed(2)}x` : '—'}
+                {formatCompact(kpis.totalReach)}
               </p>
-              {kpis.roas !== null && kpis.totalPurchaseValue > 0 && (
-                <p className="text-xs text-teal-500 mt-1">
-                  Receita: {formatCurrency(kpis.totalPurchaseValue)}
-                </p>
-              )}
-              {kpis.roas === null && (
-                <p className="text-xs text-gray-400 mt-1" title="ROAS indisponivel: campanha sem evento de compra configurado">
-                  Sem evento de compra
+              {kpis.totalReach > 0 && (
+                <p className="text-xs text-orange-400 mt-1">
+                  Freq. {(kpis.totalImpressions / kpis.totalReach).toFixed(1)}x
                 </p>
               )}
             </div>
-            <div className="p-2 bg-teal-100 rounded-lg">
-              <TrendingUp className="w-5 h-5 text-teal-600" />
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <Users className="w-5 h-5 text-orange-600" />
             </div>
           </div>
         </Card>
