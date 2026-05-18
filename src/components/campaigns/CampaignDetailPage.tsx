@@ -41,6 +41,7 @@ import { BreadcrumbNav, type BreadcrumbItem } from '../meta-admin/BreadcrumbNav'
 import { EnhancedPeriodSelector } from '../meta-admin/EnhancedPeriodSelector';
 import { CampaignAdSetsTable } from './CampaignAdSetsTable';
 import { CampaignAdsTable } from './CampaignAdsTable';
+import { CampaignObservationPanel } from './CampaignObservationPanel';
 import { AdDetailModal } from '../ad-analysis';
 import { useWorkspacePeriod } from '../../hooks/useWorkspacePeriod';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
@@ -600,6 +601,33 @@ export const CampaignDetailPage: React.FC<CampaignDetailPageProps> = ({
           </ResponsiveContainer>
         </Card>
       )}
+
+      {/* Secao: Observacoes do Gestor + Analise com IA */}
+      <CampaignObservationPanel
+        campaignId={campaignId}
+        campaignName={campaignName}
+        campaignObjective={campaignObjective}
+        metaAdAccountId={metaAdAccountId}
+        metrics={kpis ? {
+          impressions:  kpis.totalImpressions,
+          clicks:       kpis.totalClicks,
+          spend:        kpis.totalSpend,
+          conversions:  kpis.totalConversions,
+          reach:        kpis.totalReach,
+          ctr:          kpis.avgCtr,
+          cpc:          kpis.avgCpc,
+          cpm:          kpis.avgCpm,
+          roas:         kpis.roas ?? undefined,
+          leads:        kpis.totalLeads > 0 ? kpis.totalLeads : undefined,
+          cost_per_lead: kpis.costPerLead > 0 ? kpis.costPerLead : undefined,
+          messaging_conversations: kpis.totalMessagingConversations > 0
+            ? kpis.totalMessagingConversations : undefined,
+          cost_per_messaging_conversation: kpis.costPerConversation > 0
+            ? kpis.costPerConversation : undefined,
+          frequency: kpis.avgFrequency,
+        } : null}
+        period={{ start: periodDateRange.dateFrom, end: periodDateRange.dateTo }}
+      />
 
       {/* Secao: Conjuntos de Anuncios */}
       <div className="space-y-4">
