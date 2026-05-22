@@ -73,7 +73,6 @@ import { useWorkspacePeriod } from '../../hooks/useWorkspacePeriod';
 import { AdDetailModal, AdCreativeThumbnail } from '../ad-analysis';
 import type { AdDetailModalState, MetaAdCreative } from '../../types/adAnalysis';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
-import { ViewToggle, useViewMode } from '../ui/ViewToggle';
 import { ExportReportModal } from './ExportReportModal';
 import type { AnalysisLevel } from '../../types/metricsAnalysis';
 import type { PreloadedMetricsData } from '../../lib/services/MetricsAIAnalysisService';
@@ -237,9 +236,6 @@ export const MetaAdsSyncPage: React.FC = () => {
 
   // Estado do modal de exportacao
   const [showExportModal, setShowExportModal] = useState(false);
-
-  // Toggle de visualizacao: 'cards' (KPIs + graficos) ou 'chart' (somente graficos expandidos)
-  const [viewMode, setViewMode] = useViewMode('view_mode_meta_sync', 'cards');
 
   // Estado para refresh em tempo real (fetch direto da Meta API)
   const [refreshingLive, setRefreshingLive] = useState(false);
@@ -1847,7 +1843,6 @@ export const MetaAdsSyncPage: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-3">
-            <ViewToggle mode={viewMode} onChange={setViewMode} />
             <SyncStatusBadge
               status={syncingAccountId === navigationState.selectedAccountId ? 'syncing' : 'synced'}
               lastSyncAt={lastLiveRefresh || selectedAccount?.last_sync_at}
@@ -2285,8 +2280,8 @@ export const MetaAdsSyncPage: React.FC = () => {
         </div>
       )}
 
-      {/* KPIs Principais — visivel apenas no modo cards */}
-      {viewMode === 'cards' && <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 transition-opacity duration-200 ${loadingInsights ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+      {/* KPIs Principais */}
+      <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 transition-opacity duration-200 ${loadingInsights ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
         {/* Gasto Total */}
         <Card className="bg-gradient-to-br from-green-50 to-white border-green-100">
           <div className="flex items-start justify-between">
@@ -2417,7 +2412,7 @@ export const MetaAdsSyncPage: React.FC = () => {
             </div>
           </Card>
         )}
-      </div>}
+      </div>
 
       {/* Graficos */}
       {chartData.length > 0 && (

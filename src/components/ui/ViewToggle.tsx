@@ -33,21 +33,14 @@ export function useViewMode(
   storageKey: string,
   defaultMode: ViewMode = 'cards'
 ): [ViewMode, (mode: ViewMode) => void] {
-  // Inicializa com o defaultMode para garantir render consistente no primeiro ciclo.
-  // O valor salvo no localStorage e aplicado apos a montagem via useEffect,
-  // evitando o erro de hidratacao #418 causado por leitura sincrona do storage.
-  const [mode, setModeState] = React.useState<ViewMode>(defaultMode);
-
-  useEffect(() => {
+  const [mode, setModeState] = React.useState<ViewMode>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      if (saved === 'cards' || saved === 'chart') {
-        setModeState(saved);
-      }
+      return (saved === 'cards' || saved === 'chart') ? saved : defaultMode;
     } catch {
-      // localStorage pode estar indisponivel em alguns contextos
+      return defaultMode;
     }
-  }, [storageKey]);
+  });
 
   const setMode = React.useCallback((newMode: ViewMode) => {
     setModeState(newMode);
