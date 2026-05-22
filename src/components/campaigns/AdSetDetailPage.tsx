@@ -36,6 +36,8 @@ import { BreadcrumbNav, type BreadcrumbItem } from '../meta-admin/BreadcrumbNav'
 import { EnhancedPeriodSelector } from '../meta-admin/EnhancedPeriodSelector';
 import { CampaignAdsTable } from './CampaignAdsTable';
 import { AdDetailModal } from '../ad-analysis';
+import { MetricLineChart } from './MetricLineChart';
+import { ViewToggle, useViewMode } from '../ui/ViewToggle';
 import { useWorkspacePeriod } from '../../hooks/useWorkspacePeriod';
 import { useAdCreativesBatch } from '../../hooks/useAdCreativesBatch';
 import {
@@ -139,8 +141,11 @@ export const AdSetDetailPage: React.FC<AdSetDetailPageProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Estado do grafico
+  // Estado do grafico (Area chart legado)
   const [selectedMetric, setSelectedMetric] = useState<string>('spend');
+
+  // Toggle de visualizacao: 'cards' (padrao) ou 'chart' (grafico de linhas)
+  const [viewMode, setViewMode] = useViewMode('view_mode_adset_detail', 'cards');
 
   // Estado do modal de anuncio
   const [selectedAd, setSelectedAd] = useState<AdData | null>(null);
@@ -306,6 +311,7 @@ export const AdSetDetailPage: React.FC<AdSetDetailPageProps> = ({
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
+            <ViewToggle mode={viewMode} onChange={setViewMode} />
             <EnhancedPeriodSelector
               selectedPeriod={selectedPeriod}
               onPeriodChange={(id, range) => setPeriod(id, range)}
@@ -319,8 +325,24 @@ export const AdSetDetailPage: React.FC<AdSetDetailPageProps> = ({
         </div>
       </div>
 
-      {/* KPIs do AdSet */}
-      {kpis && (
+      {/* Modo: Grafico de linhas estilo Google Ads */}
+      {viewMode === 'chart' && dailyData.length > 0 && (
+        <MetricLineChart
+          data={dailyData}
+          defaultMetrics={['impressions', 'clicks', 'spend', 'conversions']}
+          chartHeight={300}
+        />
+      )}
+      {viewMode === 'chart' && dailyData.length === 0 && !loading && (
+        <Card>
+          <p className="text-sm text-gray-400 text-center py-8">
+            Nenhum dado diario disponivel para o periodo selecionado.
+          </p>
+        </Card>
+      )}
+
+      {/* KPIs do AdSet — visivel apenas no modo cards */}
+      {viewMode === 'cards' && kpis && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
             <div className="flex items-center justify-between">
@@ -396,8 +418,8 @@ export const AdSetDetailPage: React.FC<AdSetDetailPageProps> = ({
         </div>
       )}
 
-      {/* Metricas secundarias */}
-      {kpis && (
+      {/* Metricas secundarias — visivel apenas no modo cards */}
+      {viewMode === 'cards' && kpis && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card>
             <p className="text-sm text-gray-500 mb-1">Alcance</p>
@@ -428,8 +450,8 @@ export const AdSetDetailPage: React.FC<AdSetDetailPageProps> = ({
         </div>
       )}
 
-      {/* Metricas de conversas e leads */}
-      {kpis && (kpis.totalMessagingConversations > 0 || kpis.totalLeads > 0) && (
+      {/* Metricas de conversas e leads — visivel apenas no modo cards */}
+      {viewMode === 'cards' && kpis && (kpis.totalMessagingConversations > 0 || kpis.totalLeads > 0) && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100/50 border-cyan-200">
             <p className="text-sm text-cyan-700 font-medium mb-1">Conversas Iniciadas</p>
@@ -458,8 +480,8 @@ export const AdSetDetailPage: React.FC<AdSetDetailPageProps> = ({
         </div>
       )}
 
-      {/* Grafico de tendencia */}
-      {dailyData.length > 0 && (
+      {/* Grafico de tendencia legado — visivel apenas no modo cards */}
+      {viewMode === 'cards' && dailyData.length > 0 && (
         <Card>
           <div className="flex items-center justify-between mb-6">
             <div>

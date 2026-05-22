@@ -8,6 +8,8 @@
 import { useState, useMemo } from 'react';
 import { ArrowUpDown, ArrowUp, ArrowDown, Filter, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AdSetData } from '../../lib/services/CampaignExtractedDataService';
+import { EntityBarChart } from './EntityBarChart';
+import { ViewToggle, useViewMode } from '../ui/ViewToggle';
 
 // ============================================
 // Tipos e Interfaces
@@ -102,6 +104,9 @@ export function CampaignAdSetsTable({
   onSelectAdSet,
   selectedAdSetId,
 }: CampaignAdSetsTableProps) {
+  // Toggle de visualizacao
+  const [viewMode, setViewMode] = useViewMode('view_mode_adsets', 'cards');
+
   // Estado de ordenacao
   const [sortField, setSortField] = useState<SortField>('spend');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -190,14 +195,15 @@ export function CampaignAdSetsTable({
 
   return (
     <div className="overflow-hidden">
-      {/* Barra de filtros */}
-      <div className="flex items-center justify-between mb-4">
+      {/* Barra de controles: contador + filtro + toggle */}
+      <div className="flex items-center justify-between mb-4 gap-3">
         <p className="text-sm text-gray-500">
           {sortedAndFilteredAdSets.length} de {adSets.length} conjuntos de anuncios
         </p>
 
-        {/* Filtro de status */}
-        <div className="relative">
+        <div className="flex items-center gap-2">
+          {/* Filtro de status — apenas no modo tabela */}
+          {viewMode === 'cards' && <div className="relative">
           <button
             onClick={() => setShowFilterMenu(!showFilterMenu)}
             className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -242,10 +248,38 @@ export function CampaignAdSetsTable({
               </div>
             </>
           )}
+          </div>}
+
+          {/* Toggle de visualizacao */}
+          <ViewToggle mode={viewMode} onChange={setViewMode} size="sm" />
         </div>
       </div>
 
-      {/* Tabela */}
+      {/* Modo: grafico de barras por adset */}
+      {viewMode === 'chart' && (
+        <EntityBarChart
+          entities={sortedAndFilteredAdSets.map(as => ({
+            id:          as.adset_id,
+            name:        as.adset_name,
+            impressions: as.impressions,
+            clicks:      as.clicks,
+            spend:       as.spend,
+            conversions: as.conversions,
+            ctr:         as.ctr,
+            cpc:         as.cpc,
+            cpm:         as.cpm,
+            roas:        as.roas ?? 0,
+            leads:       as.leads ?? 0,
+            messaging_conversations_started: as.messaging_conversations_started ?? 0,
+            reach:       as.reach ?? 0,
+          }))}
+          entityLabel="Conjunto"
+        />
+      )}
+
+      {/* Modo: Tabela */}
+      {viewMode === 'cards' && (
+      <>{/* Tabela */}
       <div className="overflow-x-auto -mx-4 px-4">
         <table className="w-full min-w-[1000px]">
           <thead>
@@ -455,6 +489,7 @@ export function CampaignAdSetsTable({
           </div>
         </div>
       </div>
+      </>)}
     </div>
   );
 }

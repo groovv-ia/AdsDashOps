@@ -11,6 +11,8 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Filter, ChevronDown, Image, TrendingUp
 import type { AdData } from '../../lib/services/CampaignExtractedDataService';
 import type { MetaAdCreative } from '../../types/adAnalysis';
 import { AdCreativeThumbnail } from '../ad-analysis/AdCreativeThumbnail';
+import { EntityBarChart } from './EntityBarChart';
+import { ViewToggle, useViewMode } from '../ui/ViewToggle';
 
 // ============================================
 // Tipos e Interfaces
@@ -131,6 +133,9 @@ export function CampaignAdsTable({
   getLoadingState,
   onCreativeImageError,
 }: CampaignAdsTableProps) {
+  // Toggle de visualizacao
+  const [viewMode, setViewMode] = useViewMode('view_mode_ads', 'cards');
+
   // Estado de ordenacao
   const [sortField, setSortField] = useState<SortField>('spend');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -267,14 +272,15 @@ export function CampaignAdsTable({
 
   return (
     <div className="overflow-hidden">
-      {/* Barra de filtros */}
-      <div className="flex items-center justify-between mb-4">
+      {/* Barra de controles: contador + filtro + toggle */}
+      <div className="flex items-center justify-between mb-4 gap-3">
         <p className="text-sm text-gray-500">
           {sortedAndFilteredAds.length} de {ads.length} anuncios
         </p>
 
-        {/* Filtro de status */}
-        <div className="relative">
+        <div className="flex items-center gap-2">
+          {/* Filtro de status — apenas no modo tabela */}
+          {viewMode === 'cards' && <div className="relative">
           <button
             onClick={() => setShowFilterMenu(!showFilterMenu)}
             className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -319,9 +325,37 @@ export function CampaignAdsTable({
               </div>
             </>
           )}
+          </div>}
+
+          {/* Toggle de visualizacao */}
+          <ViewToggle mode={viewMode} onChange={setViewMode} size="sm" />
         </div>
       </div>
 
+      {/* Modo: grafico de barras por anuncio */}
+      {viewMode === 'chart' && (
+        <EntityBarChart
+          entities={sortedAndFilteredAds.map(ad => ({
+            id:          ad.ad_id,
+            name:        ad.ad_name,
+            impressions: ad.impressions,
+            clicks:      ad.clicks,
+            spend:       ad.spend,
+            conversions: ad.conversions,
+            ctr:         ad.ctr,
+            cpc:         ad.cpc,
+            cpm:         ad.cpm,
+            roas:        ad.roas ?? 0,
+            leads:       ad.leads ?? 0,
+            messaging_conversations_started: ad.messaging_conversations_started ?? 0,
+            reach:       ad.reach ?? 0,
+          }))}
+          entityLabel="Anuncio"
+        />
+      )}
+
+      {/* Modo: Tabela */}
+      {viewMode === 'cards' && (<>
       {/* Tabela */}
       <div className="overflow-x-auto -mx-4 px-4">
         <table className="w-full min-w-[1100px]">
@@ -551,6 +585,7 @@ export function CampaignAdsTable({
           </div>
         </div>
       </div>
+      </>)}
     </div>
   );
 }
