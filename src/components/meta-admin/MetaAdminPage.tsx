@@ -17,6 +17,9 @@ import {
   Link2,
   Building2,
   Loader2,
+  LogIn,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -31,6 +34,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { forceSessionRefresh, isRLSError } from '../../utils/sessionRefresh';
+import { MetaOAuthConnectModal } from '../dashboard/MetaOAuthConnectModal';
 
 interface ConnectionStatus {
   connected: boolean;
@@ -71,6 +75,11 @@ export const MetaAdminPage: React.FC = () => {
   // Contagem direta do banco
   const [dbAccountCount, setDbAccountCount] = useState<number | null>(null);
 
+  // Modal de conexão OAuth
+  const [showOAuthModal, setShowOAuthModal] = useState(false);
+  // Controla se o formulário de System User está colapsado
+  const [showSystemUserForm, setShowSystemUserForm] = useState(true);
+
   // Mascara o token para exibicao segura (ex: "EAABx...7f2k")
   const maskToken = (token: string): string => {
     if (token.length <= 10) return '****';
@@ -82,6 +91,17 @@ export const MetaAdminPage: React.FC = () => {
     loadSyncStatus();
     loadDirectAccountCount();
   }, [currentWorkspace?.id]);
+
+  // Detecta retorno do fluxo OAuth e auto-abre o modal para processar o token
+  useEffect(() => {
+    const code = localStorage.getItem('meta_oauth_code');
+    const flow = localStorage.getItem('meta_oauth_flow');
+    const oauthError = localStorage.getItem('meta_oauth_error');
+
+    if ((code && flow === 'modal') || (oauthError && flow === 'modal')) {
+      setShowOAuthModal(true);
+    }
+  }, []);
 
   /**
    * Busca diretamente do banco de dados o numero real de contas salvas
@@ -498,19 +518,75 @@ export const MetaAdminPage: React.FC = () => {
         </Card>
       )}
 
-      {/* Form de Conexao */}
-      <Card>
-        <div className="flex items-center space-x-2 mb-4">
-          <Link2 className="w-5 h-5 text-blue-600" />
-          <h3 className="font-semibold text-gray-900">
-            {connectionStatus?.tokenExpired
-              ? 'Reconectar com Novo Token'
-              : connectionStatus?.connected
-                ? 'Atualizar Conexao'
-                : 'Nova Conexao'
-            }
-          </h3>
+      {/* ─── Bloco: Conexão via Login Facebook (OAuth) ─────────────────────── */}
+      <Card className="border-2 border-blue-100 bg-gradient-to-br from-blue-50 to-white">
+        <div className="flex items-start space-x-4">
+          {/* Ícone Meta */}
+          <div className="w-12 h-12 rounded-xl bg-white border border-blue-200 flex items-center justify-center flex-shrink-0 shadow-sm">
+            <img src="/meta-icon.svg" alt="Meta" className="w-7 h-7" />
+          </div>
+
+          <div className="flex-1">
+            <div className="flex items-center space-x-2 mb-1">
+              <h3 className="font-bold text-gray-900 text-base">Login pelo Facebook</h3>
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Recomendado</span>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Conecte clicando em um botão — sem App ID, sem tokens manuais.
+              Selecione várias contas de anúncios de uma só vez.
+            </p>
+
+            <button
+              onClick={() => setShowOAuthModal(true)}
+              className="inline-flex items-center space-x-2 bg-[#1877F2] hover:bg-[#166FE5] active:bg-[#1564D3] text-white font-semibold text-sm py-2.5 px-5 rounded-xl transition-all shadow-md hover:shadow-lg"
+            >
+              {/* Ícone f do Facebook */}
+              <svg className="h-4 w-4 fill-white flex-shrink-0" viewBox="0 0 24 24">
+                <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.095 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.886v2.268h3.328l-.532 3.49h-2.796V24C19.612 23.095 24 18.1 24 12.073z" />
+              </svg>
+              <span>Conectar com Facebook</span>
+            </button>
+          </div>
         </div>
+      </Card>
+
+      {/* ─── Separador entre os métodos ──────────────────────────────────────── */}
+      <div className="relative flex items-center">
+        <div className="flex-1 border-t border-gray-200" />
+        <span className="mx-4 text-xs font-medium text-gray-400 uppercase tracking-wider">ou conexão avançada</span>
+        <div className="flex-1 border-t border-gray-200" />
+      </div>
+
+      {/* ─── Form de Conexao (System User / Token manual) ──────────────────── */}
+      <Card>
+        {/* Header colapsável */}
+        <button
+          onClick={() => setShowSystemUserForm(v => !v)}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="flex items-center space-x-2">
+            <Link2 className="w-5 h-5 text-gray-500" />
+            <h3 className="font-semibold text-gray-900">
+              {connectionStatus?.tokenExpired
+                ? 'Reconectar com Novo Token'
+                : connectionStatus?.connected
+                  ? 'Atualizar Conexão (System User)'
+                  : 'Conexão por Token de System User'
+              }
+            </h3>
+          </div>
+          {showSystemUserForm
+            ? <ChevronUp className="w-4 h-4 text-gray-400" />
+            : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        </button>
+
+        {!showSystemUserForm && (
+          <p className="text-xs text-gray-500 mt-2 ml-7">
+            Para usuários avançados com Business Manager e System User configurado.
+          </p>
+        )}
+
+        {showSystemUserForm && (<div className="mt-4">
 
         <div className="space-y-4">
           <div>
@@ -611,6 +687,7 @@ export const MetaAdminPage: React.FC = () => {
             )}
           </Button>
         </div>
+        </div>)}
       </Card>
 
       {/* Lista de Ad Accounts */}
@@ -689,6 +766,18 @@ export const MetaAdminPage: React.FC = () => {
           <li>Copie o token gerado e cole no campo acima</li>
         </ol>
       </Card>
+
+      {/* Modal OAuth Meta */}
+      <MetaOAuthConnectModal
+        isOpen={showOAuthModal}
+        onClose={() => setShowOAuthModal(false)}
+        onSuccess={() => {
+          setShowOAuthModal(false);
+          loadSyncStatus();
+          loadDirectAccountCount();
+          loadAdAccounts();
+        }}
+      />
     </div>
   );
 };
